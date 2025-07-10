@@ -1,0 +1,126 @@
+"use client"
+
+import { useState, useEffect } from "react"
+import { AlbumArtCache } from "../utils/album-art-cache"
+import { ColorExtractor } from "../utils/color-extractor"
+
+interface AlbumArtBackgroundProps {
+  albumArt?: string
+  songId?: string
+  isTransitioning?: boolean
+}
+
+export function AlbumArtBackground({ albumArt, songId, isTransitioning = false }: AlbumArtBackgroundProps) {
+  const [backgroundImage, setBackgroundImage] = useState<string | null>(null)
+  const [dominantColor, setDominantColor] = useState<string>("#1a1a1a")
+  const [isMounted, setIsMounted] = useState(false)
+
+  useEffect(() => {
+    setIsMounted(true)
+  }, [])
+
+  useEffect(() => {
+    if (!isMounted || !songId || !albumArt) {
+      setBackgroundImage(null)
+      setDominantColor("#1a1a1a")
+      return
+    }
+
+    const loadBackgroundImage = async () => {
+      try {
+        // Try to get from cache first
+        let cachedUrl = AlbumArtCache.getCachedAlbumArt(songId)
+
+        if (!cachedUrl) {
+          // Preload if not cached
+          cachedUrl = await AlbumArtCache.preloadAlbumArt(songId, albumArt)
+        }
+
+        if (cachedUrl) {
+          setBackgroundImage(cachedUrl)
+
+          // Extract dominant color for background tinting
+          try {
+            const color = await ColorExtractor.extractDominantColor(cachedUrl)
+            setDominantColor(color)
+          } catch (error) {
+            console.error("Error extracting dominant color:", error)
+            setDominantColor("#1a1a1a")
+          }
+        }
+      } catch (error) {
+        console.error("Error loading background image:", error)
+        setBackgroundImage(null)
+        setDominantColor("#1a1a1a")
+      }
+    }
+
+    loadBackgroundImage()
+  }, [albumArt, songId, isMounted])
+
+  if (!isMounted) {
+    return <div className="fixed inset-0 bg-gradient-to-br from-gray-900 via-gray-900/95 to-black -z-20" />
+  }
+
+  if (!backgroundImage) {
+    return <div className="fixed inset-0 bg-gradient-to-br from-gray-900 via-gray-900/95 to-black -z-20" />
+  }
+
+  // Create color variations for the gradient
+  const lightColor = ColorExtractor.lightenColor(dominantColor, 20)
+  const darkColor = ColorExtractor.darkenColor(dominantColor, 40)
+  const veryDarkColor = ColorExtractor.darkenColor(dominantColor, 60)
+
+  return (
+    <>
+      {/* Background Image with Blur */}
+      <div
+        className={`fixed inset-0 -z-30 transition-all duration-1000 ease-out ${
+          isTransitioning ? "scale-105 opacity-20" : "scale-100 opacity-30"
+        }`}
+        style={{
+          backgroundImage: `url(${backgroundImage})`,
+          backgroundSize: "cover",
+          backgroundPosition: "center",
+          backgroundRepeat: "no-repeat",
+          filter: "blur(40px) saturate(1.2)",
+        }}
+      />
+
+      {/* Color Tinted Overlay */}
+      <div
+        className={`fixed inset-0 -z-20 transition-all duration-1000 ease-out ${
+          isTransitioning ? "opacity-70" : "opacity-85"
+        }`}
+        style={{
+          background: `
+            radial-gradient(circle at 30% 20%, ${lightColor}15 0%, transparent 50%),
+            radial-gradient(circle at 70% 80%, ${dominantColor}20 0%, transparent 50%),
+            linear-gradient(135deg, 
+              ${veryDarkColor}90 0%, 
+              ${darkColor}85 25%, 
+              ${dominantColor}25 50%, 
+              ${darkColor}90 75%, 
+              ${veryDarkColor}95 100%
+            )
+          `,
+        }}
+      />
+
+      {/* Additional subtle texture overlay */}
+      <div
+        className="fixed inset-0 -z-10 opacity-40"
+        style={{
+          background: `
+            radial-gradient(circle at 20% 50%, ${dominantColor}10 0%, transparent 30%),
+            radial-gradient(circle at 80% 50%, ${lightColor}08 0%, transparent 30%),
+            linear-gradient(45deg, transparent 48%, ${dominantColor}05 50%, transparent 52%)
+          `,
+        }}
+      />
+
+      {/* Final dark overlay for text readability */}
+      <div className="fixed inset-0 bg-black/20 -z-10" />
+    </>
+  )
+}
