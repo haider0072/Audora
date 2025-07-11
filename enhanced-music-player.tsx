@@ -8,6 +8,8 @@ import { Slider } from "@/components/ui/slider"
 import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
 import { toast } from "@/hooks/use-toast"
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import {
   Play,
   Pause,
@@ -20,7 +22,9 @@ import {
   FolderOpen,
   Plus,
   Mic,
+  Upload,
   Share2,
+  Folder,
 } from "lucide-react"
 
 import { MetadataExtractor } from "./utils/metadata-extractor"
@@ -35,6 +39,7 @@ import { AlbumArtCache } from "./utils/album-art-cache"
 import { useAlbumArtPreloader } from "./hooks/use-album-art-preloader"
 import { LyricsDisplay } from "./components/lyrics-display"
 import { NetworkSharingPanel } from "./components/network-sharing-panel"
+import { AddMusicControls } from "./components/add-music-control"
 
 export default function EnhancedMusicPlayer() {
   const [isPlaying, setIsPlaying] = useState(false)
@@ -303,7 +308,7 @@ export default function EnhancedMusicPlayer() {
         return filter
       })
       setFilterNodes(filters)
-      let currentNode = sourceNodeRef.current
+      let currentNode: AudioNode = sourceNodeRef.current!
       filters.forEach((filter) => {
         currentNode.connect(filter)
         currentNode = filter
@@ -810,6 +815,16 @@ export default function EnhancedMusicPlayer() {
               songs={songs.map((s) => ({ id: s.id, title: s.title, artist: s.artist, albumArt: s.albumArt }))}
               onPlaylistReset={resetPlaylist}
             />
+            <AddMusicControls
+            isLoadingSongs={isLoadingSongs}
+            isRestoringPlaylist={isRestoringPlaylist}
+            fileInputRef={fileInputRef}
+            folderInputRef={folderInputRef}
+            handleFileUpload={handleFileUpload}
+            handleFolderUpload={handleFolderUpload}
+            loadingProgress={loadingProgress}
+            />
+            
           </div>
         </div>
         <div className="grid lg:grid-cols-2 gap-6 h-[calc(100vh-120px)] overflow-hidden">
@@ -821,90 +836,32 @@ export default function EnhancedMusicPlayer() {
                 currentSong={currentSong}
                 currentTimeMs={currentTimeMs}
               />
-            ) : showNetworkSharing ? (
-              <NetworkSharingPanel
-                songs={songs.map((song) => ({
-                  id: song.id,
-                  title: song.title,
-                  artist: song.artist,
-                  album: song.album,
-                  duration: song.duration,
-                  format: song.format,
-                  isHiRes: song.isHiRes,
-                }))}
-                currentSong={currentSong}
-                isPlaying={isPlaying}
-                currentTime={currentTime}
-                onPlaylistUpdate={handleNetworkPlaylistUpdate}
-                onPlaybackStateUpdate={handleNetworkPlaybackStateUpdate}
-              />
-            ) : (
+            ) 
+            // : showNetworkSharing ? (
+            //   <NetworkSharingPanel
+            //     songs={songs.map((song) => ({
+            //       id: song.id,
+            //       title: song.title,
+            //       artist: song.artist,
+            //       album: song.album,
+            //       duration: song.duration,
+            //       format: song.format,
+            //       isHiRes: song.isHiRes,
+            //     }))}
+            //     currentSong={currentSong}
+            //     isPlaying={isPlaying}
+            //     currentTime={currentTime}
+            //     onPlaylistUpdate={handleNetworkPlaylistUpdate}
+            //     onPlaybackStateUpdate={handleNetworkPlaybackStateUpdate}
+            //   />) 
+              : (
               <>
                 <Card className="bg-transparent border-none shadow-none">
                   <CardHeader>
                     <CardTitle>Player Controls</CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-6">
-                    <div className="space-y-4">
-                      <div className="flex flex-wrap items-center gap-4">
-                        <Button
-                          onClick={() => fileInputRef.current?.click()}
-                          variant="outline"
-                          className="gap-2"
-                          disabled={isLoadingSongs || isRestoringPlaylist}
-                        >
-                          <Plus className="w-4 h-4" />
-                          Add Songs
-                        </Button>
-                        <Button
-                          onClick={() => folderInputRef.current?.click()}
-                          variant="outline"
-                          className="gap-2"
-                          disabled={isLoadingSongs || isRestoringPlaylist}
-                        >
-                          <FolderOpen className="w-4 h-4" />
-                          Add Folder
-                        </Button>
-                        <input
-                          ref={fileInputRef}
-                          type="file"
-                          accept=".flac,.mp3,.wav,.m4a,.aac"
-                          multiple
-                          onChange={handleFileUpload}
-                          className="hidden"
-                        />
-                        <input
-                          ref={folderInputRef}
-                          type="file"
-                          webkitdirectory=""
-                          multiple
-                          onChange={handleFolderUpload}
-                          className="hidden"
-                        />
-                      </div>
-                      {(isLoadingSongs || isRestoringPlaylist) && (
-                        <div className="space-y-2">
-                          <div className="flex items-center justify-between text-sm">
-                            <span>{isRestoringPlaylist ? "Restoring playlist..." : "Processing songs..."}</span>
-                            {!isRestoringPlaylist && (
-                              <span>
-                                {loadingProgress.current} / {loadingProgress.total}
-                              </span>
-                            )}
-                          </div>
-                          <div className="w-full bg-muted rounded-full h-2">
-                            <div
-                              className={`bg-primary h-2 rounded-full transition-all duration-300 ${isRestoringPlaylist ? "animate-pulse" : ""}`}
-                              style={{
-                                width: isRestoringPlaylist
-                                  ? "100%"
-                                  : `${(loadingProgress.current / loadingProgress.total) * 100}%`,
-                              }}
-                            />
-                          </div>
-                        </div>
-                      )}
-                    </div>
+                    
                     {currentSong && (
                       <div className="space-y-6">
                         <div className="flex gap-6">
@@ -995,7 +952,7 @@ export default function EnhancedMusicPlayer() {
                       <Button
                         variant={showEqualizer ? "default" : "outline"}
                         size="icon"
-                        onClick={() => setShowEqualizer(!showEqualizer)}
+                        onClick={() => setShowEqualizer(true)}
                       >
                         <Settings className="w-4 h-4" />
                       </Button>
@@ -1007,13 +964,13 @@ export default function EnhancedMusicPlayer() {
                       >
                         <Mic className="w-4 h-4" />
                       </Button>
-                      <Button
+                      {/* <Button
                         variant={showNetworkSharing ? "default" : "outline"}
                         size="icon"
                         onClick={() => setShowNetworkSharing(!showNetworkSharing)}
                       >
                         <Share2 className="w-4 h-4" />
-                      </Button>
+                      </Button> */}
                     </div>
 
                     {/* Keyboard shortcuts info */}
@@ -1023,13 +980,17 @@ export default function EnhancedMusicPlayer() {
                     </div>
                   </CardContent>
                 </Card>
-                {showEqualizer && (
-                  <RefinedEqualizer
+                <Dialog open={showEqualizer} onOpenChange={setShowEqualizer}>
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>Equalizer</DialogTitle>
+                    </DialogHeader>
+                    <RefinedEqualizer
                     bands={equalizerBands}
                     onBandChange={updateEqualizerBand}
-                    onReset={resetEqualizer}
-                  />
-                )}
+                    onReset={resetEqualizer}/>
+                  </DialogContent>
+                </Dialog>
               </>
             )}
           </div>

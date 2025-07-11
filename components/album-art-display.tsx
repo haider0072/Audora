@@ -28,8 +28,8 @@ export function AlbumArtDisplay({
   const [hasError, setHasError] = useState(false)
   const [isMounted, setIsMounted] = useState(false)
 
-  const currentSongIdRef = useRef<string | undefined>()
-  const loadingTimeoutRef = useRef<NodeJS.Timeout>()
+  const currentSongIdRef = useRef<string | undefined>(undefined)
+  const loadingTimeoutRef = useRef<NodeJS.Timeout | undefined>(undefined)
   const imageRef = useRef<HTMLImageElement>(null)
   const isLoadingRef = useRef(false) // Prevent concurrent loading
 
