@@ -20,6 +20,7 @@ import {
   FolderOpen,
   Plus,
   Mic,
+  Share2,
 } from "lucide-react"
 
 import { MetadataExtractor } from "./utils/metadata-extractor"
@@ -33,6 +34,7 @@ import { PlaylistManager } from "./components/playlist-manager"
 import { AlbumArtCache } from "./utils/album-art-cache"
 import { useAlbumArtPreloader } from "./hooks/use-album-art-preloader"
 import { LyricsDisplay } from "./components/lyrics-display"
+import { NetworkSharingPanel } from "./components/network-sharing-panel"
 
 export default function EnhancedMusicPlayer() {
   const [isPlaying, setIsPlaying] = useState(false)
@@ -55,6 +57,7 @@ export default function EnhancedMusicPlayer() {
   const [isInitialized, setIsInitialized] = useState(false)
   const [isRestoringPlaylist, setIsRestoringPlaylist] = useState(false)
   const [showLyrics, setShowLyrics] = useState(false)
+  const [showNetworkSharing, setShowNetworkSharing] = useState(false)
 
   const audioRef = useRef<HTMLAudioElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -764,6 +767,28 @@ export default function EnhancedMusicPlayer() {
     }
   }, [currentSong])
 
+  // Network sharing handlers
+  const handleNetworkPlaylistUpdate = useCallback((newSongs: any[]) => {
+    // This would be called when receiving playlist updates from network
+    // For now, we'll just log it as the actual implementation would need
+    // to handle file sharing which is complex
+    console.log("Network playlist update received:", newSongs)
+    toast({
+      title: "Playlist Updated",
+      description: "The shared playlist has been updated by the host.",
+    })
+  }, [])
+
+  const handleNetworkPlaybackStateUpdate = useCallback(
+    (isPlaying: boolean, currentTime: number, currentSong?: string) => {
+      // This would be called when receiving playback state updates from network
+      console.log("Network playback state update:", { isPlaying, currentTime, currentSong })
+      // Note: In a real implementation, you'd need to handle syncing playback state
+      // but this requires careful consideration of user experience
+    },
+    [],
+  )
+
   return (
     <div className="min-h-screen max-h-screen overflow-hidden relative">
       <AlbumArtBackground albumArt={currentSong?.albumArt} songId={currentSong?.id} isTransitioning={isTransitioning} />
@@ -795,6 +820,23 @@ export default function EnhancedMusicPlayer() {
                 onClose={() => setShowLyrics(false)}
                 currentSong={currentSong}
                 currentTimeMs={currentTimeMs}
+              />
+            ) : showNetworkSharing ? (
+              <NetworkSharingPanel
+                songs={songs.map((song) => ({
+                  id: song.id,
+                  title: song.title,
+                  artist: song.artist,
+                  album: song.album,
+                  duration: song.duration,
+                  format: song.format,
+                  isHiRes: song.isHiRes,
+                }))}
+                currentSong={currentSong}
+                isPlaying={isPlaying}
+                currentTime={currentTime}
+                onPlaylistUpdate={handleNetworkPlaylistUpdate}
+                onPlaybackStateUpdate={handleNetworkPlaybackStateUpdate}
               />
             ) : (
               <>
@@ -964,6 +1006,13 @@ export default function EnhancedMusicPlayer() {
                         disabled={!currentSong}
                       >
                         <Mic className="w-4 h-4" />
+                      </Button>
+                      <Button
+                        variant={showNetworkSharing ? "default" : "outline"}
+                        size="icon"
+                        onClick={() => setShowNetworkSharing(!showNetworkSharing)}
+                      >
+                        <Share2 className="w-4 h-4" />
                       </Button>
                     </div>
 

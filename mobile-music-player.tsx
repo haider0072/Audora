@@ -16,6 +16,7 @@ import { MobilePlaylist } from "./components/mobile-playlist"
 import { MobilePlayerBar } from "./components/mobile-player-bar"
 import { MobileEqualizerSheet } from "./components/mobile-equalizer-sheet"
 import { MobileLyricsDisplay } from "./components/mobile-lyrics-display"
+import { MobileNetworkSharingSheet } from "./components/mobile-network-sharing-sheet"
 import { AlbumArtBackground } from "./components/album-art-background"
 
 interface Song {
@@ -63,8 +64,9 @@ export default function MobileMusicPlayer() {
   const [isInitialized, setIsInitialized] = useState(false)
   const [isRestoringPlaylist, setIsRestoringPlaylist] = useState(false)
 
-  // New state for lyrics display
+  // New state for lyrics and network sharing
   const [showLyrics, setShowLyrics] = useState(false)
+  const [showNetworkSharing, setShowNetworkSharing] = useState(false)
 
   const audioRef = useRef<HTMLAudioElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -815,6 +817,24 @@ export default function MobileMusicPlayer() {
     }
   }
 
+  // Network sharing handlers
+  const handleNetworkPlaylistUpdate = useCallback((newSongs: any[]) => {
+    // This would be called when receiving playlist updates from network
+    console.log("Network playlist update received:", newSongs)
+    toast({
+      title: "Playlist Updated",
+      description: "The shared playlist has been updated by the host.",
+    })
+  }, [])
+
+  const handleNetworkPlaybackStateUpdate = useCallback(
+    (isPlaying: boolean, currentTime: number, currentSong?: string) => {
+      // This would be called when receiving playback state updates from network
+      console.log("Network playback state update:", { isPlaying, currentTime, currentSong })
+    },
+    [],
+  )
+
   // Enhanced media key controls for mobile
   useEffect(() => {
     const handleMediaKeys = (e: KeyboardEvent) => {
@@ -1068,6 +1088,7 @@ export default function MobileMusicPlayer() {
           onSeek={handleSeek}
           onSettingsClick={() => setShowEqualizer(true)}
           onLyricsClick={() => setShowLyrics(true)}
+          onNetworkSharingClick={() => setShowNetworkSharing(true)}
           isTransitioning={isTransitioning}
         />
 
@@ -1092,7 +1113,29 @@ export default function MobileMusicPlayer() {
           currentTimeMs={currentTimeMs}
           isPlaying={isPlaying}
         />
+
+        {/* Network Sharing Sheet */}
+        <MobileNetworkSharingSheet
+          isOpen={showNetworkSharing}
+          onOpenChange={setShowNetworkSharing}
+          songs={songs.map((song) => ({
+            id: song.id,
+            title: song.title,
+            artist: song.artist,
+            album: song.album,
+            duration: song.duration,
+            format: song.format,
+            isHiRes: song.isHiRes,
+          }))}
+          currentSong={currentSong}
+          isPlaying={isPlaying}
+          currentTime={currentTime}
+          onPlaylistUpdate={handleNetworkPlaylistUpdate}
+          onPlaybackStateUpdate={handleNetworkPlaybackStateUpdate}
+        />
       </div>
     </div>
   )
 }
+
+export type { Song }
