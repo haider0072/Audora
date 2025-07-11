@@ -521,6 +521,11 @@ export default function EnhancedMusicPlayer() {
     if (gainNodeRef.current) gainNodeRef.current.gain.value = value[0] / 100
   }
 
+  const adjustVolume = (delta: number) => {
+    const newVolume = Math.max(0, Math.min(100, volume[0] + delta))
+    handleVolumeChange([newVolume])
+  }
+
   const toggleMute = () => {
     setIsMuted(!isMuted)
     if (audioRef.current) audioRef.current.muted = !isMuted
@@ -553,24 +558,194 @@ export default function EnhancedMusicPlayer() {
 
   const currentTimeMs = useMemo(() => Math.round(currentTime * 1000), [currentTime])
 
-  // Media key controls
+  // Enhanced media key controls with comprehensive support
   useEffect(() => {
     const handleMediaKeys = (e: KeyboardEvent) => {
-      if (e.code === "MediaPlayPause" || (e.code === "Space" && e.target === document.body)) {
+      // Prevent default behavior for media keys
+      const isMediaKey = [
+        "MediaPlayPause",
+        "MediaTrackNext",
+        "MediaTrackPrevious",
+        "MediaStop",
+        "AudioVolumeUp",
+        "AudioVolumeDown",
+        "AudioVolumeMute",
+      ].includes(e.code)
+
+      // Also handle space bar when focused on body (not in input fields)
+      const isSpaceOnBody =
+        e.code === "Space" &&
+        (e.target === document.body ||
+          (e.target as HTMLElement)?.tagName === "BODY" ||
+          !(e.target as HTMLElement)?.matches("input, textarea, [contenteditable]"))
+
+      if (isMediaKey || isSpaceOnBody) {
         e.preventDefault()
-        togglePlayPause()
-      } else if (e.code === "MediaTrackNext") {
-        e.preventDefault()
-        skipToNext()
-      } else if (e.code === "MediaTrackPrevious") {
-        e.preventDefault()
-        skipToPrevious()
+        e.stopPropagation()
+
+        switch (e.code) {
+          case "MediaPlayPause":
+          case "Space":
+            if (currentSong) {
+              togglePlayPause()
+            } else if (songs.length > 0) {
+              // If no current song but songs exist, play the first one
+              selectSong(songs[0], false)
+            }
+            break
+
+          case "MediaTrackNext":
+            if (songs.length > 0) {
+              skipToNext()
+            }
+            break
+
+          case "MediaTrackPrevious":
+            if (songs.length > 0) {
+              skipToPrevious()
+            }
+            break
+
+          case "MediaStop":
+            if (audioRef.current && currentSong) {
+              audioRef.current.pause()
+              audioRef.current.currentTime = 0
+              setIsPlaying(false)
+              setCurrentTime(0)
+            }
+            break
+
+          case "AudioVolumeUp":
+            adjustVolume(5) // Increase by 5%
+            break
+
+          case "AudioVolumeDown":
+            adjustVolume(-5) // Decrease by 5%
+            break
+
+          case "AudioVolumeMute":
+            toggleMute()
+            break
+        }
+      }
+
+      // Additional keyboard shortcuts for enhanced control
+      if (e.ctrlKey || e.metaKey) {
+        switch (e.code) {
+          case "ArrowRight":
+            e.preventDefault()
+            if (songs.length > 0) skipToNext()
+            break
+
+          case "ArrowLeft":
+            e.preventDefault()
+            if (songs.length > 0) skipToPrevious()
+            break
+
+          case "ArrowUp":
+            e.preventDefault()
+            adjustVolume(5)
+            break
+
+          case "ArrowDown":
+            e.preventDefault()
+            adjustVolume(-5)
+            break
+        }
+      }
+
+      // Function keys for additional control
+      switch (e.code) {
+        case "F7":
+          e.preventDefault()
+          if (songs.length > 0) skipToPrevious()
+          break
+
+        case "F8":
+          e.preventDefault()
+          if (currentSong) {
+            togglePlayPause()
+          } else if (songs.length > 0) {
+            selectSong(songs[0], false)
+          }
+          break
+
+        case "F9":
+          e.preventDefault()
+          if (songs.length > 0) skipToNext()
+          break
+
+        case "F10":
+          e.preventDefault()
+          toggleMute()
+          break
+
+        case "F11":
+          e.preventDefault()
+          adjustVolume(-5)
+          break
+
+        case "F12":
+          e.preventDefault()
+          adjustVolume(5)
+          break
       }
     }
 
-    document.addEventListener("keydown", handleMediaKeys)
-    return () => document.removeEventListener("keydown", handleMediaKeys)
-  }, [currentSong, isPlaying])
+    // Add event listener with capture to ensure we catch all events
+    document.addEventListener("keydown", handleMediaKeys, { capture: true })
+
+    // Also try to register with the Media Session API for better integration
+    if ("mediaSession" in navigator && currentSong) {
+      navigator.mediaSession.metadata = new MediaMetadata({
+        title: currentSong.title || "Unknown Title",
+        artist: currentSong.artist || "Unknown Artist",
+        album: currentSong.album || "Unknown Album",
+        artwork: currentSong.albumArt ? [{ src: currentSong.albumArt, sizes: "256x256", type: "image/jpeg" }] : [],
+      })
+
+      navigator.mediaSession.setActionHandler("play", () => {
+        if (!isPlaying && currentSong) togglePlayPause()
+      })
+
+      navigator.mediaSession.setActionHandler("pause", () => {
+        if (isPlaying) togglePlayPause()
+      })
+
+      navigator.mediaSession.setActionHandler("nexttrack", () => {
+        if (songs.length > 0) skipToNext()
+      })
+
+      navigator.mediaSession.setActionHandler("previoustrack", () => {
+        if (songs.length > 0) skipToPrevious()
+      })
+
+      navigator.mediaSession.setActionHandler("stop", () => {
+        if (audioRef.current && currentSong) {
+          audioRef.current.pause()
+          audioRef.current.currentTime = 0
+          setIsPlaying(false)
+          setCurrentTime(0)
+        }
+      })
+
+      // Update playback state
+      navigator.mediaSession.playbackState = isPlaying ? "playing" : "paused"
+    }
+
+    return () => {
+      document.removeEventListener("keydown", handleMediaKeys, { capture: true })
+
+      // Clear media session handlers
+      if ("mediaSession" in navigator) {
+        navigator.mediaSession.setActionHandler("play", null)
+        navigator.mediaSession.setActionHandler("pause", null)
+        navigator.mediaSession.setActionHandler("nexttrack", null)
+        navigator.mediaSession.setActionHandler("previoustrack", null)
+        navigator.mediaSession.setActionHandler("stop", null)
+      }
+    }
+  }, [currentSong, isPlaying, songs, volume])
 
   useEffect(() => {
     const audio = audioRef.current
@@ -790,6 +965,12 @@ export default function EnhancedMusicPlayer() {
                       >
                         <Mic className="w-4 h-4" />
                       </Button>
+                    </div>
+
+                    {/* Keyboard shortcuts info */}
+                    <div className="text-xs text-muted-foreground text-center space-y-1">
+                      <p>Media keys: Play/Pause • Next/Previous • Volume Up/Down • Mute</p>
+                      <p>Shortcuts: Space (play/pause) • F7-F12 (media controls) • Ctrl/Cmd + arrows</p>
                     </div>
                   </CardContent>
                 </Card>
