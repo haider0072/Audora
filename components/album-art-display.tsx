@@ -35,7 +35,7 @@ export function AlbumArtDisplay({
 
   const sizeClasses = {
     small: "w-12 h-12",
-    medium: "w-24 h-24",
+    medium: "w-16 h-16",
     large: "w-48 h-48",
   }
 

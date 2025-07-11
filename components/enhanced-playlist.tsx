@@ -114,7 +114,7 @@ const SongItem = memo(
             songId={song.id}
             albumArt={song.albumArt}
             title={`${song.title} album art`}
-            size="medium"
+            size="small"
             className={`
               transition-transform duration-150 ease-out group-hover:scale-105
               ${isCurrentSong ? "ring-2 ring-primary/50" : ""}
