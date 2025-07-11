@@ -152,7 +152,7 @@ export function LyricsDisplay({ isVisible, onClose, currentSong, currentTimeMs }
   }
 
   return (
-    <div className="h-full flex flex-col bg-card/50 rounded-lg border">
+    <div className="h-[84vh] flex flex-col bg-card/50 rounded-lg border">
       <div className="flex flex-row items-center justify-between p-4 border-b shrink-0">
         <h2 className="text-xl font-bold flex items-center gap-2">
           <Mic className="w-5 h-5" />
@@ -162,7 +162,7 @@ export function LyricsDisplay({ isVisible, onClose, currentSong, currentTimeMs }
           <X className="w-4 h-4" />
         </Button>
       </div>
-      <div className="flex-1 overflow-y-auto p-6">
+      <div className="flex-1 overflow-y-auto p-6 h-0">
         <div className="flex flex-col items-center justify-center min-h-full">{renderContent()}</div>
       </div>
     </div>
