@@ -426,11 +426,11 @@ export function EnhancedPlaylist({
           </div>
         )}
 
-        <ScrollArea className="h-full w-full">
-          <div className="space-y-2 pr-4 w-full">
+        <ScrollArea className="h-full w-full flex">
+          <div className="space-y-2 pr-4 w-full ">
             {songs.length === 0 ? (
               <div className="text-center text-muted-foreground py-8">
-                <Music className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                <Music className="w-12 h-12 mx-auto mb-4 opacity-50 " />
                 <p>No songs in playlist</p>
                 <p className="text-sm">Add some music files to get started</p>
               </div>
@@ -442,7 +442,7 @@ export function EnhancedPlaylist({
               </div>
             ) : viewMode === "list" ? (
               // List view - sorted by artist
-              <div className="space-y-1 w-full">
+              <div className="space-y-1 w-full ">
                 <div className="text-xs text-muted-foreground mb-2 px-3">Sorted by Artist</div>
                 {filteredSongs.map((song) => (
                   <div key={song.id} className="w-full">
@@ -477,7 +477,7 @@ export function EnhancedPlaylist({
                         >
                           {album}
                         </h4>
-                        <div className="space-y-1 ml-4 w-full">
+                        <div className="space-y-1 w-full">
                           {albumSongs.map((song) => (
                             <div key={song.id} className="w-full">
                               <SongItem
