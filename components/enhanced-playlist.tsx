@@ -6,7 +6,6 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Badge } from "@/components/ui/badge"
-import { Separator } from "@/components/ui/separator"
 import {
   Music,
   Play,
@@ -115,7 +114,7 @@ const SongItem = memo(
             songId={song.id}
             albumArt={song.albumArt}
             title={`${song.title} album art`}
-            size="small"
+            size="medium"
             className={`
               transition-transform duration-150 ease-out group-hover:scale-105
               ${isCurrentSong ? "ring-2 ring-primary/50" : ""}
@@ -462,17 +461,18 @@ export function EnhancedPlaylist({
               <div className="w-full">
                 {Object.entries(groupedSongs).map(([artist, albums]) => (
                   <div key={artist} className="space-y-3 mb-6 w-full">
-                    <div className="sticky top-0 bg-background z-20 py-2">
-                      <h3 className="font-semibold text-lg truncate" title={artist}>
-                        {artist}
-                      </h3>
-                      <Separator className="mt-2" />
+                    <div className="sticky top-0 z-20 py-3 pl-4 -mx-4">
+                      <div className="bg-background/80 backdrop-blur-md border border-border/50 rounded-lg px-4 py-2 shadow-sm">
+                        <h3 className="font-semibold text-lg truncate text-foreground" title={artist}>
+                          {artist}
+                        </h3>
+                      </div>
                     </div>
 
                     {Object.entries(albums).map(([album, albumSongs]) => (
                       <div key={`${artist}-${album}`} className="ml-4 space-y-2 w-full">
                         <h4
-                          className="font-medium text-muted-foreground text-sm uppercase tracking-wide truncate"
+                          className="font-medium text-muted-foreground text-sm uppercase tracking-wide truncate pl-2"
                           title={album}
                         >
                           {album}

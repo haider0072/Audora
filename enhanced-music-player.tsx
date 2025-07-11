@@ -25,7 +25,6 @@ import {
 import { MetadataExtractor } from "./utils/metadata-extractor"
 import { EnhancedPlaylist, type Song } from "./components/enhanced-playlist"
 import { RefinedEqualizer, type EqualizerBand } from "./components/refined-equalizer"
-import { ThemeToggle } from "./components/theme-toggle"
 import { AlbumArtBackground } from "./components/album-art-background"
 import { AlbumArtDisplay } from "./components/album-art-display"
 import { StorageManager } from "./utils/storage"
@@ -554,6 +553,25 @@ export default function EnhancedMusicPlayer() {
 
   const currentTimeMs = useMemo(() => Math.round(currentTime * 1000), [currentTime])
 
+  // Media key controls
+  useEffect(() => {
+    const handleMediaKeys = (e: KeyboardEvent) => {
+      if (e.code === "MediaPlayPause" || (e.code === "Space" && e.target === document.body)) {
+        e.preventDefault()
+        togglePlayPause()
+      } else if (e.code === "MediaTrackNext") {
+        e.preventDefault()
+        skipToNext()
+      } else if (e.code === "MediaTrackPrevious") {
+        e.preventDefault()
+        skipToPrevious()
+      }
+    }
+
+    document.addEventListener("keydown", handleMediaKeys)
+    return () => document.removeEventListener("keydown", handleMediaKeys)
+  }, [currentSong, isPlaying])
+
   useEffect(() => {
     const audio = audioRef.current
     if (audio) {
@@ -592,7 +610,6 @@ export default function EnhancedMusicPlayer() {
               songs={songs.map((s) => ({ id: s.id, title: s.title, artist: s.artist, albumArt: s.albumArt }))}
               onPlaylistReset={resetPlaylist}
             />
-            <ThemeToggle />
           </div>
         </div>
         <div className="grid lg:grid-cols-2 gap-6 h-[calc(100vh-120px)] overflow-hidden">
@@ -679,7 +696,7 @@ export default function EnhancedMusicPlayer() {
                             albumArt={currentSong.albumArt}
                             title={`${currentSong.title} album art`}
                             isTransitioning={isTransitioning}
-                            className="shadow-2xl shadow-black/30 flex-shrink-0"
+                            className="shadow-2xl shadow-black/30 flex-shrink-0 w-64 h-64"
                           />
                           <div
                             className={`flex-1 space-y-3 transition-all duration-500 ease-out ${isTransitioning ? "translate-x-4 opacity-70" : "translate-x-0 opacity-100"}`}
