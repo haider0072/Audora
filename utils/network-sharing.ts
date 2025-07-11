@@ -4,27 +4,6 @@ interface NetworkPeer {
   connection: RTCPeerConnection
   dataChannel?: RTCDataChannel
   isHost: boolean
-  lastSeen: number
-}
-
-interface SharedPlaylist {
-  id: string
-  name: string
-  hostId: string
-  hostName: string
-  songs: Array<{
-    id: string
-    title?: string
-    artist?: string
-    album?: string
-    duration?: number
-    format?: string
-    isHiRes?: boolean
-  }>
-  currentSong?: string
-  isPlaying: boolean
-  currentTime: number
-  timestamp: number
 }
 
 interface PlaylistData {
@@ -43,480 +22,322 @@ interface PlaylistData {
 }
 
 interface NetworkMessage {
-  type: "playlist-update" | "playback-state" | "sync-request" | "peer-info" | "heartbeat" | "join-request" | "host-info"
+  type: "playlist-update" | "playback-state" | "sync-request" | "peer-info" | "heartbeat"
   data: any
   timestamp: number
-  senderId: string
 }
 
-// Simple event emitter for network events
-class EventEmitter {
-  private events: { [key: string]: Function[] } = {}
-
-  on(event: string, callback: Function) {
-    if (!this.events[event]) {
-      this.events[event] = []
-    }
-    this.events[event].push(callback)
-  }
-
-  off(event: string, callback: Function) {
-    if (this.events[event]) {
-      this.events[event] = this.events[event].filter((cb) => cb !== callback)
-    }
-  }
-
-  emit(event: string, data?: any) {
-    if (this.events[event]) {
-      this.events[event].forEach((callback) => callback(data))
-    }
-  }
-}
-
-export class NetworkSharingService extends EventEmitter {
-  private static instance: NetworkSharingService
+export class NetworkSharingManager {
   private peers: Map<string, NetworkPeer> = new Map()
-  private sharedPlaylists: Map<string, SharedPlaylist> = new Map()
-  private isCurrentlySharing = false
+  private isHost = false
   private localPeerId = ""
-  private peerName = ""
-  private currentPlaylistId = ""
+  private deviceName = ""
+  private onPlaylistUpdate?: (songs: any[]) => void
+  private onPlaybackStateUpdate?: (isPlaying: boolean, currentTime: number, currentSong?: string) => void
+  private onPeerListUpdate?: (peers: NetworkPeer[]) => void
   private discoveryInterval?: NodeJS.Timeout
   private heartbeatInterval?: NodeJS.Timeout
-  private broadcastChannel?: BroadcastChannel
-  private isInitialized = false
 
-  private constructor() {
-    super()
+  constructor() {
     this.localPeerId = this.generatePeerId()
-    this.peerName = this.getDefaultPeerName()
-    this.initializeBroadcastChannel()
-  }
-
-  static getInstance(): NetworkSharingService {
-    if (!NetworkSharingService.instance) {
-      NetworkSharingService.instance = new NetworkSharingService()
-    }
-    return NetworkSharingService.instance
+    this.deviceName = this.getDeviceName()
   }
 
   private generatePeerId(): string {
     return `peer_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
   }
 
-  private getDefaultPeerName(): string {
+  private getDeviceName(): string {
     const userAgent = navigator.userAgent
-    const deviceId = this.localPeerId.slice(-4).toUpperCase()
-
     if (/iPhone|iPad|iPod/.test(userAgent)) {
-      return `iPhone (${deviceId})`
+      return `iPhone (${this.localPeerId.slice(-4)})`
     } else if (/Android/.test(userAgent)) {
-      return `Android (${deviceId})`
+      return `Android (${this.localPeerId.slice(-4)})`
     } else if (/Mac/.test(userAgent)) {
-      return `Mac (${deviceId})`
+      return `Mac (${this.localPeerId.slice(-4)})`
     } else if (/Windows/.test(userAgent)) {
-      return `Windows (${deviceId})`
+      return `Windows (${this.localPeerId.slice(-4)})`
     }
-    return `Device (${deviceId})`
+    return `Device (${this.localPeerId.slice(-4)})`
   }
 
-  private initializeBroadcastChannel() {
-    try {
-      // Use BroadcastChannel for same-origin communication (simulating local network)
-      this.broadcastChannel = new BroadcastChannel("music-player-network")
-
-      this.broadcastChannel.onmessage = (event) => {
-        const message: NetworkMessage = event.data
-        if (message.senderId !== this.localPeerId) {
-          this.handleBroadcastMessage(message)
-        }
-      }
-
-      this.isInitialized = true
-    } catch (error) {
-      console.warn("BroadcastChannel not supported, using localStorage fallback")
-      this.initializeLocalStorageFallback()
-    }
-  }
-
-  private initializeLocalStorageFallback() {
-    // Fallback using localStorage events for cross-tab communication
-    window.addEventListener("storage", (event) => {
-      if (event.key === "music-player-network" && event.newValue) {
-        try {
-          const message: NetworkMessage = JSON.parse(event.newValue)
-          if (message.senderId !== this.localPeerId) {
-            this.handleBroadcastMessage(message)
-          }
-        } catch (error) {
-          console.error("Failed to parse network message:", error)
-        }
-      }
-    })
-    this.isInitialized = true
-  }
-
-  private broadcastMessage(message: Omit<NetworkMessage, "senderId" | "timestamp">) {
-    const fullMessage: NetworkMessage = {
-      ...message,
-      senderId: this.localPeerId,
-      timestamp: Date.now(),
-    }
-
-    if (this.broadcastChannel) {
-      this.broadcastChannel.postMessage(fullMessage)
-    } else {
-      // Fallback to localStorage
-      localStorage.setItem("music-player-network", JSON.stringify(fullMessage))
-      // Clear after a short delay to allow other tabs to read it
-      setTimeout(() => {
-        if (localStorage.getItem("music-player-network") === JSON.stringify(fullMessage)) {
-          localStorage.removeItem("music-player-network")
-        }
-      }, 100)
-    }
-  }
-
-  private handleBroadcastMessage(message: NetworkMessage) {
-    switch (message.type) {
-      case "host-info":
-        this.handleHostDiscovered(message)
-        break
-      case "join-request":
-        this.handleJoinRequest(message)
-        break
-      case "playlist-update":
-        this.handlePlaylistUpdate(message)
-        break
-      case "playback-state":
-        this.handlePlaybackStateUpdate(message)
-        break
-      case "peer-info":
-        this.handlePeerInfo(message)
-        break
-      case "heartbeat":
-        this.handleHeartbeat(message)
-        break
-    }
-  }
-
-  private handleHostDiscovered(message: NetworkMessage) {
-    const hostInfo = message.data
-    if (!this.sharedPlaylists.has(hostInfo.playlistId)) {
-      const playlist: SharedPlaylist = {
-        id: hostInfo.playlistId,
-        name: hostInfo.playlistName || hostInfo.hostName,
-        hostId: message.senderId,
-        hostName: hostInfo.hostName,
-        songs: hostInfo.songs || [],
-        currentSong: hostInfo.currentSong,
-        isPlaying: hostInfo.isPlaying || false,
-        currentTime: hostInfo.currentTime || 0,
-        timestamp: message.timestamp,
-      }
-      this.sharedPlaylists.set(playlist.id, playlist)
-      this.emit("playlist_discovered", playlist)
-    }
-  }
-
-  private handleJoinRequest(message: NetworkMessage) {
-    if (this.isCurrentlySharing && message.data.playlistId === this.currentPlaylistId) {
-      // Accept the join request
-      const peer: NetworkPeer = {
-        id: message.senderId,
-        name: message.data.peerName,
-        connection: null as any, // Simplified for demo
-        isHost: false,
-        lastSeen: Date.now(),
-      }
-
-      this.peers.set(peer.id, peer)
-      this.emit("peer_connected", peer.id)
-
-      // Send current playlist state to the new peer
-      this.sendPlaylistToPeer(message.senderId)
-    }
-  }
-
-  private handlePlaylistUpdate(message: NetworkMessage) {
-    if (!this.isCurrentlySharing) {
-      this.emit("playlist_updated", {
-        id: message.data.playlistId,
-        name: message.data.playlistName,
-        hostName: message.data.hostName,
-        songs: message.data.songs,
-      })
-    }
-  }
-
-  private handlePlaybackStateUpdate(message: NetworkMessage) {
-    if (!this.isCurrentlySharing) {
-      this.emit("playback_state_updated", message.data)
-    }
-  }
-
-  private handlePeerInfo(message: NetworkMessage) {
-    const existingPeer = this.peers.get(message.senderId)
-    if (existingPeer) {
-      existingPeer.name = message.data.name
-      existingPeer.lastSeen = Date.now()
-    }
-  }
-
-  private handleHeartbeat(message: NetworkMessage) {
-    const peer = this.peers.get(message.senderId)
-    if (peer) {
-      peer.lastSeen = Date.now()
-    }
-  }
-
-  private sendPlaylistToPeer(peerId: string) {
-    // In a real implementation, this would send via WebRTC
-    // For now, we'll broadcast the current state
-    if (this.isCurrentlySharing) {
-      this.broadcastMessage({
-        type: "playlist-update",
-        data: {
-          playlistId: this.currentPlaylistId,
-          playlistName: this.getPlaylistName(),
-          hostName: this.peerName,
-          songs: this.getCurrentPlaylist(),
-        },
-      })
-    }
-  }
-
-  private getCurrentPlaylist() {
-    // This would be set when sharing starts
-    return []
-  }
-
-  private getPlaylistName() {
-    return `${this.peerName}'s Playlist`
-  }
-
-  async sharePlaylist(songs: any[], playlistName?: string): Promise<string> {
-    if (!this.isInitialized) {
-      throw new Error("Network service not initialized")
-    }
-
-    this.currentPlaylistId = `playlist_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`
-    this.isCurrentlySharing = true
-
-    // Store current playlist
-    const playlist: SharedPlaylist = {
-      id: this.currentPlaylistId,
-      name: playlistName || this.getPlaylistName(),
-      hostId: this.localPeerId,
-      hostName: this.peerName,
-      songs,
-      isPlaying: false,
-      currentTime: 0,
-      timestamp: Date.now(),
-    }
-
-    this.sharedPlaylists.set(this.currentPlaylistId, playlist)
-
-    // Start broadcasting availability
-    this.startHostBroadcast(playlist)
+  async startHosting(): Promise<void> {
+    this.isHost = true
+    this.startDiscoveryBroadcast()
     this.startHeartbeat()
-
-    // Generate shareable URL
-    const shareUrl = `${window.location.origin}${window.location.pathname}?join=${this.currentPlaylistId}&host=${encodeURIComponent(this.peerName)}`
-
-    return shareUrl
+    console.log(`Started hosting as ${this.deviceName}`)
   }
 
-  private startHostBroadcast(playlist: SharedPlaylist) {
-    // Broadcast immediately
-    this.broadcastHostInfo(playlist)
+  async stopHosting(): Promise<void> {
+    this.isHost = false
+    this.stopDiscoveryBroadcast()
+    this.stopHeartbeat()
+    this.disconnectAllPeers()
+    console.log("Stopped hosting")
+  }
 
-    // Then broadcast every 5 seconds
+  async joinSession(hostId: string): Promise<void> {
+    try {
+      const connection = await this.createPeerConnection(hostId, false)
+      const dataChannel = connection.createDataChannel("playlist-sync")
+
+      const peer: NetworkPeer = {
+        id: hostId,
+        name: "Host",
+        connection,
+        dataChannel,
+        isHost: true,
+      }
+
+      this.setupDataChannel(dataChannel, peer)
+      this.peers.set(hostId, peer)
+
+      // Send join request
+      this.sendMessage(peer, {
+        type: "peer-info",
+        data: { id: this.localPeerId, name: this.deviceName },
+        timestamp: Date.now(),
+      })
+
+      console.log(`Joined session hosted by ${hostId}`)
+    } catch (error) {
+      console.error("Failed to join session:", error)
+      throw error
+    }
+  }
+
+  async leaveSession(): Promise<void> {
+    this.disconnectAllPeers()
+    console.log("Left session")
+  }
+
+  private async createPeerConnection(peerId: string, isHost: boolean): Promise<RTCPeerConnection> {
+    const configuration: RTCConfiguration = {
+      iceServers: [{ urls: "stun:stun.l.google.com:19302" }, { urls: "stun:stun1.l.google.com:19302" }],
+    }
+
+    const connection = new RTCPeerConnection(configuration)
+
+    connection.oniceconnectionstatechange = () => {
+      console.log(`ICE connection state: ${connection.iceConnectionState}`)
+      if (connection.iceConnectionState === "disconnected" || connection.iceConnectionState === "failed") {
+        this.handlePeerDisconnection(peerId)
+      }
+    }
+
+    connection.ondatachannel = (event) => {
+      const channel = event.channel
+      const peer = this.peers.get(peerId)
+      if (peer) {
+        peer.dataChannel = channel
+        this.setupDataChannel(channel, peer)
+      }
+    }
+
+    return connection
+  }
+
+  private setupDataChannel(channel: RTCDataChannel, peer: NetworkPeer): void {
+    channel.onopen = () => {
+      console.log(`Data channel opened with ${peer.name}`)
+      this.updatePeerList()
+    }
+
+    channel.onclose = () => {
+      console.log(`Data channel closed with ${peer.name}`)
+      this.handlePeerDisconnection(peer.id)
+    }
+
+    channel.onmessage = (event) => {
+      try {
+        const message: NetworkMessage = JSON.parse(event.data)
+        this.handleMessage(message, peer)
+      } catch (error) {
+        console.error("Failed to parse message:", error)
+      }
+    }
+
+    channel.onerror = (error) => {
+      console.error(`Data channel error with ${peer.name}:`, error)
+    }
+  }
+
+  private handleMessage(message: NetworkMessage, sender: NetworkPeer): void {
+    switch (message.type) {
+      case "playlist-update":
+        if (this.onPlaylistUpdate) {
+          this.onPlaylistUpdate(message.data.songs)
+        }
+        break
+
+      case "playback-state":
+        if (this.onPlaybackStateUpdate) {
+          this.onPlaybackStateUpdate(message.data.isPlaying, message.data.currentTime, message.data.currentSong)
+        }
+        break
+
+      case "sync-request":
+        if (this.isHost) {
+          // Send current state to requesting peer
+          this.sendCurrentState(sender)
+        }
+        break
+
+      case "peer-info":
+        sender.name = message.data.name
+        this.updatePeerList()
+        break
+
+      case "heartbeat":
+        // Update last seen timestamp
+        break
+    }
+  }
+
+  private sendMessage(peer: NetworkPeer, message: NetworkMessage): void {
+    if (peer.dataChannel && peer.dataChannel.readyState === "open") {
+      try {
+        peer.dataChannel.send(JSON.stringify(message))
+      } catch (error) {
+        console.error(`Failed to send message to ${peer.name}:`, error)
+      }
+    }
+  }
+
+  private broadcastMessage(message: NetworkMessage): void {
+    this.peers.forEach((peer) => {
+      this.sendMessage(peer, message)
+    })
+  }
+
+  sharePlaylist(playlistData: PlaylistData): void {
+    if (!this.isHost) return
+
+    const message: NetworkMessage = {
+      type: "playlist-update",
+      data: playlistData,
+      timestamp: Date.now(),
+    }
+
+    this.broadcastMessage(message)
+  }
+
+  sharePlaybackState(isPlaying: boolean, currentTime: number, currentSong?: string): void {
+    if (!this.isHost) return
+
+    const message: NetworkMessage = {
+      type: "playback-state",
+      data: { isPlaying, currentTime, currentSong },
+      timestamp: Date.now(),
+    }
+
+    this.broadcastMessage(message)
+  }
+
+  private sendCurrentState(peer: NetworkPeer): void {
+    // This would be called with current playlist and playback state
+    // Implementation depends on how the current state is accessed
+  }
+
+  private handlePeerDisconnection(peerId: string): void {
+    const peer = this.peers.get(peerId)
+    if (peer) {
+      peer.connection.close()
+      this.peers.delete(peerId)
+      this.updatePeerList()
+      console.log(`Peer ${peer.name} disconnected`)
+    }
+  }
+
+  private disconnectAllPeers(): void {
+    this.peers.forEach((peer) => {
+      peer.connection.close()
+    })
+    this.peers.clear()
+    this.updatePeerList()
+  }
+
+  private startDiscoveryBroadcast(): void {
+    // In a real implementation, this would use mDNS or a discovery service
+    // For now, we'll simulate local network discovery
     this.discoveryInterval = setInterval(() => {
-      this.broadcastHostInfo(playlist)
+      console.log(`Broadcasting availability: ${this.deviceName}`)
     }, 5000)
   }
 
-  private broadcastHostInfo(playlist: SharedPlaylist) {
-    this.broadcastMessage({
-      type: "host-info",
-      data: {
-        playlistId: playlist.id,
-        playlistName: playlist.name,
-        hostName: this.peerName,
-        songs: playlist.songs,
-        currentSong: playlist.currentSong,
-        isPlaying: playlist.isPlaying,
-        currentTime: playlist.currentTime,
-      },
-    })
-  }
-
-  private startHeartbeat() {
-    this.heartbeatInterval = setInterval(() => {
-      this.broadcastMessage({
-        type: "heartbeat",
-        data: {
-          peerId: this.localPeerId,
-          name: this.peerName,
-          isHost: this.isCurrentlySharing,
-        },
-      })
-
-      // Clean up old peers (haven't been seen in 30 seconds)
-      const now = Date.now()
-      for (const [peerId, peer] of this.peers.entries()) {
-        if (now - peer.lastSeen > 30000) {
-          this.peers.delete(peerId)
-          this.emit("peer_disconnected", peerId)
-        }
-      }
-    }, 10000)
-  }
-
-  stopSharing() {
-    this.isCurrentlySharing = false
-    this.currentPlaylistId = ""
-
+  private stopDiscoveryBroadcast(): void {
     if (this.discoveryInterval) {
       clearInterval(this.discoveryInterval)
       this.discoveryInterval = undefined
     }
+  }
 
+  private startHeartbeat(): void {
+    this.heartbeatInterval = setInterval(() => {
+      const heartbeat: NetworkMessage = {
+        type: "heartbeat",
+        data: { id: this.localPeerId, name: this.deviceName },
+        timestamp: Date.now(),
+      }
+      this.broadcastMessage(heartbeat)
+    }, 10000)
+  }
+
+  private stopHeartbeat(): void {
     if (this.heartbeatInterval) {
       clearInterval(this.heartbeatInterval)
       this.heartbeatInterval = undefined
     }
-
-    // Disconnect all peers
-    this.peers.clear()
-    this.sharedPlaylists.clear()
   }
 
-  async joinPlaylist(playlistId: string): Promise<void> {
-    const playlist = this.sharedPlaylists.get(playlistId)
-    if (!playlist) {
-      throw new Error("Playlist not found")
-    }
-
-    // Send join request
-    this.broadcastMessage({
-      type: "join-request",
-      data: {
-        playlistId,
-        peerName: this.peerName,
-      },
-    })
-
-    // Wait a moment for response
-    await new Promise((resolve) => setTimeout(resolve, 1000))
-  }
-
-  async discoverPlaylists(): Promise<SharedPlaylist[]> {
-    // Clear old playlists
-    this.sharedPlaylists.clear()
-
-    // Request host info from all active hosts
-    this.broadcastMessage({
-      type: "sync-request",
-      data: {},
-    })
-
-    // Wait for responses
-    await new Promise((resolve) => setTimeout(resolve, 2000))
-
-    return Array.from(this.sharedPlaylists.values())
-  }
-
-  updatePlaylist(songs: any[]) {
-    if (this.isCurrentlySharing) {
-      const playlist = this.sharedPlaylists.get(this.currentPlaylistId)
-      if (playlist) {
-        playlist.songs = songs
-        playlist.timestamp = Date.now()
-
-        this.broadcastMessage({
-          type: "playlist-update",
-          data: {
-            playlistId: this.currentPlaylistId,
-            playlistName: playlist.name,
-            hostName: this.peerName,
-            songs,
-          },
-        })
-      }
+  private updatePeerList(): void {
+    if (this.onPeerListUpdate) {
+      this.onPeerListUpdate(Array.from(this.peers.values()))
     }
   }
 
-  updatePlaybackState(isPlaying: boolean, currentTime: number, currentSong?: string) {
-    if (this.isCurrentlySharing) {
-      const playlist = this.sharedPlaylists.get(this.currentPlaylistId)
-      if (playlist) {
-        playlist.isPlaying = isPlaying
-        playlist.currentTime = currentTime
-        playlist.currentSong = currentSong
-        playlist.timestamp = Date.now()
-
-        this.broadcastMessage({
-          type: "playback-state",
-          data: {
-            isPlaying,
-            currentTime,
-            currentSong,
-          },
-        })
-      }
-    }
+  // Public methods for setting callbacks
+  setOnPlaylistUpdate(callback: (songs: any[]) => void): void {
+    this.onPlaylistUpdate = callback
   }
 
-  // Handle URL-based joining
-  async joinFromUrl(url: string): Promise<void> {
-    const urlObj = new URL(url)
-    const playlistId = urlObj.searchParams.get("join")
-    const hostName = urlObj.searchParams.get("host")
+  setOnPlaybackStateUpdate(callback: (isPlaying: boolean, currentTime: number, currentSong?: string) => void): void {
+    this.onPlaybackStateUpdate = callback
+  }
 
-    if (playlistId && hostName) {
-      // First try to discover the playlist
-      await this.discoverPlaylists()
-
-      // Then try to join
-      await this.joinPlaylist(playlistId)
-    } else {
-      throw new Error("Invalid share URL")
-    }
+  setOnPeerListUpdate(callback: (peers: NetworkPeer[]) => void): void {
+    this.onPeerListUpdate = callback
   }
 
   // Getters
-  isSharing(): boolean {
-    return this.isCurrentlySharing
+  getIsHost(): boolean {
+    return this.isHost
   }
 
-  // Add this method after the isSharing method
-  isCurrentlySharing(): boolean {
-    return this.isCurrentlySharing
-  }
-
-  getConnectedPeers(): NetworkPeer[] {
+  getPeers(): NetworkPeer[] {
     return Array.from(this.peers.values())
   }
 
-  getSharedPlaylists(): SharedPlaylist[] {
-    return Array.from(this.sharedPlaylists.values())
+  getDeviceName(): string {
+    return this.deviceName
   }
 
-  getPeerName(): string {
-    return this.peerName
+  getPeerId(): string {
+    return this.localPeerId
   }
 
-  setPeerName(name: string) {
-    this.peerName = name
-  }
-
-  getCurrentPlaylistId(): string {
-    return this.currentPlaylistId
+  // Mock discovery for demo purposes
+  async discoverHosts(): Promise<Array<{ id: string; name: string }>> {
+    // In a real implementation, this would discover actual hosts on the network
+    return new Promise((resolve) => {
+      setTimeout(() => {
+        resolve([
+          { id: "demo_host_1", name: "Living Room Speaker" },
+          { id: "demo_host_2", name: "Kitchen Display" },
+        ])
+      }, 1000)
+    })
   }
 }
 
-// Export types and service
-export type { NetworkPeer, SharedPlaylist, PlaylistData, NetworkMessage }
-export { NetworkSharingService as NetworkSharingManager }
+export type { NetworkPeer, PlaylistData, NetworkMessage }
