@@ -28,9 +28,10 @@ const MemoizedLyricLine = memo(
     <p
       ref={refProp}
       className={`
-  transition-all duration-300 ease-in-out text-2xl font-semibold p-2 rounded-md
-  ${isCurrent ? "text-primary scale-105 bg-primary/10" : "text-muted-foreground opacity-70"}
-`}
+        transition-all duration-300 ease-in-out text-2xl font-semibold p-2 rounded-md
+        w-full max-w-full break-words text-center leading-relaxed
+        ${isCurrent ? "text-primary scale-105 bg-primary/10" : "text-muted-foreground opacity-70"}
+      `}
     >
       {line.text}
     </p>
@@ -126,7 +127,7 @@ export function LyricsDisplay({ isVisible, onClose, currentSong, currentTimeMs }
 
     if (lyricsData?.synced && lyricsData.synced.length > 0) {
       return (
-        <div className="text-center space-y-4">
+        <div className="text-center space-y-4 w-full max-w-full">
           {lyricsData.synced.map((line, index) => (
             <MemoizedLyricLine
               key={`${line.time}-${index}`}
@@ -140,7 +141,11 @@ export function LyricsDisplay({ isVisible, onClose, currentSong, currentTimeMs }
     }
 
     if (lyricsData?.plain) {
-      return <div className="whitespace-pre-wrap text-lg text-center leading-relaxed">{lyricsData.plain}</div>
+      return (
+        <div className="whitespace-pre-wrap text-lg text-center leading-relaxed w-full max-w-full break-words">
+          {lyricsData.plain}
+        </div>
+      )
     }
 
     return (
@@ -152,18 +157,18 @@ export function LyricsDisplay({ isVisible, onClose, currentSong, currentTimeMs }
   }
 
   return (
-    <div className="h-[84vh] flex flex-col bg-card/50 rounded-lg border">
-      <div className="flex flex-row items-center justify-between p-4 border-b shrink-0">
-        <h2 className="text-xl font-bold flex items-center gap-2">
-          <Mic className="w-5 h-5" />
-          Lyrics
+    <div className="h-[84vh] w-full flex flex-col bg-card/50 rounded-lg border overflow-hidden">
+      <div className="flex flex-row items-center justify-between p-4 border-b shrink-0 min-h-0">
+        <h2 className="text-xl font-bold flex items-center gap-2 truncate">
+          <Mic className="w-5 h-5 flex-shrink-0" />
+          <span className="truncate">Lyrics</span>
         </h2>
-        <Button variant="ghost" size="icon" onClick={onClose}>
+        <Button variant="ghost" size="icon" onClick={onClose} className="flex-shrink-0">
           <X className="w-4 h-4" />
         </Button>
       </div>
-      <div className="flex-1 overflow-y-auto p-6 h-0">
-        <div className="flex flex-col items-center justify-center min-h-full">{renderContent()}</div>
+      <div className="flex-1 overflow-y-auto overflow-x-hidden p-6 h-0 w-full">
+        <div className="flex flex-col items-center justify-center min-h-full w-full max-w-full">{renderContent()}</div>
       </div>
     </div>
   )

@@ -572,7 +572,7 @@ export default function EnhancedMusicPlayer() {
   }, [currentSong])
 
   return (
-    <div className="min-h-screen relative">
+    <div className="min-h-screen max-h-screen overflow-hidden relative">
       <AlbumArtBackground albumArt={currentSong?.albumArt} songId={currentSong?.id} isTransitioning={isTransitioning} />
       <audio ref={audioRef} preload="metadata" className="hidden" />
       <div className="container mx-auto p-6 relative z-10">
@@ -595,8 +595,8 @@ export default function EnhancedMusicPlayer() {
             <ThemeToggle />
           </div>
         </div>
-        <div className="grid lg:grid-cols-2 gap-6 h-[calc(100vh-120px)]">
-          <div className="flex flex-col gap-6 h-full">
+        <div className="grid lg:grid-cols-2 gap-6 h-[calc(100vh-120px)] overflow-hidden">
+          <div className="flex flex-col gap-6 h-full overflow-hidden">
             {showLyrics ? (
               <LyricsDisplay
                 isVisible={showLyrics}
@@ -786,7 +786,7 @@ export default function EnhancedMusicPlayer() {
               </>
             )}
           </div>
-          <div className="h-full bg-transparent">
+          <div className="h-full bg-transparent overflow-hidden">
             <EnhancedPlaylist
               songs={songs}
               currentSong={currentSong}
