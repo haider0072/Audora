@@ -92,22 +92,22 @@ const SongItem = memo(
     return (
       <div
         className={`
-        group relative flex w-full items-center gap-3 p-3 rounded-lg transition-all duration-150 ease-out cursor-pointer
-        ${
-          isCurrentSong
-            ? "bg-primary/10 border border-primary/30 dark:bg-primary/15 dark:border-primary/40"
-            : "border border-transparent hover:border-border/50"
-        }
-        ${!isCurrentSong ? "hover:bg-muted/30 hover:shadow-sm" : ""}
-      `}
+          group relative flex w-full items-center gap-3 p-3 rounded-lg transition-all duration-150 ease-out cursor-pointer
+          ${
+            isCurrentSong
+              ? "bg-primary/10 border border-primary/30 dark:bg-primary/15 dark:border-primary/40"
+              : "border border-transparent hover:border-border/50"
+          }
+          ${!isCurrentSong ? "hover:bg-muted/30 hover:shadow-sm" : ""}
+        `}
         onClick={() => onSongSelect(song)}
       >
         {/* Background overlay for smooth transitions */}
         <div
           className={`
-          absolute inset-0 rounded-lg transition-all duration-150 ease-out
-          ${!isCurrentSong ? "opacity-0 group-hover:opacity-100 bg-muted/20" : ""}
-        `}
+            absolute inset-0 rounded-lg transition-all duration-150 ease-out
+            ${!isCurrentSong ? "opacity-0 group-hover:opacity-100 bg-muted/20" : ""}
+          `}
         />
 
         <div className="relative flex-shrink-0 z-10">
@@ -117,19 +117,20 @@ const SongItem = memo(
             title={`${song.title} album art`}
             size="small"
             className={`
-            transition-transform duration-150 ease-out group-hover:scale-105
-            ${isCurrentSong ? "ring-2 ring-primary/50" : ""}
-          `}
+              transition-transform duration-150 ease-out group-hover:scale-105
+              ${isCurrentSong ? "ring-2 ring-primary/50" : ""}
+            `}
           />
         </div>
 
-        <div className="relative flex-1 min-w-0 z-10">
-          <div className="flex items-center gap-2 mb-1">
+        <div className="relative flex-1 min-w-0 z-10 overflow-hidden">
+          <div className="flex items-center gap-2 mb-1 w-full">
             <h4
               className={`
-              font-medium truncate transition-colors duration-150 ease-out
-              ${isCurrentSong ? "text-primary" : "text-foreground group-hover:text-foreground"}
-            `}
+                font-medium truncate transition-colors duration-150 ease-out flex-1 min-w-0
+                ${isCurrentSong ? "text-primary" : "text-foreground group-hover:text-foreground"}
+              `}
+              title={song.title}
             >
               {song.title}
             </h4>
@@ -141,23 +142,26 @@ const SongItem = memo(
           </div>
 
           {showArtistAlbum && (
-            <p className="text-sm text-muted-foreground truncate transition-colors duration-150 ease-out group-hover:text-muted-foreground/80">
+            <p
+              className="text-sm text-muted-foreground truncate transition-colors duration-150 ease-out group-hover:text-muted-foreground/80 mb-1 w-full"
+              title={`${song.artist || "Unknown Artist"}${song.album ? ` • ${song.album}` : ""}`}
+            >
               {song.artist || "Unknown Artist"}
               {song.album && ` • ${song.album}`}
             </p>
           )}
 
-          <div className="flex items-center gap-2 mt-1">
+          <div className="flex items-center gap-2 mt-1 flex-wrap w-full">
             <Badge
               variant="outline"
               className={`
-              text-xs transition-all duration-150 ease-out
-              ${
-                isCurrentSong
-                  ? "border-primary/30 text-primary bg-primary/5"
-                  : "group-hover:border-border group-hover:bg-muted/50"
-              }
-            `}
+                text-xs transition-all duration-150 ease-out flex-shrink-0
+                ${
+                  isCurrentSong
+                    ? "border-primary/30 text-primary bg-primary/5"
+                    : "group-hover:border-border group-hover:bg-muted/50"
+                }
+              `}
             >
               {song.format}
             </Badge>
@@ -165,38 +169,38 @@ const SongItem = memo(
               <Badge
                 variant="secondary"
                 className={`
-                text-xs transition-all duration-150 ease-out
-                ${
-                  isCurrentSong
-                    ? "bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-100 border-green-200 dark:border-green-800"
-                    : "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100 group-hover:bg-green-200 dark:group-hover:bg-green-800"
-                }
-              `}
+                  text-xs transition-all duration-150 ease-out flex-shrink-0
+                  ${
+                    isCurrentSong
+                      ? "bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-100 border-green-200 dark:border-green-800"
+                      : "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100 group-hover:bg-green-200 dark:group-hover:bg-green-800"
+                  }
+                `}
               >
                 Hi-Res
               </Badge>
             )}
-            <span className="text-xs text-muted-foreground transition-colors duration-150 ease-out group-hover:text-muted-foreground/80">
+            <span className="text-xs text-muted-foreground transition-colors duration-150 ease-out group-hover:text-muted-foreground/80 flex-shrink-0">
               {formatBitrate(song.bitrate)}bps
             </span>
             {song.duration && (
-              <span className="text-xs text-muted-foreground transition-colors duration-150 ease-out group-hover:text-muted-foreground/80">
+              <span className="text-xs text-muted-foreground transition-colors duration-150 ease-out group-hover:text-muted-foreground/80 flex-shrink-0">
                 {formatTime(song.duration)}
               </span>
             )}
           </div>
         </div>
 
-        <div className="relative z-10">
+        <div className="relative z-10 flex-shrink-0">
           <Button
             variant="ghost"
             size="icon"
             className={`
-            flex-shrink-0 transition-all duration-150 ease-out
-            opacity-0 group-hover:opacity-100 scale-90 group-hover:scale-100
-            hover:bg-destructive/10 hover:text-destructive
-            ${isCurrentSong ? "opacity-60 hover:opacity-100" : ""}
-          `}
+              flex-shrink-0 transition-all duration-150 ease-out
+              opacity-0 group-hover:opacity-100 scale-90 group-hover:scale-100
+              hover:bg-destructive/10 hover:text-destructive
+              ${isCurrentSong ? "opacity-60 hover:opacity-100" : ""}
+            `}
             onClick={(e) => {
               e.stopPropagation()
               onSongRemove(song.id)
@@ -299,21 +303,21 @@ export function EnhancedPlaylist({
   }, [filteredSongs, viewMode])
 
   return (
-    <Card className="h-full bg-transparent border-none shadow-none">
-      <CardHeader>
-        <CardTitle className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Music className="w-5 h-5" />
-            Playlist ({songs.length} songs)
+    <Card className="h-full bg-transparent border-none shadow-none flex flex-col overflow-hidden">
+      <CardHeader className="flex-shrink-0 pb-4">
+        <CardTitle className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2 min-w-0 flex-1">
+            <Music className="w-5 h-5 flex-shrink-0" />
+            <span className="truncate">Playlist ({songs.length} songs)</span>
           </div>
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <div className="flex items-center gap-2 text-sm text-muted-foreground flex-shrink-0">
             <Clock className="w-4 h-4" />
-            {formatTime(getTotalDuration())}
+            <span className="whitespace-nowrap">{formatTime(getTotalDuration())}</span>
           </div>
         </CardTitle>
 
         {/* Search and Controls */}
-        <div className="space-y-3">
+        <div className="space-y-4">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <Input
@@ -324,12 +328,13 @@ export function EnhancedPlaylist({
             />
           </div>
 
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex items-center gap-2 flex-wrap">
               <Button
                 variant={viewMode === "grouped" ? "default" : "outline"}
                 size="sm"
                 onClick={() => onViewModeChange("grouped")}
+                className="whitespace-nowrap"
               >
                 <Music className="w-4 h-4 mr-2" />
                 Grouped
@@ -338,14 +343,20 @@ export function EnhancedPlaylist({
                 variant={viewMode === "list" ? "default" : "outline"}
                 size="sm"
                 onClick={() => onViewModeChange("list")}
+                className="whitespace-nowrap"
               >
                 <List className="w-4 h-4 mr-2" />
-                List {viewMode === "list" && <span className="text-xs ml-1">(by Artist)</span>}
+                List {viewMode === "list" && <span className="text-xs ml-1 hidden sm:inline">(by Artist)</span>}
               </Button>
             </div>
 
-            <div className="flex items-center gap-2">
-              <Button variant={shuffleMode ? "default" : "outline"} size="sm" onClick={onShuffleToggle}>
+            <div className="flex items-center gap-2 flex-wrap">
+              <Button
+                variant={shuffleMode ? "default" : "outline"}
+                size="sm"
+                onClick={onShuffleToggle}
+                className="whitespace-nowrap"
+              >
                 {shuffleMode ? <Shuffle className="w-4 h-4 mr-2" /> : <ShuffleOff className="w-4 h-4 mr-2" />}
                 Shuffle
               </Button>
@@ -357,7 +368,7 @@ export function EnhancedPlaylist({
                     <Button
                       variant="outline"
                       size="sm"
-                      className="text-destructive hover:text-destructive bg-transparent"
+                      className="text-destructive hover:text-destructive bg-transparent whitespace-nowrap"
                     >
                       <RotateCcw className="w-4 h-4 mr-2" />
                       Reset
@@ -394,7 +405,7 @@ export function EnhancedPlaylist({
         </div>
       </CardHeader>
 
-      <CardContent>
+      <CardContent className="flex-1 overflow-hidden p-0 px-6 pb-6">
         {/* Loading State */}
         {isLoading && (
           <div className="mb-4 p-4 bg-muted/50 rounded-lg">
@@ -416,8 +427,8 @@ export function EnhancedPlaylist({
           </div>
         )}
 
-        <ScrollArea className="h-[600px]">
-          <div className="space-y-2">
+        <ScrollArea className="h-full w-full">
+          <div className="space-y-2 pr-4 w-full">
             {songs.length === 0 ? (
               <div className="text-center text-muted-foreground py-8">
                 <Music className="w-12 h-12 mx-auto mb-4 opacity-50" />
@@ -432,46 +443,57 @@ export function EnhancedPlaylist({
               </div>
             ) : viewMode === "list" ? (
               // List view - sorted by artist
-              <div className="space-y-1">
+              <div className="space-y-1 w-full">
                 <div className="text-xs text-muted-foreground mb-2 px-3">Sorted by Artist</div>
                 {filteredSongs.map((song) => (
-                  <SongItem
-                    key={song.id}
-                    song={song}
-                    isCurrentSong={currentSong?.id === song.id}
-                    showArtistAlbum={true}
-                    onSongSelect={onSongSelect}
-                    onSongRemove={onSongRemove}
-                  />
+                  <div key={song.id} className="w-full">
+                    <SongItem
+                      song={song}
+                      isCurrentSong={currentSong?.id === song.id}
+                      showArtistAlbum={true}
+                      onSongSelect={onSongSelect}
+                      onSongRemove={onSongRemove}
+                    />
+                  </div>
                 ))}
               </div>
             ) : (
               // Grouped view
-              Object.entries(groupedSongs).map(([artist, albums]) => (
-                <div key={artist} className="space-y-3">
-                  <div className="sticky top-0 bg-background z-20 py-2">
-                    <h3 className="font-semibold text-lg">{artist}</h3>
-                    <Separator className="mt-2" />
-                  </div>
-
-                  {Object.entries(albums).map(([album, albumSongs]) => (
-                    <div key={`${artist}-${album}`} className="ml-4 space-y-2">
-                      <h4 className="font-medium text-muted-foreground text-sm uppercase tracking-wide">{album}</h4>
-                      <div className="space-y-1 ml-4">
-                        {albumSongs.map((song) => (
-                          <SongItem
-                            key={song.id}
-                            song={song}
-                            isCurrentSong={currentSong?.id === song.id}
-                            onSongSelect={onSongSelect}
-                            onSongRemove={onSongRemove}
-                          />
-                        ))}
-                      </div>
+              <div className="w-full">
+                {Object.entries(groupedSongs).map(([artist, albums]) => (
+                  <div key={artist} className="space-y-3 mb-6 w-full">
+                    <div className="sticky top-0 bg-background z-20 py-2">
+                      <h3 className="font-semibold text-lg truncate" title={artist}>
+                        {artist}
+                      </h3>
+                      <Separator className="mt-2" />
                     </div>
-                  ))}
-                </div>
-              ))
+
+                    {Object.entries(albums).map(([album, albumSongs]) => (
+                      <div key={`${artist}-${album}`} className="ml-4 space-y-2 w-full">
+                        <h4
+                          className="font-medium text-muted-foreground text-sm uppercase tracking-wide truncate"
+                          title={album}
+                        >
+                          {album}
+                        </h4>
+                        <div className="space-y-1 ml-4 w-full">
+                          {albumSongs.map((song) => (
+                            <div key={song.id} className="w-full">
+                              <SongItem
+                                song={song}
+                                isCurrentSong={currentSong?.id === song.id}
+                                onSongSelect={onSongSelect}
+                                onSongRemove={onSongRemove}
+                              />
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ))}
+              </div>
             )}
           </div>
         </ScrollArea>
