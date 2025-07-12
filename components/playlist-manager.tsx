@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "./ui/dropdown-menu";
 import { Progress } from "@/components/ui/progress"
 import { Badge } from "@/components/ui/badge"
 import {
@@ -25,7 +26,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog"
 import { toast } from "@/hooks/use-toast"
-import { Database, Download, HardDrive, Info, RotateCcw, AlertTriangle, CheckCircle, XCircle } from "lucide-react"
+import { Database, Download, HardDrive, Info, RotateCcw, AlertTriangle, CheckCircle, XCircle, EllipsisVertical,ImageIcon  } from "lucide-react"
 import { PlaylistStorage } from "../utils/playlist-storage"
 import { AlbumArtManager } from "./album-art-manager"
 
@@ -45,6 +46,7 @@ export function PlaylistManager({ songCount, songs, onPlaylistReset }: PlaylistM
   })
   const [isLoading, setIsLoading] = useState(false)
   const [showStorageInfo, setShowStorageInfo] = useState(false)
+  const [showManager, setShowManager] = useState(false)
 
   const updateStorageInfo = async () => {
     try {
@@ -123,11 +125,105 @@ export function PlaylistManager({ songCount, songs, onPlaylistReset }: PlaylistM
       : 0
 
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex items-center gap-4">
+      {songCount > 0 && (
+        <span style={{ display: 'none' }}>
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button
+                id="reset-playlist-trigger"
+                variant="outline"
+                size="sm"
+                className="text-destructive hover:text-destructive bg-transparent gap-2"
+                disabled={isLoading}
+              >
+                <RotateCcw className="w-4 h-4" />
+                Reset Playlist
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle className="flex items-center gap-2">
+                  <AlertTriangle className="w-5 h-5 text-destructive" />
+                  Reset Playlist
+                </AlertDialogTitle>
+                <AlertDialogDescription className="space-y-3">
+                  <div>
+                    This will permanently remove all songs from your playlist and clear all stored data. This action
+                    cannot be undone.
+                  </div>
+                  <div className="bg-muted p-3 rounded-lg space-y-2">
+                    <div className="font-medium text-sm">What will be cleared:</div>
+                    <ul className="text-sm space-y-1 text-muted-foreground">
+                      <li>• {songCount} songs from playlist</li>
+                      <li>• {formatBytes(storageInfo.used - storageInfo.albumArtSize)} of audio files</li>
+                      <li>
+                        • {storageInfo.albumArtCount} album art images ({formatBytes(storageInfo.albumArtSize)})
+                      </li>
+                      <li>• All song metadata and playback state</li>
+                    </ul>
+                  </div>
+                  <div className="flex items-center gap-2 text-sm text-amber-600 dark:text-amber-400">
+                    <AlertTriangle className="w-4 h-4" />
+                    <span>Your equalizer settings and preferences will be preserved.</span>
+                  </div>
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel disabled={isLoading}>Cancel</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={handleResetPlaylist}
+                  disabled={isLoading}
+                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                >
+                  {isLoading ? "Resetting..." : "Reset Playlist"}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        </span>
+      )}
+
+      {/* Storage Status Badge */}
+      {songCount > 0 && (
+        <Badge variant={storageInfo.songs === songCount ? "default" : "secondary"} className="text-xs">
+          {storageInfo.songs === songCount ? "Synced" : "Partial"}
+        </Badge>
+      )}
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button variant="outline" size="sm" className="h-8 w-8 p-0 bg-transparent">
+            <EllipsisVertical className="w-4 h-4" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          {/* Storage Info Trigger */}
+          <DropdownMenuItem onClick={() => setShowStorageInfo(true)} className="gap-2">
+            <Database className="w-4 h-4" />
+            Storage
+          </DropdownMenuItem>
+          {/* Album Art Manager Trigger */}
+          <DropdownMenuItem onClick={() => setShowManager(true)} className="gap-2">
+            <ImageIcon className="w-4 h-4" />
+            Album Art Manager
+          </DropdownMenuItem>
+          {/* Reset Playlist Trigger */}
+          {songCount > 0 && (
+            <DropdownMenuItem onClick={() => {
+              const btn = document.getElementById('reset-playlist-trigger');
+              if (btn) btn.click();
+            }} className="text-destructive gap-2">
+              <RotateCcw className="w-4 h-4" />
+              Reset Playlist
+            </DropdownMenuItem>
+          )}
+        </DropdownMenuContent>
+      </DropdownMenu>
+
       {/* Storage Info Dialog */}
       <Dialog open={showStorageInfo} onOpenChange={setShowStorageInfo}>
         <DialogTrigger asChild>
-          <Button variant="outline" size="sm" className="gap-2 bg-transparent">
+          <Button variant="outline" size="sm" className="gap-2 bg-transparent" style={{ display: 'none' }}>
             <Database className="w-4 h-4" />
             Storage
           </Button>
@@ -217,73 +313,9 @@ export function PlaylistManager({ songCount, songs, onPlaylistReset }: PlaylistM
         </DialogContent>
       </Dialog>
 
-      {/* Album Art Manager */}
-      <AlbumArtManager songs={songs} onAlbumArtUpdate={updateStorageInfo} />
+      {/* Album Art Manager Dialog controlled by parent */}
+      <AlbumArtManager songs={songs} onAlbumArtUpdate={updateStorageInfo} showManager={showManager} setShowManager={setShowManager} hideTrigger={true} />
 
-      {/* Reset Playlist Button */}
-      {songCount > 0 && (
-        <AlertDialog>
-          <AlertDialogTrigger asChild>
-            <Button
-              variant="outline"
-              size="sm"
-              className="text-destructive hover:text-destructive bg-transparent gap-2"
-              disabled={isLoading}
-            >
-              <RotateCcw className="w-4 h-4" />
-              Reset Playlist
-            </Button>
-          </AlertDialogTrigger>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle className="flex items-center gap-2">
-                <AlertTriangle className="w-5 h-5 text-destructive" />
-                Reset Playlist
-              </AlertDialogTitle>
-              <AlertDialogDescription className="space-y-3">
-                <div>
-                  This will permanently remove all songs from your playlist and clear all stored data. This action
-                  cannot be undone.
-                </div>
-
-                <div className="bg-muted p-3 rounded-lg space-y-2">
-                  <div className="font-medium text-sm">What will be cleared:</div>
-                  <ul className="text-sm space-y-1 text-muted-foreground">
-                    <li>• {songCount} songs from playlist</li>
-                    <li>• {formatBytes(storageInfo.used - storageInfo.albumArtSize)} of audio files</li>
-                    <li>
-                      • {storageInfo.albumArtCount} album art images ({formatBytes(storageInfo.albumArtSize)})
-                    </li>
-                    <li>• All song metadata and playback state</li>
-                  </ul>
-                </div>
-
-                <div className="flex items-center gap-2 text-sm text-amber-600 dark:text-amber-400">
-                  <AlertTriangle className="w-4 h-4" />
-                  <span>Your equalizer settings and preferences will be preserved.</span>
-                </div>
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel disabled={isLoading}>Cancel</AlertDialogCancel>
-              <AlertDialogAction
-                onClick={handleResetPlaylist}
-                disabled={isLoading}
-                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              >
-                {isLoading ? "Resetting..." : "Reset Playlist"}
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
-      )}
-
-      {/* Storage Status Badge */}
-      {songCount > 0 && (
-        <Badge variant={storageInfo.songs === songCount ? "default" : "secondary"} className="text-xs">
-          {storageInfo.songs === songCount ? "Synced" : "Partial"}
-        </Badge>
-      )}
     </div>
   )
 }

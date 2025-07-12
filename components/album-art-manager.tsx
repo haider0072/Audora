@@ -26,12 +26,17 @@ interface AlbumArtEntry {
 interface AlbumArtManagerProps {
   songs: Array<{ id: string; title?: string; artist?: string; albumArt?: string }>
   onAlbumArtUpdate?: () => void
+  showManager?: boolean
+  setShowManager?: (open: boolean) => void
+  hideTrigger?: boolean
 }
 
-export function AlbumArtManager({ songs, onAlbumArtUpdate }: AlbumArtManagerProps) {
+export function AlbumArtManager({ songs, onAlbumArtUpdate, showManager: showManagerProp, setShowManager: setShowManagerProp, hideTrigger }: AlbumArtManagerProps) {
   const [albumArtEntries, setAlbumArtEntries] = useState<AlbumArtEntry[]>([])
   const [isLoading, setIsLoading] = useState(false)
-  const [showManager, setShowManager] = useState(false)
+  const [internalShowManager, internalSetShowManager] = useState(false)
+  const showManager = showManagerProp !== undefined ? showManagerProp : internalShowManager;
+  const setShowManager = setShowManagerProp !== undefined ? setShowManagerProp : internalSetShowManager;
 
   const loadAlbumArtEntries = async () => {
     try {
@@ -108,7 +113,8 @@ export function AlbumArtManager({ songs, onAlbumArtUpdate }: AlbumArtManagerProp
 
   return (
     <Dialog open={showManager} onOpenChange={setShowManager}>
-      <DialogTrigger asChild>
+       {!hideTrigger && (
+        <DialogTrigger asChild>
         <Button variant="outline" size="sm" className="gap-2 bg-transparent">
           <ImageIcon className="w-4 h-4" />
           Album Art
@@ -119,6 +125,8 @@ export function AlbumArtManager({ songs, onAlbumArtUpdate }: AlbumArtManagerProp
           )}
         </Button>
       </DialogTrigger>
+
+      )}
       <DialogContent className="sm:max-w-2xl max-h-[80vh]">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">

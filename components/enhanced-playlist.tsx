@@ -143,9 +143,9 @@ const SongItem = memo(
           {showArtistAlbum && (
             <p
               className="text-sm text-muted-foreground truncate transition-colors duration-150 ease-out group-hover:text-muted-foreground/80 mb-1 w-full"
-              title={`${song.artist || "Unknown Artist"}${song.album ? ` • ${song.album}` : ""}`}
+              title={`${song.artists ? song.artists.join(", ") : (song.artist || "Unknown Artist")}${song.album ? ` • ${song.album}` : ""}`}
             >
-              {song.artist || "Unknown Artist"}
+              {song.artists ? song.artists.join(", ") : (song.artist || "Unknown Artist")}
               {song.album && ` • ${song.album}`}
             </p>
           )}
@@ -269,7 +269,7 @@ export function EnhancedPlaylist({
     const grouped: GroupedSongs = {}
 
     filteredSongs.forEach((song) => {
-      const artist = song.artist || "Unknown Artist"
+      const artist = song.artists?.[0] || song.artist || "Unknown Artist"
       const album = song.album || "Unknown Album"
 
       if (!grouped[artist]) {

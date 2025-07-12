@@ -1,6 +1,7 @@
 interface AudioMetadata {
   title?: string
   artist?: string
+  artists?: string[] // <-- Add this line
   album?: string
   year?: string
   genre?: string
@@ -177,6 +178,8 @@ export class MetadataExtractor {
           break
         case "TPE1":
           metadata.artist = textContent
+          metadata.artists = textContent.split(/;|,|\//).map(a => a.trim()).filter(Boolean)
+          console.log('Parsed artists (ID3v2):', metadata.artists)
           break
         case "TALB":
           metadata.album = textContent
@@ -192,9 +195,10 @@ export class MetadataExtractor {
 
       offset += 10 + frameSize
     }
-
     return metadata
+    
   }
+  
 
   private static parseVorbisComment(view: DataView, offset: number, blockSize: number): Partial<AudioMetadata> {
     const metadata: Partial<AudioMetadata> = {}
@@ -220,7 +224,9 @@ export class MetadataExtractor {
             metadata.title = value
             break
           case "ARTIST":
-            metadata.artist = value
+            if (!metadata.artists) metadata.artists = [];
+            metadata.artists.push(...value.split(/;|,|\//).map(a => a.trim()).filter(Boolean))
+            console.log('Parsed artists (Vorbis):', metadata.artists)
             break
           case "ALBUM":
             metadata.album = value
@@ -318,6 +324,7 @@ export class MetadataExtractor {
     } catch (error) {
       console.error("Error extracting FLAC album art:", error)
     }
+    
     return undefined
   }
 }

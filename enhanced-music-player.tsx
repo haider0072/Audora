@@ -196,8 +196,8 @@ export default function EnhancedMusicPlayer() {
 
   const sortedSongs = useMemo(() => {
     return [...songs].sort((a, b) => {
-      const artistA = (a.artist || "Unknown Artist").toLowerCase()
-      const artistB = (b.artist || "Unknown Artist").toLowerCase()
+      const artistA = (a.artists?.[0] || a.artist || "Unknown Artist").toLowerCase()
+      const artistB = (b.artists?.[0] || b.artist || "Unknown Artist").toLowerCase()
       if (artistA === artistB) {
         const albumA = (a.album || "Unknown Album").toLowerCase()
         const albumB = (b.album || "Unknown Album").toLowerCase()

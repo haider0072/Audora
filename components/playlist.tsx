@@ -90,7 +90,7 @@ export function Playlist({ songs, currentSong, onSongSelect, onSongRemove }: Pla
                       {currentSong?.id === song.id && <Play className="w-4 h-4 text-primary flex-shrink-0" />}
                     </div>
                     <p className="text-sm text-muted-foreground truncate">
-                      {song.artist || "Unknown Artist"}
+                      {song.artists ? song.artists.join(", ") : (song.artist || "Unknown Artist")}
                       {song.album && ` • ${song.album}`}
                     </p>
                     <div className="flex items-center gap-2 mt-1">
@@ -129,5 +129,3 @@ export function Playlist({ songs, currentSong, onSongSelect, onSongRemove }: Pla
     </Card>
   )
 }
-
-export type { Song }

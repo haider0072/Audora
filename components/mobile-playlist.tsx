@@ -24,6 +24,7 @@ interface Song {
   format?: string
   file: File
   url: string
+  artists?: string[] // Added for grouping
 }
 
 interface GroupedSongs {
@@ -151,7 +152,7 @@ export function MobilePlaylist({
 
             {showArtistAlbum && (
               <p className="text-xs text-muted-foreground truncate transition-colors duration-150 ease-out group-hover:text-muted-foreground/80 mb-1">
-                {song.artist || "Unknown Artist"}
+                {song.artists ? song.artists.join(", ") : (song.artist || "Unknown Artist")}
                 {song.album && ` • ${song.album}`}
               </p>
             )}
