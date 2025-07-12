@@ -38,7 +38,6 @@ import { PlaylistManager } from "./components/playlist-manager"
 import { AlbumArtCache } from "./utils/album-art-cache"
 import { useAlbumArtPreloader } from "./hooks/use-album-art-preloader"
 import { LyricsDisplay } from "./components/lyrics-display"
-import { NetworkSharingPanel } from "./components/network-sharing-panel"
 import { AddMusicControls } from "./components/add-music-control"
 
 export default function EnhancedMusicPlayer() {
@@ -124,7 +123,9 @@ export default function EnhancedMusicPlayer() {
                     albumArt = undefined
                   }
                 }
-                restoredSongs.push({ ...songMetadata, file, url: "", albumArt })
+                // Prefer artists[0] for artist if artists exists
+                const artist = songMetadata.artists && songMetadata.artists.length > 0 ? songMetadata.artists[0] : songMetadata.artist;
+                restoredSongs.push({ ...songMetadata, artist, file, url: "", albumArt })
               }
             }
             if (restoredSongs.length > 0) {
@@ -135,7 +136,17 @@ export default function EnhancedMusicPlayer() {
               })
               if (playlistData.currentSongId) {
                 const current = restoredSongs.find((s) => s.id === playlistData.currentSongId)
-                if (current) setCurrentSong(current)
+                if (current) {
+                  setCurrentSong(current)
+                  // Initialize the audio element with the current song
+                  if (audioRef.current) {
+                    const audioUrl = URL.createObjectURL(current.file)
+                    const updatedSong = { ...current, url: audioUrl }
+                    setCurrentSong(updatedSong)
+                    audioRef.current.src = audioUrl
+                    audioRef.current.load()
+                  }
+                }
               }
             }
           }
@@ -158,6 +169,7 @@ export default function EnhancedMusicPlayer() {
         id: song.id,
         title: song.title,
         artist: song.artist,
+        artists: song.artists,
         album: song.album,
         year: song.year,
         genre: song.genre,
@@ -168,9 +180,9 @@ export default function EnhancedMusicPlayer() {
         albumArt: song.albumArt,
         fileSize: song.fileSize,
         format: song.format,
-        fileName: song.file.name,
-        fileLastModified: song.file.lastModified,
-        fileType: song.file.type,
+        fileName: song.file ? song.file.name : "",
+        fileLastModified: song.file ? song.file.lastModified : 0,
+        fileType: song.file ? song.file.type : "",
       }))
       PlaylistStorage.savePlaylistMetadata(serializableSongs, currentSong?.id)
       StorageManager.saveData({
@@ -485,6 +497,32 @@ export default function EnhancedMusicPlayer() {
       }
     }
 
+    // Check if audio element is properly initialized
+    if (!audioRef.current.src && currentSong.file) {
+      console.log("Audio element not initialized, setting up current song...")
+      const audioUrl = URL.createObjectURL(currentSong.file)
+      const updatedSong = { ...currentSong, url: audioUrl }
+      setCurrentSong(updatedSong)
+      audioRef.current.src = audioUrl
+      audioRef.current.load()
+      
+      // Wait for the audio to be ready before playing
+      await new Promise<void>((resolve, reject) => {
+        const onCanPlay = () => {
+          audioRef.current?.removeEventListener("canplay", onCanPlay)
+          audioRef.current?.removeEventListener("error", onError)
+          resolve()
+        }
+        const onError = (e: Event) => {
+          audioRef.current?.removeEventListener("canplay", onCanPlay)
+          audioRef.current?.removeEventListener("error", onError)
+          reject(new Error(`Failed to load audio: ${(e.target as HTMLAudioElement)?.error?.message || "Unknown error"}`))
+        }
+        audioRef.current?.addEventListener("canplay", onCanPlay)
+        audioRef.current?.addEventListener("error", onError)
+      })
+    }
+
     if (isPlaying) {
       audioRef.current.pause()
       setIsPlaying(false)
@@ -774,24 +812,62 @@ export default function EnhancedMusicPlayer() {
 
   // Network sharing handlers
   const handleNetworkPlaylistUpdate = useCallback((newSongs: any[]) => {
-    // This would be called when receiving playlist updates from network
-    // For now, we'll just log it as the actual implementation would need
-    // to handle file sharing which is complex
+    let playlistChanged = false;
+    setSongs((prevSongs) => {
+      if (JSON.stringify(prevSongs) !== JSON.stringify(newSongs)) {
+        playlistChanged = true;
+        return newSongs;
+      }
+      return prevSongs;
+    });
+    // Only show toast after state update, not inside setSongs
+    if (playlistChanged) {
+      toast({
+        title: "Playlist Updated",
+        description: "The shared playlist has been updated by the host.",
+      });
+      if (newSongs.length > 0 && (!newSongs[0].file && !newSongs[0].url)) {
+        toast({
+          title: "Cannot Play Song",
+          description: "This song cannot be played because the file is not available on your device.",
+          variant: "destructive",
+        });
+      }
+    }
+    // Try to set currentSong to the first song if not already set
+    if (newSongs.length > 0 && (!currentSong || !newSongs.find((s) => s.id === currentSong.id))) {
+      setCurrentSong(newSongs[0]);
+    }
     console.log("Network playlist update received:", newSongs)
-    toast({
-      title: "Playlist Updated",
-      description: "The shared playlist has been updated by the host.",
-    })
-  }, [])
+  }, [currentSong])
 
   const handleNetworkPlaybackStateUpdate = useCallback(
-    (isPlaying: boolean, currentTime: number, currentSong?: string) => {
-      // This would be called when receiving playback state updates from network
-      console.log("Network playback state update:", { isPlaying, currentTime, currentSong })
-      // Note: In a real implementation, you'd need to handle syncing playback state
-      // but this requires careful consideration of user experience
+    (isPlayingFromHost: boolean, currentTimeFromHost: number, currentSongIdFromHost?: string) => {
+      // Find the song by ID if provided
+      if (currentSongIdFromHost && songs.length > 0) {
+        const song = songs.find((s) => s.id === currentSongIdFromHost);
+        if (song && (!currentSong || currentSong.id !== song.id)) {
+          setCurrentSong(song);
+          if (audioRef.current) {
+            audioRef.current.src = song.url || "";
+            audioRef.current.currentTime = currentTimeFromHost || 0;
+          }
+        }
+      }
+      setIsPlaying(isPlayingFromHost);
+      setCurrentTime(currentTimeFromHost);
+      // Sync audio element
+      if (audioRef.current) {
+        audioRef.current.currentTime = currentTimeFromHost || 0;
+        if (isPlayingFromHost) {
+          audioRef.current.play().catch(() => {});
+        } else {
+          audioRef.current.pause();
+        }
+      }
+      console.log("Network playback state update:", { isPlayingFromHost, currentTimeFromHost, currentSongIdFromHost })
     },
-    [],
+    [songs, currentSong],
   )
 
   return (
@@ -837,23 +913,7 @@ export default function EnhancedMusicPlayer() {
                 currentTimeMs={currentTimeMs}
               />
             ) 
-            // : showNetworkSharing ? (
-            //   <NetworkSharingPanel
-            //     songs={songs.map((song) => ({
-            //       id: song.id,
-            //       title: song.title,
-            //       artist: song.artist,
-            //       album: song.album,
-            //       duration: song.duration,
-            //       format: song.format,
-            //       isHiRes: song.isHiRes,
-            //     }))}
-            //     currentSong={currentSong}
-            //     isPlaying={isPlaying}
-            //     currentTime={currentTime}
-            //     onPlaylistUpdate={handleNetworkPlaylistUpdate}
-            //     onPlaybackStateUpdate={handleNetworkPlaybackStateUpdate}
-            //   />) 
+            
               : (
               <>
                 <Card className="bg-transparent border-none shadow-none">
@@ -964,14 +1024,30 @@ export default function EnhancedMusicPlayer() {
                       >
                         <Mic className="w-4 h-4" />
                       </Button>
-                      {/* <Button
+                      <Button
                         variant={showNetworkSharing ? "default" : "outline"}
                         size="icon"
                         onClick={() => setShowNetworkSharing(!showNetworkSharing)}
                       >
                         <Share2 className="w-4 h-4" />
-                      </Button> */}
+                      </Button>
                     </div>
+                    {/* <Dialog open={showNetworkSharing} onOpenChange={setShowNetworkSharing}>
+                      <DialogContent>
+                        <DialogHeader>
+                          <DialogTitle>Network Sharing</DialogTitle>
+                        </DialogHeader>
+                        <NetworkSharingPanel
+                      songs={songs}
+                      currentSong={currentSong}
+                      isPlaying={isPlaying}
+                      currentTime={currentTime}
+                      onPlaylistUpdate={handleNetworkPlaylistUpdate}
+                      onPlaybackStateUpdate={handleNetworkPlaybackStateUpdate}
+                      />
+                      </DialogContent>
+                    </Dialog> */}
+                    
 
                     {/* Keyboard shortcuts info */}
                     <div className="text-xs text-muted-foreground text-center space-y-1">

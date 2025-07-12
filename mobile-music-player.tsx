@@ -16,7 +16,6 @@ import { MobilePlaylist } from "./components/mobile-playlist"
 import { MobilePlayerBar } from "./components/mobile-player-bar"
 import { MobileEqualizerSheet } from "./components/mobile-equalizer-sheet"
 import { MobileLyricsDisplay } from "./components/mobile-lyrics-display"
-import { MobileNetworkSharingSheet } from "./components/mobile-network-sharing-sheet"
 import { AlbumArtBackground } from "./components/album-art-background"
 
 interface Song {
@@ -208,7 +207,7 @@ export default function MobileMusicPlayer() {
           setVolume([savedData.playerSettings.volume])
           setShuffleMode(savedData.playerSettings.shuffleMode)
           setViewMode(savedData.playerSettings.viewMode)
-          setShowLyrics(savedData.playerSettings.showLyrics)
+          setShowLyrics(savedData.playerSettings.showLyrics || false)
         }
 
         // Restore playlist from IndexedDB
@@ -258,6 +257,14 @@ export default function MobileMusicPlayer() {
                 const currentSong = restoredSongs.find((song) => song.id === playlistData.currentSongId)
                 if (currentSong) {
                   setCurrentSong(currentSong)
+                  // Initialize the audio element with the current song
+                  if (audioRef.current) {
+                    const audioUrl = URL.createObjectURL(currentSong.file)
+                    const updatedSong = { ...currentSong, url: audioUrl }
+                    setCurrentSong(updatedSong)
+                    audioRef.current.src = audioUrl
+                    audioRef.current.load()
+                  }
                 }
               }
             }
@@ -677,6 +684,32 @@ export default function MobileMusicPlayer() {
 
     if (audioContextRef.current?.state === "suspended") {
       await audioContextRef.current.resume()
+    }
+
+    // Check if audio element is properly initialized
+    if (!audioRef.current.src && currentSong.file) {
+      console.log("Audio element not initialized, setting up current song...")
+      const audioUrl = URL.createObjectURL(currentSong.file)
+      const updatedSong = { ...currentSong, url: audioUrl }
+      setCurrentSong(updatedSong)
+      audioRef.current.src = audioUrl
+      audioRef.current.load()
+      
+      // Wait for the audio to be ready before playing
+      await new Promise<void>((resolve, reject) => {
+        const onCanPlay = () => {
+          audioRef.current?.removeEventListener("canplay", onCanPlay)
+          audioRef.current?.removeEventListener("error", onError)
+          resolve()
+        }
+        const onError = (e: Event) => {
+          audioRef.current?.removeEventListener("canplay", onCanPlay)
+          audioRef.current?.removeEventListener("error", onError)
+          reject(new Error(`Failed to load audio: ${(e.target as HTMLAudioElement)?.error?.message || "Unknown error"}`))
+        }
+        audioRef.current?.addEventListener("canplay", onCanPlay)
+        audioRef.current?.addEventListener("error", onError)
+      })
     }
 
     if (isPlaying) {
@@ -1115,7 +1148,7 @@ export default function MobileMusicPlayer() {
         />
 
         {/* Network Sharing Sheet */}
-        <MobileNetworkSharingSheet
+        {/* <MobileNetworkSharingSheet
           isOpen={showNetworkSharing}
           onOpenChange={setShowNetworkSharing}
           songs={songs.map((song) => ({
@@ -1132,7 +1165,7 @@ export default function MobileMusicPlayer() {
           currentTime={currentTime}
           onPlaylistUpdate={handleNetworkPlaylistUpdate}
           onPlaybackStateUpdate={handleNetworkPlaybackStateUpdate}
-        />
+        /> */}
       </div>
     </div>
   )

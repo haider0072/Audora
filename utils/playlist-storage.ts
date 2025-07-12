@@ -2,6 +2,7 @@ interface StoredSong {
   id: string
   title?: string
   artist?: string
+  artists?: string[]
   album?: string
   year?: string
   genre?: string
