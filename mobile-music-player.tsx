@@ -17,6 +17,7 @@ import { MobilePlayerBar } from "./components/mobile-player-bar"
 import { MobileEqualizerSheet } from "./components/mobile-equalizer-sheet"
 import { MobileLyricsDisplay } from "./components/mobile-lyrics-display"
 import { AlbumArtBackground } from "./components/album-art-background"
+import { MobileYouTubeVideoPlayer } from "./components/mobile-youtube-video-player"
 
 interface Song {
   id: string
@@ -66,6 +67,7 @@ export default function MobileMusicPlayer() {
   // New state for lyrics and network sharing
   const [showLyrics, setShowLyrics] = useState(false)
   const [showNetworkSharing, setShowNetworkSharing] = useState(false)
+  const [showVideo, setShowVideo] = useState(false)
 
   const audioRef = useRef<HTMLAudioElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -776,6 +778,13 @@ export default function MobileMusicPlayer() {
     }
   }
 
+  const handleVideoSeek = (time: number) => {
+    if (audioRef.current) {
+      audioRef.current.currentTime = time
+      setCurrentTime(time)
+    }
+  }
+
   const handleVolumeChange = (value: number[]) => {
     setVolume(value)
     if (audioRef.current) {
@@ -1122,6 +1131,7 @@ export default function MobileMusicPlayer() {
           onSettingsClick={() => setShowEqualizer(true)}
           onLyricsClick={() => setShowLyrics(true)}
           onNetworkSharingClick={() => setShowNetworkSharing(true)}
+          onVideoClick={() => setShowVideo(true)}
           isTransitioning={isTransitioning}
         />
 
@@ -1145,6 +1155,15 @@ export default function MobileMusicPlayer() {
           currentSong={currentSong}
           currentTimeMs={currentTimeMs}
           isPlaying={isPlaying}
+        />
+
+        {/* Video Player Sheet */}
+        <MobileYouTubeVideoPlayer
+          currentSong={currentSong}
+          isPlaying={isPlaying}
+          currentTime={currentTime}
+          onPlayPause={togglePlayPause}
+          onSeek={handleVideoSeek}
         />
 
         {/* Network Sharing Sheet */}
