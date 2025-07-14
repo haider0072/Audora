@@ -29,6 +29,8 @@ interface MobileYouTubeVideoPlayerProps {
   currentTime: number
   onPlayPause?: () => void
   onSeek?: (time: number) => void
+  isOpen: boolean
+  onOpenChange: (open: boolean) => void
 }
 
 declare global {
@@ -43,9 +45,11 @@ export function MobileYouTubeVideoPlayer({
   isPlaying,
   currentTime,
   onPlayPause,
-  onSeek
+  onSeek,
+  isOpen,
+  onOpenChange
 }: MobileYouTubeVideoPlayerProps) {
-  const [isOpen, setIsOpen] = useState(false)
+  // Remove isOpen state
   const [currentVideo, setCurrentVideo] = useState<YouTubeVideo | null>(null)
   const [videoOptions, setVideoOptions] = useState<YouTubeVideo[]>([])
   const [isLoading, setIsLoading] = useState(false)
@@ -81,7 +85,12 @@ export function MobileYouTubeVideoPlayer({
 
   // Sync video playback with audio
   useEffect(() => {
-    if (playerRef.current && currentVideo && syncMode === 'auto') {
+    if (
+      playerRef.current &&
+      typeof playerRef.current.getCurrentTime === 'function' &&
+      currentVideo &&
+      syncMode === 'auto'
+    ) {
       const timeDiff = Math.abs(playerRef.current.getCurrentTime() - currentTime)
       
       // If time difference is more than 2 seconds, sync
@@ -243,163 +252,142 @@ export function MobileYouTubeVideoPlayer({
     return count.toString()
   }
 
+  // Only render the video UI if isOpen is true
+  if (!isOpen) return null;
+
   return (
-    <Sheet open={isOpen} onOpenChange={setIsOpen}>
-      <SheetTrigger asChild>
-        <Button
-          variant="outline"
-          size="sm"
-          className="flex items-center gap-2"
-        >
-          <Youtube className="h-4 w-4" />
-          Video
-        </Button>
-      </SheetTrigger>
-      
-      <SheetContent side="bottom" className="h-[90vh] p-0">
-        <SheetHeader className="px-4 py-3 border-b">
-          <div className="flex items-center justify-between">
-            <SheetTitle className="flex items-center gap-2">
-              <Youtube className="h-5 w-5 text-red-500" />
-              Music Video
-              {currentVideo && (
-                <Badge variant="secondary" className="text-xs">
-                  {formatViewCount(currentVideo.viewCount)} views
-                </Badge>
-              )}
-            </SheetTitle>
-            <div className="flex items-center gap-2">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setShowSettings(!showSettings)}
-              >
-                <Settings className="h-4 w-4" />
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setIsOpen(false)}
-              >
-                <X className="h-4 w-4" />
-              </Button>
-            </div>
+    <div className="mobile-youtube-video-player-container relative">
+      {/* Back to Player button */}
+      <button
+        className="absolute top-2 left-2 z-20 bg-black/60 hover:bg-black/80 text-white rounded-full p-2 flex items-center gap-2 focus:outline-none"
+        aria-label="Back to Player"
+        onClick={() => onOpenChange(false)}
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+        </svg>
+        <span className="hidden sm:inline">Back to Player</span>
+      </button>
+      {/* Cross (close) button */}
+      <button
+        className="absolute top-2 right-2 z-20 bg-black/60 hover:bg-black/80 text-white rounded-full p-2 focus:outline-none"
+        aria-label="Close video"
+        onClick={() => onOpenChange(false)}
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+        </svg>
+      </button>
+      {/* Video Player */}
+      <div className="flex-1 relative bg-black">
+        {isLoading ? (
+          <div className="flex items-center justify-center h-full">
+            <RefreshCw className="h-8 w-8 animate-spin text-white" />
           </div>
-        </SheetHeader>
-
-        <div className="flex flex-col h-full">
-          {/* Video Player */}
-          <div className="flex-1 relative bg-black">
-            {isLoading ? (
-              <div className="flex items-center justify-center h-full">
-                <RefreshCw className="h-8 w-8 animate-spin text-white" />
-              </div>
-            ) : currentVideo ? (
-              <>
-                <iframe
-                  ref={iframeRef}
-                  className="w-full h-full"
-                  title={currentVideo.title}
-                />
-                
-                {/* Video Controls Overlay */}
-                <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-4">
-                  <div className="flex items-center justify-between text-white">
-                    <div className="flex items-center gap-2">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={toggleVideoMute}
-                        className="text-white hover:bg-white/20"
-                      >
-                        {isVideoMuted ? (
-                          <VolumeX className="h-4 w-4" />
-                        ) : (
-                          <Volume2 className="h-4 w-4" />
-                        )}
-                      </Button>
-                      
-                      <input
-                        type="range"
-                        min="0"
-                        max="100"
-                        value={videoVolume}
-                        onChange={(e) => handleVideoVolumeChange(parseInt(e.target.value))}
-                        className="w-16"
-                      />
-                    </div>
-                  </div>
-                </div>
-              </>
-            ) : (
-              <div className="flex items-center justify-center h-full text-white">
-                <div className="text-center">
-                  <Youtube className="h-12 w-12 mx-auto mb-2" />
-                  <p>No video available</p>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Settings Panel */}
-          {showSettings && (
-            <div className="p-4 border-t bg-muted/50">
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <label className="text-sm font-medium">Auto-play videos</label>
+        ) : currentVideo ? (
+          <>
+            <iframe
+              ref={iframeRef}
+              className="w-full h-full"
+              title={currentVideo.title}
+            />
+            
+            {/* Video Controls Overlay */}
+            <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-4">
+              <div className="flex items-center justify-between text-white">
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={toggleVideoMute}
+                    className="text-white hover:bg-white/20"
+                  >
+                    {isVideoMuted ? (
+                      <VolumeX className="h-4 w-4" />
+                    ) : (
+                      <Volume2 className="h-4 w-4" />
+                    )}
+                  </Button>
+                  
                   <input
-                    type="checkbox"
-                    checked={autoPlayVideos}
-                    onChange={(e) => setAutoPlayVideos(e.target.checked)}
+                    type="range"
+                    min="0"
+                    max="100"
+                    value={videoVolume}
+                    onChange={(e) => handleVideoVolumeChange(parseInt(e.target.value))}
+                    className="w-16"
                   />
                 </div>
-                <div className="flex items-center justify-between">
-                  <label className="text-sm font-medium">Sync mode</label>
-                  <select
-                    value={syncMode}
-                    onChange={(e) => setSyncMode(e.target.value as 'auto' | 'manual')}
-                    className="text-sm border rounded px-2 py-1"
-                  >
-                    <option value="auto">Automatic</option>
-                    <option value="manual">Manual</option>
-                  </select>
-                </div>
               </div>
             </div>
-          )}
+          </>
+        ) : (
+          <div className="flex items-center justify-center h-full text-white">
+            <div className="text-center">
+              <Youtube className="h-12 w-12 mx-auto mb-2" />
+              <p>No video available</p>
+            </div>
+          </div>
+        )}
+      </div>
 
-          {/* Video Options */}
-          {videoOptions.length > 1 && (
-            <div className="p-4 border-t bg-muted/50 max-h-32 overflow-y-auto">
-              <h3 className="text-sm font-medium mb-2">Alternative Videos</h3>
-              <div className="space-y-2">
-                {videoOptions.slice(1).map((video) => (
-                  <div
-                    key={video.id}
-                    className="flex items-center gap-3 p-2 rounded-lg hover:bg-muted cursor-pointer"
-                    onClick={() => loadVideo(video)}
-                  >
-                    <img
-                      src={video.thumbnail}
-                      alt={video.title}
-                      className="w-12 h-9 object-cover rounded"
-                    />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium truncate">{video.title}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {video.channelTitle} • {formatTime(video.duration)}
-                      </p>
-                    </div>
-                    <Badge variant="outline" className="text-xs">
-                      {video.relevanceScore}%
-                    </Badge>
-                  </div>
-                ))}
-              </div>
+      {/* Settings Panel */}
+      {showSettings && (
+        <div className="p-4 border-t bg-muted/50">
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <label className="text-sm font-medium">Auto-play videos</label>
+              <input
+                type="checkbox"
+                checked={autoPlayVideos}
+                onChange={(e) => setAutoPlayVideos(e.target.checked)}
+              />
             </div>
-          )}
+            <div className="flex items-center justify-between">
+              <label className="text-sm font-medium">Sync mode</label>
+              <select
+                value={syncMode}
+                onChange={(e) => setSyncMode(e.target.value as 'auto' | 'manual')}
+                className="text-sm border rounded px-2 py-1"
+              >
+                <option value="auto">Automatic</option>
+                <option value="manual">Manual</option>
+              </select>
+            </div>
+          </div>
         </div>
-      </SheetContent>
-    </Sheet>
+      )}
+
+      {/* Video Options */}
+      {videoOptions.length > 1 && (
+        <div className="p-4 border-t bg-muted/50 max-h-32 overflow-y-auto">
+          <h3 className="text-sm font-medium mb-2">Alternative Videos</h3>
+          <div className="space-y-2">
+            {videoOptions.slice(1).map((video) => (
+              <div
+                key={video.id}
+                className="flex items-center gap-3 p-2 rounded-lg hover:bg-muted cursor-pointer"
+                onClick={() => loadVideo(video)}
+              >
+                <img
+                  src={video.thumbnail}
+                  alt={video.title}
+                  className="w-12 h-9 object-cover rounded"
+                />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium truncate">{video.title}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {video.channelTitle} • {formatTime(video.duration)}
+                  </p>
+                </div>
+                <Badge variant="outline" className="text-xs">
+                  {video.relevanceScore}%
+                </Badge>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
   )
 } 
