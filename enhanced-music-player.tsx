@@ -62,9 +62,7 @@ export default function EnhancedMusicPlayer() {
   const [isTransitioning, setIsTransitioning] = useState(false)
   const [isInitialized, setIsInitialized] = useState(false)
   const [isRestoringPlaylist, setIsRestoringPlaylist] = useState(false)
-  const [showLyrics, setShowLyrics] = useState(false)
-  const [showNetworkSharing, setShowNetworkSharing] = useState(false)
-  const [showVideo, setShowVideo] = useState(false)
+  const [activeView, setActiveView] = useState<"player" | "lyrics" | "youtube">("player");
 
   const audioRef = useRef<HTMLAudioElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -912,20 +910,22 @@ export default function EnhancedMusicPlayer() {
         </div>
         <div className="grid lg:grid-cols-2 gap-6 h-[calc(100vh-120px)] overflow-hidden">
           <div className="flex flex-col gap-6 h-full overflow-hidden">
-            {showLyrics ? (
+            {activeView === "lyrics" ? (
               <LyricsDisplay
-                isVisible={showLyrics}
-                onClose={() => setShowLyrics(false)}
+                isVisible={true}
+                onClose={() => setActiveView("player")}
                 currentSong={currentSong}
-                currentTimeMs={currentTimeMs}
+                currentTimeMs={currentTime * 1000}
               />
-            ) : showVideo ? (
+            ) : activeView === "youtube" ? (
               <YouTubeVideoPlayer
                 currentSong={currentSong}
                 isPlaying={isPlaying}
                 currentTime={currentTime}
                 onPlayPause={togglePlayPause}
                 onSeek={handleVideoSeek}
+                isVisible={true}
+                onClose={() => setActiveView("player")}
                 className="h-full"
               />
             ) : (
@@ -1031,24 +1031,17 @@ export default function EnhancedMusicPlayer() {
                         <Settings className="w-4 h-4" />
                       </Button>
                       <Button
-                        variant={showLyrics ? "default" : "outline"}
+                        variant="outline"
                         size="icon"
-                        onClick={() => setShowLyrics(!showLyrics)}
+                        onClick={() => setActiveView("lyrics")}
                         disabled={!currentSong}
                       >
                         <Mic className="w-4 h-4" />
                       </Button>
                       <Button
-                        variant={showNetworkSharing ? "default" : "outline"}
+                        variant="outline"
                         size="icon"
-                        onClick={() => setShowNetworkSharing(!showNetworkSharing)}
-                      >
-                        <Share2 className="w-4 h-4" />
-                      </Button>
-                      <Button
-                        variant={showVideo ? "default" : "outline"}
-                        size="icon"
-                        onClick={() => setShowVideo(!showVideo)}
+                        onClick={() => setActiveView("youtube")}
                         disabled={!currentSong}
                       >
                         <Youtube className="w-4 h-4" />
