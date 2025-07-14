@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState, useCallback } from 'react'
+import { useEffect, useRef, useState, useCallback, forwardRef, useImperativeHandle } from 'react'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet'
 import { Badge } from '@/components/ui/badge'
@@ -40,7 +40,10 @@ declare global {
   }
 }
 
-export function MobileYouTubeVideoPlayer({
+export const MobileYouTubeVideoPlayer = forwardRef<
+  unknown,
+  MobileYouTubeVideoPlayerProps
+>(function MobileYouTubeVideoPlayer({
   currentSong,
   isPlaying,
   currentTime,
@@ -48,19 +51,31 @@ export function MobileYouTubeVideoPlayer({
   onSeek,
   isOpen,
   onOpenChange
-}: MobileYouTubeVideoPlayerProps) {
-  // Remove isOpen state
+}, ref) {
+  // Remove sync and custom controls state
+  // Remove: videoVolume, isVideoMuted, autoPlayVideos, syncMode, showSettings
+  // Remove: useEffect for sync, play/pause, volume, mute
+
+  // Only keep state for currentVideo, videoOptions, isLoading
   const [currentVideo, setCurrentVideo] = useState<YouTubeVideo | null>(null)
   const [videoOptions, setVideoOptions] = useState<YouTubeVideo[]>([])
   const [isLoading, setIsLoading] = useState(false)
-  const [videoVolume, setVideoVolume] = useState(80)
-  const [isVideoMuted, setIsVideoMuted] = useState(false)
-  const [autoPlayVideos, setAutoPlayVideos] = useState(true)
-  const [syncMode, setSyncMode] = useState<'auto' | 'manual'>('auto')
-  const [showSettings, setShowSettings] = useState(false)
+
+  // Add a key to force iframe reload
+  const [videoKey, setVideoKey] = useState(0);
 
   const playerRef = useRef<any>(null)
   const iframeRef = useRef<HTMLIFrameElement>(null)
+
+  // Expose resetVideo to parent
+  useImperativeHandle(ref, () => ({
+    resetVideo: () => {
+      if (videoOptions.length > 0) {
+        setCurrentVideo(videoOptions[0]);
+        setVideoKey(prev => prev + 1); // force iframe reload
+      }
+    }
+  }));
 
   // Load YouTube IFrame API
   useEffect(() => {
@@ -83,34 +98,6 @@ export function MobileYouTubeVideoPlayer({
     }
   }, [isOpen, currentSong?.title, currentSong?.artist])
 
-  // Sync video playback with audio
-  useEffect(() => {
-    if (
-      playerRef.current &&
-      typeof playerRef.current.getCurrentTime === 'function' &&
-      currentVideo &&
-      syncMode === 'auto'
-    ) {
-      const timeDiff = Math.abs(playerRef.current.getCurrentTime() - currentTime)
-      
-      // If time difference is more than 2 seconds, sync
-      if (timeDiff > 2) {
-        playerRef.current.seekTo(currentTime, true)
-      }
-    }
-  }, [currentTime, currentVideo, syncMode])
-
-  // Handle play/pause sync
-  useEffect(() => {
-    if (playerRef.current && currentVideo) {
-      if (isPlaying) {
-        playerRef.current.playVideo()
-      } else {
-        playerRef.current.pauseVideo()
-      }
-    }
-  }, [isPlaying, currentVideo])
-
   const searchForVideos = async () => {
     if (!currentSong?.title || !currentSong?.artist) return
 
@@ -128,7 +115,8 @@ export function MobileYouTubeVideoPlayer({
         setVideoOptions(result.videos)
         setCurrentVideo(result.videos[0])
         
-        if (autoPlayVideos) {
+        // Auto-play the first video
+        if (result.videos[0]) {
           loadVideo(result.videos[0])
         }
 
@@ -174,7 +162,7 @@ export function MobileYouTubeVideoPlayer({
       width: '100%',
       videoId: video.id,
       playerVars: {
-        autoplay: autoPlayVideos ? 1 : 0,
+        autoplay: 1, // Always autoplay
         controls: 1,
         modestbranding: 1,
         rel: 0,
@@ -185,21 +173,10 @@ export function MobileYouTubeVideoPlayer({
       events: {
         onReady: (event: any) => {
           console.log('YouTube player ready')
-          event.target.setVolume(videoVolume)
-          if (isVideoMuted) {
-            event.target.mute()
-          }
+          // No custom volume/mute logic here
         },
         onStateChange: (event: any) => {
-          // Sync with audio player if needed
-          if (syncMode === 'auto' && event.data === window.YT.PlayerState.PLAYING) {
-            const videoTime = event.target.getCurrentTime()
-            const audioTime = currentTime
-            
-            if (Math.abs(videoTime - audioTime) > 2) {
-              event.target.seekTo(audioTime, true)
-            }
-          }
+          // No custom sync logic here
         },
         onError: (event: any) => {
           console.error('YouTube player error:', event.data)
@@ -217,25 +194,7 @@ export function MobileYouTubeVideoPlayer({
         }
       }
     })
-  }, [videoOptions, autoPlayVideos, videoVolume, isVideoMuted, syncMode, currentTime])
-
-  const handleVideoVolumeChange = (volume: number) => {
-    setVideoVolume(volume)
-    if (playerRef.current) {
-      playerRef.current.setVolume(volume)
-    }
-  }
-
-  const toggleVideoMute = () => {
-    setIsVideoMuted(!isVideoMuted)
-    if (playerRef.current) {
-      if (isVideoMuted) {
-        playerRef.current.unMute()
-      } else {
-        playerRef.current.mute()
-      }
-    }
-  }
+  }, [videoOptions])
 
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60)
@@ -256,138 +215,78 @@ export function MobileYouTubeVideoPlayer({
   if (!isOpen) return null;
 
   return (
-    <div className="mobile-youtube-video-player-container relative">
-      {/* Back to Player button */}
-      <button
-        className="absolute top-2 left-2 z-20 bg-black/60 hover:bg-black/80 text-white rounded-full p-2 flex items-center gap-2 focus:outline-none"
-        aria-label="Back to Player"
-        onClick={() => onOpenChange(false)}
-      >
-        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5">
-          <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
-        </svg>
-        <span className="hidden sm:inline">Back to Player</span>
-      </button>
-      {/* Cross (close) button */}
-      <button
-        className="absolute top-2 right-2 z-20 bg-black/60 hover:bg-black/80 text-white rounded-full p-2 focus:outline-none"
-        aria-label="Close video"
-        onClick={() => onOpenChange(false)}
-      >
-        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5">
-          <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-        </svg>
-      </button>
-      {/* Video Player */}
-      <div className="flex-1 relative bg-black">
-        {isLoading ? (
-          <div className="flex items-center justify-center h-full">
-            <RefreshCw className="h-8 w-8 animate-spin text-white" />
-          </div>
-        ) : currentVideo ? (
-          <>
+    <Sheet open={isOpen} onOpenChange={onOpenChange}>
+      <SheetContent side="bottom" className="p-0">
+        <SheetHeader className="flex flex-row items-center justify-between px-4 pt-4 pb-2">
+          <SheetTitle className="flex items-center gap-2 text-sm">
+            <Youtube className="h-4 w-4 text-red-500" />
+            Music Video
+            {currentVideo && (
+              <Badge variant="secondary" className="text-xs">
+                {formatViewCount(currentVideo.viewCount)} views
+              </Badge>
+            )}
+          </SheetTitle>
+          <Button variant="ghost" size="sm" onClick={() => onOpenChange(false)}>
+            <X className="h-4 w-4" />
+          </Button>
+        </SheetHeader>
+        <div className="relative aspect-video bg-black">
+          {isLoading ? (
+            <div className="flex items-center justify-center h-full">
+              <RefreshCw className="h-8 w-8 animate-spin text-muted-foreground" />
+            </div>
+          ) : currentVideo ? (
             <iframe
+              key={videoKey}
               ref={iframeRef}
               className="w-full h-full"
+              src={`https://www.youtube.com/embed/${currentVideo.id}?autoplay=1&controls=1&modestbranding=1&rel=0&mute=1`}
               title={currentVideo.title}
+              frameBorder="0"
+              allow="autoplay; encrypted-media"
+              allowFullScreen
             />
-            
-            {/* Video Controls Overlay */}
-            <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-4">
-              <div className="flex items-center justify-between text-white">
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={toggleVideoMute}
-                    className="text-white hover:bg-white/20"
-                  >
-                    {isVideoMuted ? (
-                      <VolumeX className="h-4 w-4" />
-                    ) : (
-                      <Volume2 className="h-4 w-4" />
-                    )}
-                  </Button>
-                  
-                  <input
-                    type="range"
-                    min="0"
-                    max="100"
-                    value={videoVolume}
-                    onChange={(e) => handleVideoVolumeChange(parseInt(e.target.value))}
-                    className="w-16"
-                  />
-                </div>
+          ) : (
+            <div className="flex items-center justify-center h-full text-muted-foreground">
+              <div className="text-center">
+                <Youtube className="h-12 w-12 mx-auto mb-2" />
+                <p>No video available</p>
               </div>
             </div>
-          </>
-        ) : (
-          <div className="flex items-center justify-center h-full text-white">
-            <div className="text-center">
-              <Youtube className="h-12 w-12 mx-auto mb-2" />
-              <p>No video available</p>
+          )}
+        </div>
+        {/* Video Options */}
+        {videoOptions.length > 1 && (
+          <div className="p-4">
+            <div className="text-sm font-medium mb-2">Alternative Videos</div>
+            <div className="space-y-2 max-h-40 overflow-y-auto">
+              {videoOptions.slice(1).map((video) => (
+                <div
+                  key={video.id}
+                  className="flex items-center gap-3 p-2 rounded-lg hover:bg-muted cursor-pointer"
+                  onClick={() => setCurrentVideo(video)}
+                >
+                  <img
+                    src={video.thumbnail}
+                    alt={video.title}
+                    className="w-16 h-12 object-cover rounded"
+                  />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium truncate">{video.title}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {video.channelTitle} • {formatTime(video.duration)}
+                    </p>
+                  </div>
+                  <Badge variant="outline" className="text-xs">
+                    {video.relevanceScore}%
+                  </Badge>
+                </div>
+              ))}
             </div>
           </div>
         )}
-      </div>
-
-      {/* Settings Panel */}
-      {showSettings && (
-        <div className="p-4 border-t bg-muted/50">
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <label className="text-sm font-medium">Auto-play videos</label>
-              <input
-                type="checkbox"
-                checked={autoPlayVideos}
-                onChange={(e) => setAutoPlayVideos(e.target.checked)}
-              />
-            </div>
-            <div className="flex items-center justify-between">
-              <label className="text-sm font-medium">Sync mode</label>
-              <select
-                value={syncMode}
-                onChange={(e) => setSyncMode(e.target.value as 'auto' | 'manual')}
-                className="text-sm border rounded px-2 py-1"
-              >
-                <option value="auto">Automatic</option>
-                <option value="manual">Manual</option>
-              </select>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Video Options */}
-      {videoOptions.length > 1 && (
-        <div className="p-4 border-t bg-muted/50 max-h-32 overflow-y-auto">
-          <h3 className="text-sm font-medium mb-2">Alternative Videos</h3>
-          <div className="space-y-2">
-            {videoOptions.slice(1).map((video) => (
-              <div
-                key={video.id}
-                className="flex items-center gap-3 p-2 rounded-lg hover:bg-muted cursor-pointer"
-                onClick={() => loadVideo(video)}
-              >
-                <img
-                  src={video.thumbnail}
-                  alt={video.title}
-                  className="w-12 h-9 object-cover rounded"
-                />
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium truncate">{video.title}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {video.channelTitle} • {formatTime(video.duration)}
-                  </p>
-                </div>
-                <Badge variant="outline" className="text-xs">
-                  {video.relevanceScore}%
-                </Badge>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
-  )
-} 
+      </SheetContent>
+    </Sheet>
+  );
+}); 
