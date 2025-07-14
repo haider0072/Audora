@@ -64,15 +64,45 @@ export default function EnhancedMusicPlayer() {
   const [isRestoringPlaylist, setIsRestoringPlaylist] = useState(false)
   const [activeView, setActiveView] = useState<"player" | "lyrics" | "youtube">("player");
   const videoPlayerRef = useRef<{ resetVideo: () => void }>(null);
-  const [syncDelayActive, setSyncDelayActive] = useState(false);
+  // const [syncDelayActive, setSyncDelayActive] = useState(false); // REMOVED
 
-  const handleSync = useCallback(() => {
-    videoPlayerRef.current?.resetVideo();
-    if (audioRef.current) {
-      audioRef.current.currentTime = 0;
-      // Do NOT play audio here; wait for video to be ready
-    }
-  }, []);
+  // ADD THIS NEW BLOCK:
+  // useEffect(() => {
+  //   if (activeView === "youtube" && currentSong && isPlaying) {
+  //     console.log('Switching to YouTube view - activating sync delay');
+  //     setSyncDelayActive(true);
+      
+  //     // Pause audio immediately when switching to video
+  //     if (audioRef.current) {
+  //       audioRef.current.pause();
+  //     }
+  //     setIsPlaying(false);
+  //   }
+  //   // ADD THIS: Also activate sync delay when switching to YouTube even if not playing
+  //   else if (activeView === "youtube" && currentSong && !syncDelayActive) {
+  //     console.log('YouTube view activated - ensuring sync delay is active');
+  //     setSyncDelayActive(true);
+  //   }
+  // }, [activeView, currentSong, isPlaying, syncDelayActive]);
+
+ // REPLACE THIS ENTIRE FUNCTION:
+ const handleSync = useCallback(() => {
+  console.log('Manual sync triggered');
+  // setSyncDelayActive(true); // REMOVED
+  setVideoReadyCalled(false); // Reset the flag
+  
+  // Reset video player
+  videoPlayerRef.current?.resetVideo();
+  
+  // Pause and reset audio
+  if (audioRef.current) {
+    audioRef.current.pause();
+    audioRef.current.currentTime = 0;
+  }
+  setIsPlaying(false);
+  
+  // The handleVideoReady will be called automatically when video resets
+}, []);
 
   const audioRef = useRef<HTMLAudioElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -422,6 +452,10 @@ export default function EnhancedMusicPlayer() {
       }
 
       setIsTransitioning(true)
+      // if (activeView === "youtube") { // REMOVED
+      //   console.log('New song selected in YouTube view - activating sync delay'); // REMOVED
+      //   setSyncDelayActive(true); // REMOVED
+      // } // REMOVED
       if (currentSong?.url) URL.revokeObjectURL(currentSong.url)
       preloadUpcomingSongs()
       setCurrentSong(song)
@@ -457,27 +491,33 @@ export default function EnhancedMusicPlayer() {
           })
 
           initializeAudioContext()
-          if (!syncDelayActive) {
-            playPromiseRef.current = audioRef.current.play();
-          } else {
-            console.log('audioRef.current.play() skipped due to syncDelayActive');
+          // if (!syncDelayActive) { // REMOVED
+          playPromiseRef.current = audioRef.current.play(); // REMOVED
+          await playPromiseRef.current // REMOVED
+          setIsPlaying(true) // REMOVED
+          // } else { // REMOVED
+          //     console.log('audioRef.current.play() skipped due to syncDelayActive'); // REMOVED
+          //     // Don't set isPlaying to true when sync delay is active // REMOVED
+          //     // The handleVideoReady callback will handle playing and setting isPlaying // REMOVED
+          //   } // REMOVED
+          } catch (error) {
+            if ((error as DOMException).name !== "AbortError") {
+              console.error("Error playing song:", error)
+              toast({ title: "Playback Error", variant: "destructive" })
+            }
+            setIsPlaying(false)
+          } finally {
+            setIsTransitioning(false)
+        
           }
-          await playPromiseRef.current
-          setIsPlaying(true)
-        } catch (error) {
-          if ((error as DOMException).name !== "AbortError") {
-            console.error("Error playing song:", error)
-            toast({ title: "Playback Error", variant: "destructive" })
-          }
-          setIsPlaying(false)
-        } finally {
-          setIsTransitioning(false)
+      
         }
-      }
     },
-    [currentSong, shuffleMode, shuffledQueue, initializeAudioContext, preloadUpcomingSongs, syncDelayActive],
+    [currentSong, shuffleMode, shuffledQueue, initializeAudioContext, preloadUpcomingSongs, activeView],
   )
-
+  
+  // Remove syncDelayActive and all related logic
+  // In handleVideoReady, always play audio after a delay
   const handleVideoReady = useCallback(() => {
     if (audioRef.current) {
       audioRef.current.currentTime = 0;
@@ -487,6 +527,8 @@ export default function EnhancedMusicPlayer() {
       }, 1000); // 1 second delay after video is playing
     }
   }, []);
+
+  const [videoReadyCalled, setVideoReadyCalled] = useState(false);
 
   const removeSong = async (songId: string) => {
     await PlaylistStorage.removeSongFile(songId)
@@ -552,17 +594,20 @@ export default function EnhancedMusicPlayer() {
       audioRef.current.pause()
       setIsPlaying(false)
     } else {
+      // Check if we're in sync delay mode first
+      // if (syncDelayActive) { // REMOVED
+      //   console.log('Play/pause triggered during sync delay - ignoring'); // REMOVED
+      //   return; // Don't allow manual play during sync // REMOVED
+      // } // REMOVED
+      
       try {
         if (audioContextRef.current?.state === "suspended") {
           await audioContextRef.current.resume()
         }
-        if (!syncDelayActive) {
-          playPromiseRef.current = audioRef.current.play();
-        } else {
-          console.log('audioRef.current.play() skipped due to syncDelayActive');
-        }
+        playPromiseRef.current = audioRef.current.play();
         await playPromiseRef.current
         setIsPlaying(true)
+
       } catch (error) {
         if ((error as DOMException).name !== "AbortError") {
           console.error("Error playing audio:", error)
@@ -824,7 +869,7 @@ export default function EnhancedMusicPlayer() {
         navigator.mediaSession.setActionHandler("stop", null)
       }
     }
-  }, [currentSong, isPlaying, songs, volume, syncDelayActive])
+  }, [currentSong, isPlaying, songs, volume, activeView])
 
   useEffect(() => {
     const audio = audioRef.current
@@ -842,6 +887,14 @@ export default function EnhancedMusicPlayer() {
       }
     }
   }, [currentSong])
+
+  useEffect(() => {
+    if (activeView !== "youtube") {
+      // console.log('Left YouTube view - resetting sync delay'); // REMOVED
+      // setSyncDelayActive(false); // REMOVED
+      setVideoReadyCalled(false);
+    }
+  }, [activeView]);
 
   // Network sharing handlers
   const handleNetworkPlaylistUpdate = useCallback((newSongs: any[]) => {
