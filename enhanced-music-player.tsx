@@ -25,6 +25,7 @@ import {
   Upload,
   Share2,
   Folder,
+  Youtube,
 } from "lucide-react"
 
 import { MetadataExtractor } from "./utils/metadata-extractor"
@@ -39,6 +40,7 @@ import { AlbumArtCache } from "./utils/album-art-cache"
 import { useAlbumArtPreloader } from "./hooks/use-album-art-preloader"
 import { LyricsDisplay } from "./components/lyrics-display"
 import { AddMusicControls } from "./components/add-music-control"
+import { YouTubeVideoPlayer } from "./components/youtube-video-player"
 
 export default function EnhancedMusicPlayer() {
   const [isPlaying, setIsPlaying] = useState(false)
@@ -62,6 +64,7 @@ export default function EnhancedMusicPlayer() {
   const [isRestoringPlaylist, setIsRestoringPlaylist] = useState(false)
   const [showLyrics, setShowLyrics] = useState(false)
   const [showNetworkSharing, setShowNetworkSharing] = useState(false)
+  const [showVideo, setShowVideo] = useState(false)
 
   const audioRef = useRef<HTMLAudioElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -561,6 +564,10 @@ export default function EnhancedMusicPlayer() {
     if (audioRef.current) audioRef.current.currentTime = value[0]
   }
 
+  const handleVideoSeek = (time: number) => {
+    if (audioRef.current) audioRef.current.currentTime = time
+  }
+
   const handleVolumeChange = (value: number[]) => {
     setVolume(value)
     if (audioRef.current) audioRef.current.volume = value[0] / 100
@@ -912,9 +919,16 @@ export default function EnhancedMusicPlayer() {
                 currentSong={currentSong}
                 currentTimeMs={currentTimeMs}
               />
-            ) 
-            
-              : (
+            ) : showVideo ? (
+              <YouTubeVideoPlayer
+                currentSong={currentSong}
+                isPlaying={isPlaying}
+                currentTime={currentTime}
+                onPlayPause={togglePlayPause}
+                onSeek={handleVideoSeek}
+                className="h-full"
+              />
+            ) : (
               <>
                 <Card className="bg-transparent border-none shadow-none">
                   <CardHeader>
@@ -1030,6 +1044,14 @@ export default function EnhancedMusicPlayer() {
                         onClick={() => setShowNetworkSharing(!showNetworkSharing)}
                       >
                         <Share2 className="w-4 h-4" />
+                      </Button>
+                      <Button
+                        variant={showVideo ? "default" : "outline"}
+                        size="icon"
+                        onClick={() => setShowVideo(!showVideo)}
+                        disabled={!currentSong}
+                      >
+                        <Youtube className="w-4 h-4" />
                       </Button>
                     </div>
                     {/* <Dialog open={showNetworkSharing} onOpenChange={setShowNetworkSharing}>

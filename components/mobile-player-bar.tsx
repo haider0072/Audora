@@ -4,7 +4,7 @@ import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Slider } from "@/components/ui/slider"
 import { Badge } from "@/components/ui/badge"
-import { Play, Pause, SkipBack, SkipForward, Settings, Mic, Share2, Music, Volume2, VolumeX } from "lucide-react"
+import { Play, Pause, SkipBack, SkipForward, Settings, Mic, Share2, Music, Volume2, VolumeX, Youtube } from "lucide-react"
 
 interface Song {
   id: string
@@ -29,6 +29,7 @@ interface MobilePlayerBarProps {
   onSettingsClick: () => void
   onLyricsClick: () => void
   onNetworkSharingClick: () => void
+  onVideoClick: () => void
   isTransitioning?: boolean
 }
 
@@ -44,6 +45,7 @@ export function MobilePlayerBar({
   onSettingsClick,
   onLyricsClick,
   onNetworkSharingClick,
+  onVideoClick,
   isTransitioning = false,
 }: MobilePlayerBarProps) {
   const [showVolumeControl, setShowVolumeControl] = useState(false)
@@ -200,6 +202,10 @@ export function MobilePlayerBar({
 
             <Button variant="ghost" size="icon" className="w-8 h-8" onClick={onLyricsClick}>
               <Mic className="w-4 h-4" />
+            </Button>
+
+            <Button variant="ghost" size="icon" className="w-8 h-8" onClick={onVideoClick}>
+              <Youtube className="w-4 h-4" />
             </Button>
           </div>
 
