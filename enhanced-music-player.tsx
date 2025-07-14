@@ -63,6 +63,8 @@ export default function EnhancedMusicPlayer() {
   const [isInitialized, setIsInitialized] = useState(false)
   const [isRestoringPlaylist, setIsRestoringPlaylist] = useState(false)
   const [activeView, setActiveView] = useState<"player" | "lyrics" | "youtube">("player");
+  const videoPlayerRef = useRef<{ resetVideo: () => void }>(null);
+  const [pendingSync, setPendingSync] = useState(false);
 
   const audioRef = useRef<HTMLAudioElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -447,7 +449,11 @@ export default function EnhancedMusicPlayer() {
           })
 
           initializeAudioContext()
-          playPromiseRef.current = audioRef.current.play()
+          if (!pendingSync) {
+            playPromiseRef.current = audioRef.current.play();
+          } else {
+            console.log('audioRef.current.play() skipped due to pendingSync');
+          }
           await playPromiseRef.current
           setIsPlaying(true)
         } catch (error) {
@@ -460,9 +466,45 @@ export default function EnhancedMusicPlayer() {
           setIsTransitioning(false)
         }
       }
+      if (currentSong && song.id === currentSong.id) {
+        console.log('Same song clicked: setting pendingSync and resetting video.');
+        setPendingSync(true);
+        videoPlayerRef.current?.resetVideo();
+        // Fallback: if handleVideoReady is not called in 3s, play audio anyway
+        setTimeout(() => {
+          if (pendingSync && audioRef.current) {
+            console.warn('Fallback: handleVideoReady not called, playing audio after 3s');
+            audioRef.current.currentTime = 0;
+            audioRef.current.play().then(() => {
+              console.log('Fallback audio play succeeded');
+            }).catch((e) => {
+              console.error('Fallback audio play failed', e);
+            });
+            setPendingSync(false);
+          }
+        }, 1500);
+        return;
+      }
     },
-    [currentSong, shuffleMode, shuffledQueue, initializeAudioContext, preloadUpcomingSongs],
+    [currentSong, shuffleMode, shuffledQueue, initializeAudioContext, preloadUpcomingSongs, pendingSync],
   )
+
+  const handleVideoReady = useCallback(() => {
+    console.log('handleVideoReady called', { pendingSync, audio: audioRef.current });
+    if (pendingSync && audioRef.current) {
+      console.log('Delaying audio playback...');
+      audioRef.current.currentTime = 0;
+      setTimeout(() => {
+        console.log('Playing audio now!');
+        audioRef.current?.play().then(() => {
+          console.log('Audio play succeeded');
+        }).catch((e) => {
+          console.error('Audio play failed', e);
+        });
+        setPendingSync(false);
+      }, 1000); // 1 second delay
+    }
+  }, [pendingSync]);
 
   const removeSong = async (songId: string) => {
     await PlaylistStorage.removeSongFile(songId)
@@ -532,7 +574,11 @@ export default function EnhancedMusicPlayer() {
         if (audioContextRef.current?.state === "suspended") {
           await audioContextRef.current.resume()
         }
-        playPromiseRef.current = audioRef.current.play()
+        if (!pendingSync) {
+          playPromiseRef.current = audioRef.current.play();
+        } else {
+          console.log('audioRef.current.play() skipped due to pendingSync');
+        }
         await playPromiseRef.current
         setIsPlaying(true)
       } catch (error) {
@@ -919,6 +965,7 @@ export default function EnhancedMusicPlayer() {
               />
             ) : activeView === "youtube" ? (
               <YouTubeVideoPlayer
+                ref={videoPlayerRef}
                 currentSong={currentSong}
                 isPlaying={isPlaying}
                 currentTime={currentTime}
@@ -927,6 +974,7 @@ export default function EnhancedMusicPlayer() {
                 isVisible={true}
                 onClose={() => setActiveView("player")}
                 className="h-full"
+                onVideoReady={handleVideoReady}
               />
             ) : (
               <>

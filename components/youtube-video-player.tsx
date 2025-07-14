@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState, useCallback } from 'react'
+import { useEffect, useRef, useState, useCallback, forwardRef, useImperativeHandle } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -36,6 +36,7 @@ interface YouTubeVideoPlayerProps {
   className?: string
   isVisible: boolean
   onClose: () => void
+  onVideoReady?: () => void // NEW PROP
 }
 
 declare global {
@@ -45,7 +46,10 @@ declare global {
   }
 }
 
-export function YouTubeVideoPlayer({
+export const YouTubeVideoPlayer = forwardRef<
+  unknown,
+  YouTubeVideoPlayerProps
+>(function YouTubeVideoPlayer({
   currentSong,
   isPlaying,
   currentTime,
@@ -53,20 +57,29 @@ export function YouTubeVideoPlayer({
   onSeek,
   className = '',
   isVisible,
-  onClose
-}: YouTubeVideoPlayerProps) {
+  onClose,
+  onVideoReady // NEW PROP
+}, ref) {
   const [currentVideo, setCurrentVideo] = useState<YouTubeVideo | null>(null)
   const [videoOptions, setVideoOptions] = useState<YouTubeVideo[]>([])
   const [isLoading, setIsLoading] = useState(false)
-  const [isFullscreen, setIsFullscreen] = useState(false)
-  const [videoVolume, setVideoVolume] = useState(80)
-  const [isVideoMuted, setIsVideoMuted] = useState(false)
-  const [autoPlayVideos, setAutoPlayVideos] = useState(true)
-  const [syncMode, setSyncMode] = useState<'auto' | 'manual'>('auto')
 
   const playerRef = useRef<any>(null)
   const playerContainerId = 'youtube-player-container';
   const containerRef = useRef<HTMLDivElement>(null)
+
+  // Add a key to force iframe reload
+  const [videoKey, setVideoKey] = useState(0);
+
+  // Expose resetVideo to parent
+  useImperativeHandle(ref, () => ({
+    resetVideo: () => {
+      if (videoOptions.length > 0) {
+        setCurrentVideo(videoOptions[0]);
+        setVideoKey(prev => prev + 1); // force iframe reload
+      }
+    }
+  }));
 
   // Load YouTube IFrame API
   useEffect(() => {
@@ -89,39 +102,6 @@ export function YouTubeVideoPlayer({
     }
   }, [currentSong?.title, currentSong?.artist, isVisible])
 
-  // Sync video playback with audio
-  useEffect(() => {
-    if (
-      playerRef.current &&
-      typeof playerRef.current.getCurrentTime === 'function' &&
-      currentVideo &&
-      syncMode === 'auto'
-    ) {
-      const timeDiff = Math.abs(playerRef.current.getCurrentTime() - currentTime)
-      
-      // If time difference is more than 2 seconds, sync
-      if (timeDiff > 2) {
-        playerRef.current.seekTo(currentTime, true)
-      }
-    }
-  }, [currentTime, currentVideo, syncMode])
-
-  // Handle play/pause sync
-  useEffect(() => {
-    if (
-      playerRef.current &&
-      typeof playerRef.current.playVideo === 'function' &&
-      typeof playerRef.current.pauseVideo === 'function' &&
-      currentVideo
-    ) {
-      if (isPlaying) {
-        playerRef.current.playVideo()
-      } else {
-        playerRef.current.pauseVideo()
-      }
-    }
-  }, [isPlaying, currentVideo])
-
   const searchForVideos = async () => {
     if (!currentSong?.title || !currentSong?.artist) return
 
@@ -139,7 +119,8 @@ export function YouTubeVideoPlayer({
         setVideoOptions(result.videos)
         setCurrentVideo(result.videos[0])
         
-        if (autoPlayVideos) {
+        // Auto-play the first video
+        if (result.videos[0]) {
           loadVideo(result.videos[0])
         }
 
@@ -191,7 +172,7 @@ export function YouTubeVideoPlayer({
       width: '100%',
       videoId: video.id,
       playerVars: {
-        autoplay: autoPlayVideos ? 1 : 0,
+        autoplay: 1, // Always autoplay
         controls: 1,
         modestbranding: 1,
         rel: 0,
@@ -202,18 +183,12 @@ export function YouTubeVideoPlayer({
       events: {
         onReady: (event: any) => {
           console.log('YouTube player ready');
-          event.target.setVolume(videoVolume);
-          if (isVideoMuted) {
-            event.target.mute();
-          }
+          // No custom volume or mute logic
         },
         onStateChange: (event: any) => {
-          if (syncMode === 'auto' && event.data === window.YT.PlayerState.PLAYING) {
-            const videoTime = event.target.getCurrentTime();
-            const audioTime = currentTime;
-            if (Math.abs(videoTime - audioTime) > 2) {
-              event.target.seekTo(audioTime, true);
-            }
+          // No custom sync logic
+          if (event.data === window.YT.PlayerState.PLAYING) {
+            if (onVideoReady) onVideoReady();
           }
         },
         onError: (event: any) => {
@@ -230,7 +205,7 @@ export function YouTubeVideoPlayer({
         },
       },
     });
-  }, [videoOptions, autoPlayVideos, videoVolume, isVideoMuted, syncMode, currentTime]);
+  }, [videoOptions]);
 
   // Clean up player on unmount or video change
   useEffect(() => {
@@ -241,39 +216,6 @@ export function YouTubeVideoPlayer({
       }
     };
   }, []);
-
-  const toggleFullscreen = () => {
-    if (!containerRef.current) return
-
-    if (!isFullscreen) {
-      if (containerRef.current.requestFullscreen) {
-        containerRef.current.requestFullscreen()
-      }
-    } else {
-      if (document.exitFullscreen) {
-        document.exitFullscreen()
-      }
-    }
-    setIsFullscreen(!isFullscreen)
-  }
-
-  const handleVideoVolumeChange = (volume: number) => {
-    setVideoVolume(volume)
-    if (playerRef.current) {
-      playerRef.current.setVolume(volume)
-    }
-  }
-
-  const toggleVideoMute = () => {
-    setIsVideoMuted(!isVideoMuted)
-    if (playerRef.current) {
-      if (isVideoMuted) {
-        playerRef.current.unMute()
-      } else {
-        playerRef.current.mute()
-      }
-    }
-  }
 
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60)
@@ -339,7 +281,6 @@ export function YouTubeVideoPlayer({
             </div>
           </div>
         </CardHeader>
-        
         <CardContent className="p-0">
           <div className="relative aspect-video bg-black">
             {isLoading ? (
@@ -347,50 +288,16 @@ export function YouTubeVideoPlayer({
                 <RefreshCw className="h-8 w-8 animate-spin text-muted-foreground" />
               </div>
             ) : currentVideo ? (
-              <>
-                <div id={playerContainerId} className="w-full h-full" />
-                {/* Video Controls Overlay */}
-                <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-4">
-                  <div className="flex items-center justify-between text-white">
-                    <div className="flex items-center gap-2">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={toggleVideoMute}
-                        className="text-white hover:bg-white/20"
-                      >
-                        {isVideoMuted ? (
-                          <VolumeX className="h-4 w-4" />
-                        ) : (
-                          <Volume2 className="h-4 w-4" />
-                        )}
-                      </Button>
-                      
-                      <input
-                        type="range"
-                        min="0"
-                        max="100"
-                        value={videoVolume}
-                        onChange={(e) => handleVideoVolumeChange(parseInt(e.target.value))}
-                        className="w-20"
-                      />
-                    </div>
-                    
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={toggleFullscreen}
-                      className="text-white hover:bg-white/20"
-                    >
-                      {isFullscreen ? (
-                        <Minimize2 className="h-4 w-4" />
-                      ) : (
-                        <Maximize2 className="h-4 w-4" />
-                      )}
-                    </Button>
-                  </div>
-                </div>
-              </>
+              <iframe
+                key={videoKey}
+                id={playerContainerId}
+                className="w-full h-full"
+                src={`https://www.youtube.com/embed/${currentVideo.id}?autoplay=1&controls=1&modestbranding=1&rel=0&mute=1`}
+                title={currentVideo.title}
+                frameBorder="0"
+                allow="autoplay; encrypted-media"
+                allowFullScreen
+              />
             ) : (
               <div className="flex items-center justify-center h-full text-muted-foreground">
                 <div className="text-center">
@@ -402,7 +309,6 @@ export function YouTubeVideoPlayer({
           </div>
         </CardContent>
       </Card>
-
       {/* Video Options */}
       {videoOptions.length > 1 && (
         <Card>
@@ -415,7 +321,7 @@ export function YouTubeVideoPlayer({
                 <div
                   key={video.id}
                   className="flex items-center gap-3 p-2 rounded-lg hover:bg-muted cursor-pointer"
-                  onClick={() => loadVideo(video)}
+                  onClick={() => setCurrentVideo(video)}
                 >
                   <img
                     src={video.thumbnail}
@@ -437,36 +343,6 @@ export function YouTubeVideoPlayer({
           </CardContent>
         </Card>
       )}
-
-      {/* Settings Dialog */}
-      <Dialog>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Video Settings</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <label className="text-sm font-medium">Auto-play videos</label>
-              <input
-                type="checkbox"
-                checked={autoPlayVideos}
-                onChange={(e) => setAutoPlayVideos(e.target.checked)}
-              />
-            </div>
-            <div className="flex items-center justify-between">
-              <label className="text-sm font-medium">Sync mode</label>
-              <select
-                value={syncMode}
-                onChange={(e) => setSyncMode(e.target.value as 'auto' | 'manual')}
-                className="text-sm border rounded px-2 py-1"
-              >
-                <option value="auto">Automatic</option>
-                <option value="manual">Manual</option>
-              </select>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
     </div>
-  )
-} 
+  );
+}); 
