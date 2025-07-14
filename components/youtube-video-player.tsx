@@ -70,15 +70,13 @@ export const YouTubeVideoPlayer = forwardRef<
   const playerContainerId = 'youtube-player-container';
   const containerRef = useRef<HTMLDivElement>(null)
 
-  // Add a key to force iframe reload
-  const [videoKey, setVideoKey] = useState(0);
-
   // Expose resetVideo to parent
   useImperativeHandle(ref, () => ({
     resetVideo: () => {
+      console.log('resetVideo called');
       if (videoOptions.length > 0) {
         setCurrentVideo(videoOptions[0]);
-        setVideoKey(prev => prev + 1); // force iframe reload
+        loadVideo(videoOptions[0]);
       }
     }
   }));
@@ -97,13 +95,106 @@ export const YouTubeVideoPlayer = forwardRef<
     }
   }, [])
 
-  // Search for videos when song changes
+  const MAX_LOAD_VIDEO_RETRIES = 10;
+
+  const loadVideo = useCallback((video: YouTubeVideo, retryCount = 0) => {
+    console.log('loadVideo called for:', video.title, 'retryCount:', retryCount);
+    if (!window.YT || !window.YT.Player) {
+      console.log('YouTube API not ready, waiting...');
+      setTimeout(() => loadVideo(video, retryCount), 100);
+      return;
+    }
+    setCurrentVideo(video);
+    // Destroy previous player if exists
+    if (playerRef.current) {
+      try {
+        playerRef.current.destroy();
+      } catch (e) {
+        console.log('Error destroying previous player:', e);
+      }
+      playerRef.current = null;
+    }
+    setTimeout(() => {
+      const targetElement = document.getElementById(playerContainerId);
+      if (!targetElement) {
+        if (retryCount < MAX_LOAD_VIDEO_RETRIES) {
+          console.warn('Target element not found, retrying loadVideo...', retryCount + 1);
+          setTimeout(() => loadVideo(video, retryCount + 1), 100);
+        } else {
+          console.error('Target element not found after retries:', playerContainerId);
+        }
+        return;
+      }
+      console.log('Creating YouTube player for video:', video.id);
+      playerRef.current = new window.YT.Player(playerContainerId, {
+        height: '360',
+        width: '640',
+        videoId: video.id,
+        playerVars: {
+          autoplay: 1,
+          controls: 1,
+          modestbranding: 1,
+          rel: 0,
+          enablejsapi: 1,
+          origin: window.location.origin,
+          mute: 1, // Mute video by default
+        },
+        events: {
+          onReady: (event: any) => {
+            console.log('YouTube player ready');
+            try {
+              event.target.mute();
+              event.target.setVolume(0);
+              console.log('Video muted successfully (onReady)');
+            } catch (e) {
+              console.log('Error muting video (onReady):', e);
+            }
+          },
+          onStateChange: (event: any) => {
+            console.log('YouTube player state changed:', event.data);
+            if (event.data === window.YT.PlayerState.PLAYING && onVideoReady) {
+              console.log('Video started playing - calling onVideoReady');
+              onVideoReady();
+              try {
+                event.target.mute();
+                event.target.setVolume(0);
+                console.log('Video muted successfully (onStateChange)');
+              } catch (e) {
+                console.log('Error ensuring video mute (onStateChange):', e);
+              }
+            }
+          },
+          onError: (event: any) => {
+            console.error('YouTube player error:', event.data);
+            toast({
+              title: 'Video Error',
+              description: 'Failed to load video. Trying next option...',
+              variant: 'destructive',
+            });
+            const currentIndex = videoOptions.findIndex(v => v.id === video.id);
+            if (currentIndex < videoOptions.length - 1) {
+              loadVideo(videoOptions[currentIndex + 1]);
+            }
+          },
+        },
+      });
+    }, 100);
+  }, [videoOptions, onVideoReady]);
+
+  // Ensure searchForVideos is called whenever currentSong or isVisible changes, or if videoOptions are empty but isVisible is true
   useEffect(() => {
     if (currentSong?.title && currentSong?.artist && isVisible) {
-      searchForVideos()
+      if (videoOptions.length === 0) {
+        console.log('Triggering searchForVideos due to empty videoOptions');
+        searchForVideos();
+      } else {
+        // Always reload video when switching to video mode or song changes
+        loadVideo(videoOptions[0]);
+      }
     }
-  }, [currentSong?.title, currentSong?.artist, isVisible])
+  }, [currentSong?.title, currentSong?.artist, isVisible]);
 
+  // Search for videos when song changes
   const searchForVideos = async () => {
     if (!currentSong?.title || !currentSong?.artist) return
 
@@ -156,58 +247,6 @@ export const YouTubeVideoPlayer = forwardRef<
       setIsLoading(false)
     }
   }
-
-  const loadVideo = useCallback((video: YouTubeVideo) => {
-    if (!window.YT) return;
-
-    setCurrentVideo(video);
-
-    // Destroy previous player if exists
-    if (playerRef.current) {
-      playerRef.current.destroy();
-      playerRef.current = null;
-    }
-
-    // Create new player
-    playerRef.current = new window.YT.Player(playerContainerId, {
-      height: '100%',
-      width: '100%',
-      videoId: video.id,
-      playerVars: {
-        autoplay: 1, // Always autoplay
-        controls: 1,
-        modestbranding: 1,
-        rel: 0,
-        enablejsapi: 1,
-        origin: window.location.origin,
-        widget_referrer: window.location.origin,
-      },
-      events: {
-        onReady: (event: any) => {
-          console.log('YouTube player ready');
-          // No custom volume or mute logic
-        },
-        onStateChange: (event: any) => {
-          // No custom sync logic
-          if (event.data === window.YT.PlayerState.PLAYING) {
-            if (onVideoReady) onVideoReady();
-          }
-        },
-        onError: (event: any) => {
-          console.error('YouTube player error:', event.data);
-          toast({
-            title: 'Video Error',
-            description: 'Failed to load video. Trying next option...',
-            variant: 'destructive',
-          });
-          const currentIndex = videoOptions.findIndex(v => v.id === video.id);
-          if (currentIndex < videoOptions.length - 1) {
-            loadVideo(videoOptions[currentIndex + 1]);
-          }
-        },
-      },
-    });
-  }, [videoOptions]);
 
   // Clean up player on unmount or video change
   useEffect(() => {
@@ -299,15 +338,9 @@ export const YouTubeVideoPlayer = forwardRef<
                 <RefreshCw className="h-8 w-8 animate-spin text-muted-foreground" />
               </div>
             ) : currentVideo ? (
-              <iframe
-                key={videoKey}
-                id={playerContainerId}
-                className="w-full h-full"
-                src={`https://www.youtube.com/embed/${currentVideo.id}?autoplay=1&controls=1&modestbranding=1&rel=0&mute=1`}
-                title={currentVideo.title}
-                frameBorder="0"
-                allow="autoplay; encrypted-media"
-                allowFullScreen
+              <div
+              id={playerContainerId}
+              className="w-full h-full" style={{ minHeight: '360px' }}
               />
             ) : (
               <div className="flex items-center justify-center h-full text-muted-foreground">
@@ -332,7 +365,10 @@ export const YouTubeVideoPlayer = forwardRef<
                 <div
                   key={video.id}
                   className="flex items-center gap-3 p-2 rounded-lg hover:bg-muted cursor-pointer"
-                  onClick={() => setCurrentVideo(video)}
+                  onClick={() => {
+                    console.log('Loading alternative video:', video.title);
+                    loadVideo(video);
+                  }}
                 >
                   <img
                     src={video.thumbnail}
