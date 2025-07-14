@@ -64,7 +64,15 @@ export default function EnhancedMusicPlayer() {
   const [isRestoringPlaylist, setIsRestoringPlaylist] = useState(false)
   const [activeView, setActiveView] = useState<"player" | "lyrics" | "youtube">("player");
   const videoPlayerRef = useRef<{ resetVideo: () => void }>(null);
-  const [pendingSync, setPendingSync] = useState(false);
+  const [syncDelayActive, setSyncDelayActive] = useState(false);
+
+  const handleSync = useCallback(() => {
+    videoPlayerRef.current?.resetVideo();
+    if (audioRef.current) {
+      audioRef.current.currentTime = 0;
+      // Do NOT play audio here; wait for video to be ready
+    }
+  }, []);
 
   const audioRef = useRef<HTMLAudioElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -449,10 +457,10 @@ export default function EnhancedMusicPlayer() {
           })
 
           initializeAudioContext()
-          if (!pendingSync) {
+          if (!syncDelayActive) {
             playPromiseRef.current = audioRef.current.play();
           } else {
-            console.log('audioRef.current.play() skipped due to pendingSync');
+            console.log('audioRef.current.play() skipped due to syncDelayActive');
           }
           await playPromiseRef.current
           setIsPlaying(true)
@@ -466,45 +474,19 @@ export default function EnhancedMusicPlayer() {
           setIsTransitioning(false)
         }
       }
-      if (currentSong && song.id === currentSong.id) {
-        console.log('Same song clicked: setting pendingSync and resetting video.');
-        setPendingSync(true);
-        videoPlayerRef.current?.resetVideo();
-        // Fallback: if handleVideoReady is not called in 3s, play audio anyway
-        setTimeout(() => {
-          if (pendingSync && audioRef.current) {
-            console.warn('Fallback: handleVideoReady not called, playing audio after 3s');
-            audioRef.current.currentTime = 0;
-            audioRef.current.play().then(() => {
-              console.log('Fallback audio play succeeded');
-            }).catch((e) => {
-              console.error('Fallback audio play failed', e);
-            });
-            setPendingSync(false);
-          }
-        }, 1500);
-        return;
-      }
     },
-    [currentSong, shuffleMode, shuffledQueue, initializeAudioContext, preloadUpcomingSongs, pendingSync],
+    [currentSong, shuffleMode, shuffledQueue, initializeAudioContext, preloadUpcomingSongs, syncDelayActive],
   )
 
   const handleVideoReady = useCallback(() => {
-    console.log('handleVideoReady called', { pendingSync, audio: audioRef.current });
-    if (pendingSync && audioRef.current) {
-      console.log('Delaying audio playback...');
+    if (audioRef.current) {
       audioRef.current.currentTime = 0;
       setTimeout(() => {
-        console.log('Playing audio now!');
-        audioRef.current?.play().then(() => {
-          console.log('Audio play succeeded');
-        }).catch((e) => {
-          console.error('Audio play failed', e);
-        });
-        setPendingSync(false);
-      }, 1000); // 1 second delay
+        console.log('handleVideoReady: playing audio after video is ready and delay');
+        audioRef.current?.play();
+      }, 1000); // 1 second delay after video is playing
     }
-  }, [pendingSync]);
+  }, []);
 
   const removeSong = async (songId: string) => {
     await PlaylistStorage.removeSongFile(songId)
@@ -574,10 +556,10 @@ export default function EnhancedMusicPlayer() {
         if (audioContextRef.current?.state === "suspended") {
           await audioContextRef.current.resume()
         }
-        if (!pendingSync) {
+        if (!syncDelayActive) {
           playPromiseRef.current = audioRef.current.play();
         } else {
-          console.log('audioRef.current.play() skipped due to pendingSync');
+          console.log('audioRef.current.play() skipped due to syncDelayActive');
         }
         await playPromiseRef.current
         setIsPlaying(true)
@@ -842,7 +824,7 @@ export default function EnhancedMusicPlayer() {
         navigator.mediaSession.setActionHandler("stop", null)
       }
     }
-  }, [currentSong, isPlaying, songs, volume])
+  }, [currentSong, isPlaying, songs, volume, syncDelayActive])
 
   useEffect(() => {
     const audio = audioRef.current
@@ -974,6 +956,7 @@ export default function EnhancedMusicPlayer() {
                 isVisible={true}
                 onClose={() => setActiveView("player")}
                 className="h-full"
+                onSync={handleSync}
                 onVideoReady={handleVideoReady}
               />
             ) : (

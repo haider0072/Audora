@@ -37,6 +37,7 @@ interface YouTubeVideoPlayerProps {
   isVisible: boolean
   onClose: () => void
   onVideoReady?: () => void // NEW PROP
+  onSync?: () => void // NEW PROP
 }
 
 declare global {
@@ -58,7 +59,8 @@ export const YouTubeVideoPlayer = forwardRef<
   className = '',
   isVisible,
   onClose,
-  onVideoReady // NEW PROP
+  onVideoReady, // NEW PROP
+  onSync // NEW PROP
 }, ref) {
   const [currentVideo, setCurrentVideo] = useState<YouTubeVideo | null>(null)
   const [videoOptions, setVideoOptions] = useState<YouTubeVideo[]>([])
@@ -277,6 +279,15 @@ export const YouTubeVideoPlayer = forwardRef<
                 onClick={onClose}
               >
                 <X className="h-4 w-4" />
+              </Button>
+              {/* SYNC BUTTON */}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={onSync}
+                className="ml-2"
+              >
+                Sync
               </Button>
             </div>
           </div>
