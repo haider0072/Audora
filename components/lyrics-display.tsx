@@ -13,6 +13,7 @@ interface LyricsDisplayProps {
   onClose: () => void
   currentSong: Song | null
   currentTimeMs: number
+  forceRefresh?: number
 }
 
 const MemoizedLyricLine = memo(
@@ -39,7 +40,7 @@ const MemoizedLyricLine = memo(
 )
 MemoizedLyricLine.displayName = "MemoizedLyricLine"
 
-export function LyricsDisplay({ isVisible, onClose, currentSong, currentTimeMs }: LyricsDisplayProps) {
+export function LyricsDisplay({ isVisible, onClose, currentSong, currentTimeMs, forceRefresh }: LyricsDisplayProps) {
   const [lyricsData, setLyricsData] = useState<LyricsData | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -76,10 +77,27 @@ export function LyricsDisplay({ isVisible, onClose, currentSong, currentTimeMs }
   }
 
   useEffect(() => {
+    console.log('Lyrics useEffect:', {
+      currentSong: currentSong?.title,
+      isVisible,
+      lastFetchedSongId,
+      hasArtist: !!currentSong?.artist,
+      hasTitle: !!currentSong?.title,
+      hasDuration: !!currentSong?.duration,
+      condition: currentSong && isVisible && currentSong.id !== lastFetchedSongId
+    })
     if (currentSong && isVisible && currentSong.id !== lastFetchedSongId) {
       fetchLyricsForSong(currentSong)
     }
   }, [currentSong, isVisible, lastFetchedSongId])
+
+  // Force refresh when new songs are imported
+  useEffect(() => {
+    if (forceRefresh && currentSong && isVisible) {
+      setLastFetchedSongId(null)
+      fetchLyricsForSong(currentSong)
+    }
+  }, [forceRefresh, currentSong, isVisible])
 
   const currentLineIndex =
     lyricsData?.synced?.findIndex((line, index, arr) => {

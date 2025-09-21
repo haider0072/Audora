@@ -67,6 +67,7 @@ export default function MobileMusicPlayer() {
   // New state for lyrics and network sharing
   const [showLyrics, setShowLyrics] = useState(false)
   const [showNetworkSharing, setShowNetworkSharing] = useState(false)
+  const [forceRefreshTrigger, setForceRefreshTrigger] = useState(0)
   const [showVideo, setShowVideo] = useState(false)
 
   const audioRef = useRef<HTMLAudioElement>(null)
@@ -494,6 +495,13 @@ export default function MobileMusicPlayer() {
           description: `Added ${newSongs.length} song${newSongs.length > 1 ? "s" : ""} to playlist.`,
           duration: 3000,
         })
+
+        // Force refresh lyrics and YouTube for single song imports
+        if (newSongs.length === 1) {
+          setTimeout(() => {
+            setForceRefreshTrigger(prev => prev + 1)
+          }, 100)
+        }
       }
 
       if (duplicates.length > 0) {
@@ -1155,6 +1163,7 @@ export default function MobileMusicPlayer() {
           currentSong={currentSong}
           currentTimeMs={currentTimeMs}
           isPlaying={isPlaying}
+          forceRefresh={forceRefreshTrigger}
         />
 
         {/* Video Player Sheet */}
@@ -1164,6 +1173,9 @@ export default function MobileMusicPlayer() {
           currentTime={currentTime}
           onPlayPause={togglePlayPause}
           onSeek={handleVideoSeek}
+          isOpen={showVideo}
+          onOpenChange={setShowVideo}
+          forceRefresh={forceRefreshTrigger}
         />
 
         {/* Network Sharing Sheet */}

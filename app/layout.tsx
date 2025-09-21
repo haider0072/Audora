@@ -9,7 +9,7 @@ import { ErrorBoundary } from "@/components/error-boundary"
 const inter = Inter({ subsets: ["latin"] })
 
 export const metadata: Metadata = {
-  title: "Enhanced Music Player",
+  title: "Audora Music Player",
   description: "Professional FLAC and MP3 music player with equalizer",
     generator: 'v0.dev'
 }

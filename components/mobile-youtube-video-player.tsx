@@ -31,6 +31,7 @@ interface MobileYouTubeVideoPlayerProps {
   onSeek?: (time: number) => void
   isOpen: boolean
   onOpenChange: (open: boolean) => void
+  forceRefresh?: number
 }
 
 declare global {
@@ -50,7 +51,8 @@ export const MobileYouTubeVideoPlayer = forwardRef<
   onPlayPause,
   onSeek,
   isOpen,
-  onOpenChange
+  onOpenChange,
+  forceRefresh
 }, ref) {
   // Remove sync and custom controls state
   // Remove: videoVolume, isVideoMuted, autoPlayVideos, syncMode, showSettings
@@ -97,6 +99,16 @@ export const MobileYouTubeVideoPlayer = forwardRef<
       searchForVideos()
     }
   }, [isOpen, currentSong?.title, currentSong?.artist])
+
+  // Force refresh when new songs are imported
+  useEffect(() => {
+    if (forceRefresh && currentSong?.title && currentSong?.artist && isOpen) {
+      console.log('Force refreshing mobile YouTube videos for newly imported song')
+      setVideoOptions([])
+      setCurrentVideo(null)
+      searchForVideos()
+    }
+  }, [forceRefresh, currentSong?.title, currentSong?.artist, isOpen])
 
   const searchForVideos = async () => {
     if (!currentSong?.title || !currentSong?.artist) return

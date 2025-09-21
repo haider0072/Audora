@@ -38,6 +38,7 @@ interface YouTubeVideoPlayerProps {
   onClose: () => void
   onVideoReady?: () => void // NEW PROP
   onSync?: () => void // NEW PROP
+  forceRefresh?: number
 }
 
 declare global {
@@ -60,7 +61,8 @@ export const YouTubeVideoPlayer = forwardRef<
   isVisible,
   onClose,
   onVideoReady, // NEW PROP
-  onSync // NEW PROP
+  onSync, // NEW PROP
+  forceRefresh
 }, ref) {
   const [currentVideo, setCurrentVideo] = useState<YouTubeVideo | null>(null)
   const [videoOptions, setVideoOptions] = useState<YouTubeVideo[]>([])
@@ -183,6 +185,14 @@ export const YouTubeVideoPlayer = forwardRef<
 
   // Ensure searchForVideos is called whenever currentSong or isVisible changes, or if videoOptions are empty but isVisible is true
   useEffect(() => {
+    console.log('YouTube useEffect:', {
+      currentSong: currentSong?.title,
+      hasArtist: !!currentSong?.artist,
+      hasTitle: !!currentSong?.title,
+      isVisible,
+      videoOptionsLength: videoOptions.length,
+      willTriggerSearch: currentSong?.title && currentSong?.artist && isVisible && videoOptions.length === 0
+    })
     if (currentSong?.title && currentSong?.artist && isVisible) {
       if (videoOptions.length === 0) {
         console.log('Triggering searchForVideos due to empty videoOptions');
@@ -193,6 +203,16 @@ export const YouTubeVideoPlayer = forwardRef<
       }
     }
   }, [currentSong?.title, currentSong?.artist, isVisible]);
+
+  // Force refresh when new songs are imported
+  useEffect(() => {
+    if (forceRefresh && currentSong?.title && currentSong?.artist && isVisible) {
+      console.log('Force refreshing YouTube videos for newly imported song')
+      setVideoOptions([])
+      setCurrentVideo(null)
+      searchForVideos()
+    }
+  }, [forceRefresh, currentSong?.title, currentSong?.artist, isVisible])
 
   // Search for videos when song changes
   const searchForVideos = async () => {

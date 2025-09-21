@@ -64,6 +64,7 @@ export default function EnhancedMusicPlayer() {
   const [isRestoringPlaylist, setIsRestoringPlaylist] = useState(false)
   const [activeView, setActiveView] = useState<"player" | "lyrics" | "youtube">("player");
   const videoPlayerRef = useRef<{ resetVideo: () => void }>(null);
+  const [forceRefreshTrigger, setForceRefreshTrigger] = useState(0);
   // const [syncDelayActive, setSyncDelayActive] = useState(false); // REMOVED
 
   // ADD THIS NEW BLOCK:
@@ -419,6 +420,13 @@ export default function EnhancedMusicPlayer() {
     if (newSongs.length > 0) {
       setSongs((prev) => [...prev, ...newSongs])
       toast({ title: `Added ${newSongs.length} new song(s).` })
+
+      // Force refresh lyrics and YouTube for single song imports
+      if (newSongs.length === 1) {
+        setTimeout(() => {
+          setForceRefreshTrigger(prev => prev + 1)
+        }, 100)
+      }
     }
     if (duplicates.length > 0) toast({ title: `Ignored ${duplicates.length} duplicate(s).` })
     if (errors.length > 0) toast({ title: `Failed to process ${errors.length} file(s).`, variant: "destructive" })
@@ -997,6 +1005,7 @@ export default function EnhancedMusicPlayer() {
                 onClose={() => setActiveView("player")}
                 currentSong={currentSong}
                 currentTimeMs={currentTime * 1000}
+                forceRefresh={forceRefreshTrigger}
               />
             ) : activeView === "youtube" ? (
               <YouTubeVideoPlayer
@@ -1011,6 +1020,7 @@ export default function EnhancedMusicPlayer() {
                 className="h-full"
                 onSync={handleSync}
                 onVideoReady={handleVideoReady}
+                forceRefresh={forceRefreshTrigger}
               />
             ) : (
               <>

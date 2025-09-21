@@ -14,9 +14,10 @@ interface MobileLyricsDisplayProps {
   currentSong: Song | null
   currentTimeMs: number
   isPlaying: boolean
+  forceRefresh?: number
 }
 
-export function MobileLyricsDisplay({ isOpen, onOpenChange, currentSong, currentTimeMs }: MobileLyricsDisplayProps) {
+export function MobileLyricsDisplay({ isOpen, onOpenChange, currentSong, currentTimeMs, forceRefresh }: MobileLyricsDisplayProps) {
   const [lyricsData, setLyricsData] = useState<LyricsData | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -56,6 +57,14 @@ export function MobileLyricsDisplay({ isOpen, onOpenChange, currentSong, current
       fetchLyricsForSong(currentSong)
     }
   }, [currentSong, isOpen, lastFetchedSongId])
+
+  // Force refresh when new songs are imported
+  useEffect(() => {
+    if (forceRefresh && currentSong && isOpen) {
+      setLastFetchedSongId(null)
+      fetchLyricsForSong(currentSong)
+    }
+  }, [forceRefresh, currentSong, isOpen])
 
   const currentLineIndex =
     lyricsData?.synced?.findIndex((line, index, arr) => {
