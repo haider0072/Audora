@@ -365,7 +365,7 @@ export class MetadataExtractor {
           // Extract image data
           const imageSize = frameSize - (dataOffset - frameStart)
           const imageData = new Uint8Array(view.buffer, view.byteOffset + dataOffset, imageSize)
-          const blob = new Blob([imageData], { type: "image/jpeg" })
+          const blob = new Blob([imageData.slice()], { type: "image/jpeg" })
           return URL.createObjectURL(blob)
         }
 
@@ -400,7 +400,7 @@ export class MetadataExtractor {
 
       // Extract image data
       const imageData = new Uint8Array(view.buffer, view.byteOffset + offset, imageLength)
-      const blob = new Blob([imageData], { type: "image/jpeg" })
+      const blob = new Blob([imageData.slice()], { type: "image/jpeg" })
       return URL.createObjectURL(blob)
     } catch (error) {
       console.error("Error extracting FLAC album art:", error)

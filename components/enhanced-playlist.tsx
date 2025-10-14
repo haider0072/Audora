@@ -29,7 +29,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
-import type { AudioMetadata } from "../utils/metadata-extractor"
+import type { AudioMetadata } from "@/lib/metadata-extractor"
 import { AlbumArtDisplay } from "./album-art-display"
 
 interface Song extends AudioMetadata {
@@ -404,10 +404,10 @@ export function EnhancedPlaylist({
         </div>
       </CardHeader>
 
-      <CardContent className="flex-1 overflow-hidden p-0 px-6 pb-6">
+      <CardContent className="flex-1 overflow-hidden p-0 px-6 pb-6 flex flex-col">
         {/* Loading State */}
         {isLoading && (
-          <div className="mb-4 p-4 bg-muted/50 rounded-lg">
+          <div className="mb-4 p-4 bg-muted/50 rounded-lg flex-shrink-0">
             <div className="flex items-center justify-between text-sm mb-2">
               <span className="font-medium">Loading songs...</span>
               <span>
@@ -426,7 +426,8 @@ export function EnhancedPlaylist({
           </div>
         )}
 
-        <ScrollArea className="h-full w-full flex">
+        <div className="flex-1 min-h-0">
+          <ScrollArea className="h-full w-full">
           <div className="space-y-2 pr-4 w-full ">
             {songs.length === 0 ? (
               <div className="text-center text-muted-foreground py-8">
@@ -497,6 +498,7 @@ export function EnhancedPlaylist({
             )}
           </div>
         </ScrollArea>
+        </div>
       </CardContent>
     </Card>
   )

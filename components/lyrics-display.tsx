@@ -4,7 +4,7 @@ import type React from "react"
 
 import { useState, useEffect, useRef, memo } from "react"
 import { Button } from "@/components/ui/button"
-import { LyricsService, type LyricsData, type LyricLine } from "../utils/lyrics-service"
+import { LyricsService, type LyricsData, type LyricLine } from "@/lib/lyrics-service"
 import { Loader2, Mic, X, RefreshCw } from "lucide-react"
 import type { Song } from "./enhanced-playlist"
 

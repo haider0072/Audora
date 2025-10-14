@@ -8,7 +8,16 @@
       "Bash(npm run type-check:*)",
       "Bash(git add:*)",
       "Bash(pkill:*)",
-      "Bash(npm run build:*)"
+      "Bash(npm run build:*)",
+      "mcp__ide__getDiagnostics",
+      "Bash(npx tsc:*)",
+      "Read(//var/folders/ym/vjpzp2k51c59gmn_3gvmjjcw0000gn/T/TemporaryItems/NSIRD_screencaptureui_WIY8YO/**)",
+      "Bash(npm test:*)",
+      "Read(//var/folders/ym/vjpzp2k51c59gmn_3gvmjjcw0000gn/T/TemporaryItems/NSIRD_screencaptureui_Tz3uyD/**)",
+      "Read(//var/folders/ym/vjpzp2k51c59gmn_3gvmjjcw0000gn/T/TemporaryItems/NSIRD_screencaptureui_W5bHj0/**)",
+      "Bash(awk:*)",
+      "Bash(npm uninstall:*)",
+      "Bash(find:*)"
     ],
     "deny": [],
     "ask": []

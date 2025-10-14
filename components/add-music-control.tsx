@@ -14,8 +14,8 @@ export function AddMusicControls({
 }: {
     isLoadingSongs: boolean;
     isRestoringPlaylist: boolean;
-    fileInputRef: React.RefObject<HTMLInputElement | null>;
-    folderInputRef: React.RefObject<HTMLInputElement | null>;
+    fileInputRef: React.RefObject<HTMLInputElement>;
+    folderInputRef: React.RefObject<HTMLInputElement>;
     handleFileUpload: (e: React.ChangeEvent<HTMLInputElement>) => void;
     handleFolderUpload: (e: React.ChangeEvent<HTMLInputElement>) => void;
     loadingProgress: { current: number; total: number };
@@ -58,8 +58,7 @@ export function AddMusicControls({
                           multiple
                           onChange={handleFolderUpload}
                           className="hidden"
-                          // @ts-ignore
-                          webkitdirectory=""
+                          {...({ webkitdirectory: "" } as any)}
                         />
                       </div>
                       {/* Upload Progress Handeling */}

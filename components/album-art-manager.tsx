@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/dialog"
 import { toast } from "@/hooks/use-toast"
 import { ImageIcon, RefreshCw, Trash2, AlertCircle, CheckCircle } from "lucide-react"
-import { PlaylistStorage } from "../utils/playlist-storage"
+import { PlaylistStorage } from "@/lib/playlist-storage"
 
 interface AlbumArtEntry {
   id: string

@@ -27,7 +27,7 @@ import {
 } from "@/components/ui/dialog"
 import { toast } from "@/hooks/use-toast"
 import { Database, Download, HardDrive, Info, RotateCcw, AlertTriangle, CheckCircle, XCircle, EllipsisVertical,ImageIcon  } from "lucide-react"
-import { PlaylistStorage } from "../utils/playlist-storage"
+import { PlaylistStorage } from "@/lib/playlist-storage"
 import { AlbumArtManager } from "./album-art-manager"
 
 interface PlaylistManagerProps {

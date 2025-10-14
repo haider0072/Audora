@@ -16,7 +16,7 @@ import {
   Clock,
   HardDrive
 } from 'lucide-react'
-import { YouTubeService } from '@/utils/youtube-service'
+import { YouTubeService } from '@/lib/youtube-service'
 import { toast } from '@/hooks/use-toast'
 
 interface CacheStats {

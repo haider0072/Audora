@@ -4,20 +4,20 @@ import type React from "react"
 import { useState, useRef, useEffect, useCallback, useMemo } from "react"
 import { toast } from "@/hooks/use-toast"
 
-import { MetadataExtractor } from "./utils/metadata-extractor"
-import { StorageManager } from "./utils/storage"
-import { PlaylistStorage } from "./utils/playlist-storage"
-import { AlbumArtCache } from "./utils/album-art-cache"
-import { useAlbumArtPreloader } from "./hooks/use-album-art-preloader"
+import { MetadataExtractor } from "@/lib/metadata-extractor"
+import { StorageManager } from "@/lib/storage"
+import { PlaylistStorage } from "@/lib/playlist-storage"
+import { AlbumArtCache } from "@/lib/album-art-cache"
+import { useAlbumArtPreloader } from "@/hooks/use-album-art-preloader"
 
-import { MobileHeader } from "./components/mobile-header"
-import { MobilePlaylistControls } from "./components/mobile-playlist-controls"
-import { MobilePlaylist } from "./components/mobile-playlist"
-import { MobilePlayerBar } from "./components/mobile-player-bar"
-import { MobileEqualizerSheet } from "./components/mobile-equalizer-sheet"
-import { MobileLyricsDisplay } from "./components/mobile-lyrics-display"
-import { AlbumArtBackground } from "./components/album-art-background"
-import { MobileYouTubeVideoPlayer } from "./components/mobile-youtube-video-player"
+import { MobileHeader } from "@/components/mobile-header"
+import { MobilePlaylistControls } from "@/components/mobile-playlist-controls"
+import { MobilePlaylist } from "@/components/mobile-playlist"
+import { MobilePlayerBar } from "@/components/mobile-player-bar"
+import { MobileEqualizerSheet } from "@/components/mobile-equalizer-sheet"
+import { MobileLyricsDisplay } from "@/components/mobile-lyrics-display"
+import { AlbumArtBackground } from "@/components/album-art-background"
+import { MobileYouTubeVideoPlayer } from "@/components/mobile-youtube-video-player"
 
 interface Song {
   id: string
@@ -375,7 +375,7 @@ export default function MobileMusicPlayer() {
 
       setFilterNodes(filters)
 
-      let currentNode = sourceNodeRef.current
+      let currentNode: AudioNode = sourceNodeRef.current
       filters.forEach((filter) => {
         currentNode.connect(filter)
         currentNode = filter
@@ -1082,7 +1082,7 @@ export default function MobileMusicPlayer() {
       <input
         ref={folderInputRef}
         type="file"
-        webkitdirectory=""
+        {...({ webkitdirectory: "" } as any)}
         multiple
         onChange={handleFolderUpload}
         className="hidden"

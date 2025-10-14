@@ -1,8 +1,8 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { AlbumArtCache } from "../utils/album-art-cache"
-import { ColorExtractor } from "../utils/color-extractor"
+import { AlbumArtCache } from "@/lib/album-art-cache"
+import { ColorExtractor } from "@/lib/color-extractor"
 
 interface AlbumArtBackgroundProps {
   albumArt?: string

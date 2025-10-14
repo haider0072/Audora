@@ -4,9 +4,9 @@ import { useState, useEffect, useRef } from "react"
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { LyricsService, type LyricsData } from "../utils/lyrics-service"
+import { LyricsService, type LyricsData } from "@/lib/lyrics-service"
 import { Loader2, Mic, X, RefreshCw } from "lucide-react"
-import type { Song } from "../mobile-music-player"
+import type { Song } from "@/components/players/mobile-music-player"
 
 interface MobileLyricsDisplayProps {
   isOpen: boolean

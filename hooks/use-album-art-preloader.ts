@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useCallback, useRef } from "react"
-import { AlbumArtCache } from "../utils/album-art-cache"
+import { AlbumArtCache } from "@/lib/album-art-cache"
 
 interface Song {
   id: string

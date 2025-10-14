@@ -1,8 +1,8 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import EnhancedMusicPlayer from "../enhanced-music-player"
-import MobileMusicPlayer from "../mobile-music-player"
+import EnhancedMusicPlayer from "@/components/players/enhanced-music-player"
+import MobileMusicPlayer from "@/components/players/mobile-music-player"
 
 export default function Page() {
   const [isMobile, setIsMobile] = useState(false)

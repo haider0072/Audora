@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react"
 import { Music } from "lucide-react"
-import { AlbumArtCache } from "../utils/album-art-cache"
+import { AlbumArtCache } from "@/lib/album-art-cache"
 
 interface AlbumArtDisplayProps {
   songId?: string

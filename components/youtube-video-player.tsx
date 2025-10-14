@@ -19,8 +19,8 @@ import {
   Settings,
   RefreshCw
 } from 'lucide-react'
-import { YouTubeService, type YouTubeVideo } from '@/utils/youtube-service'
-import { VideoCache } from '@/utils/video-cache'
+import { YouTubeService, type YouTubeVideo } from '@/lib/youtube-service'
+import { VideoCache } from '@/lib/video-cache'
 import { toast } from '@/hooks/use-toast'
 
 interface YouTubeVideoPlayerProps {

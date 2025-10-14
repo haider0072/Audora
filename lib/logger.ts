@@ -71,17 +71,27 @@ export class Logger {
   }
 
   private async sendToExternalService(entry: LogEntry) {
-    // In production, send to external logging service
-    // Example: Sentry, LogRocket, DataDog, etc.
+    // In production, send to external logging service (Sentry, LogRocket, etc.)
+    // This is a placeholder for production logging integration
     try {
-      // await fetch('/api/logs', {
-      //   method: 'POST',
-      //   headers: { 'Content-Type': 'application/json' },
-      //   body: JSON.stringify(entry)
-      // })
+      // TODO: Integrate with Sentry or similar service
+      // Example: Sentry.captureMessage(entry.message, { level: this.getSentryLevel(entry.level), extra: entry.data })
+
+      // For now, only log errors to avoid noise
+      if (entry.level === LogLevel.ERROR && typeof window !== 'undefined') {
+        // Could send to an API endpoint
+        // await fetch('/api/logs', {
+        //   method: 'POST',
+        //   headers: { 'Content-Type': 'application/json' },
+        //   body: JSON.stringify(entry)
+        // })
+      }
     } catch (error) {
-      // Fallback to console if external service fails
-      console.error('Failed to send log to external service:', error)
+      // Silently fail to avoid infinite loops
+      // Only log to console in development
+      if (!this.isProduction) {
+        console.error('Failed to send log to external service:', error)
+      }
     }
   }
 

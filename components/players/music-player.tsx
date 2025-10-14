@@ -86,7 +86,7 @@ export default function Component() {
       setFilterNodes(filters)
 
       // Connect audio nodes
-      let currentNode = sourceNodeRef.current
+      let currentNode: AudioNode = sourceNodeRef.current
       filters.forEach((filter) => {
         currentNode.connect(filter)
         currentNode = filter

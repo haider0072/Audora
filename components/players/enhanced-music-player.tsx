@@ -18,7 +18,6 @@ import {
   Volume2,
   VolumeX,
   Settings,
-  Music,
   FolderOpen,
   Plus,
   Mic,
@@ -28,19 +27,19 @@ import {
   Youtube,
 } from "lucide-react"
 
-import { MetadataExtractor } from "./utils/metadata-extractor"
-import { EnhancedPlaylist, type Song } from "./components/enhanced-playlist"
-import { RefinedEqualizer, type EqualizerBand } from "./components/refined-equalizer"
-import { AlbumArtBackground } from "./components/album-art-background"
-import { AlbumArtDisplay } from "./components/album-art-display"
-import { StorageManager } from "./utils/storage"
-import { PlaylistStorage } from "./utils/playlist-storage"
-import { PlaylistManager } from "./components/playlist-manager"
-import { AlbumArtCache } from "./utils/album-art-cache"
-import { useAlbumArtPreloader } from "./hooks/use-album-art-preloader"
-import { LyricsDisplay } from "./components/lyrics-display"
-import { AddMusicControls } from "./components/add-music-control"
-import { YouTubeVideoPlayer } from "./components/youtube-video-player"
+import { MetadataExtractor } from "@/lib/metadata-extractor"
+import { EnhancedPlaylist, type Song } from "@/components/enhanced-playlist"
+import { RefinedEqualizer, type EqualizerBand } from "@/components/refined-equalizer"
+import { AlbumArtBackground } from "@/components/album-art-background"
+import { AlbumArtDisplay } from "@/components/album-art-display"
+import { StorageManager } from "@/lib/storage"
+import { PlaylistStorage } from "@/lib/playlist-storage"
+import { PlaylistManager } from "@/components/playlist-manager"
+import { AlbumArtCache } from "@/lib/album-art-cache"
+import { useAlbumArtPreloader } from "@/hooks/use-album-art-preloader"
+import { LyricsDisplay } from "@/components/lyrics-display"
+import { AddMusicControls } from "@/components/add-music-control"
+import { YouTubeVideoPlayer } from "@/components/youtube-video-player"
 
 export default function EnhancedMusicPlayer() {
   const [isPlaying, setIsPlaying] = useState(false)
@@ -65,32 +64,10 @@ export default function EnhancedMusicPlayer() {
   const [activeView, setActiveView] = useState<"player" | "lyrics" | "youtube">("player");
   const videoPlayerRef = useRef<{ resetVideo: () => void }>(null);
   const [forceRefreshTrigger, setForceRefreshTrigger] = useState(0);
-  // const [syncDelayActive, setSyncDelayActive] = useState(false); // REMOVED
+  const [videoReadyCalled, setVideoReadyCalled] = useState(false);
 
-  // ADD THIS NEW BLOCK:
-  // useEffect(() => {
-  //   if (activeView === "youtube" && currentSong && isPlaying) {
-  //     console.log('Switching to YouTube view - activating sync delay');
-  //     setSyncDelayActive(true);
-      
-  //     // Pause audio immediately when switching to video
-  //     if (audioRef.current) {
-  //       audioRef.current.pause();
-  //     }
-  //     setIsPlaying(false);
-  //   }
-  //   // ADD THIS: Also activate sync delay when switching to YouTube even if not playing
-  //   else if (activeView === "youtube" && currentSong && !syncDelayActive) {
-  //     console.log('YouTube view activated - ensuring sync delay is active');
-  //     setSyncDelayActive(true);
-  //   }
-  // }, [activeView, currentSong, isPlaying, syncDelayActive]);
-
- // REPLACE THIS ENTIRE FUNCTION:
- const handleSync = useCallback(() => {
-  console.log('Manual sync triggered');
-  // setSyncDelayActive(true); // REMOVED
-  setVideoReadyCalled(false); // Reset the flag
+  const handleSync = useCallback(() => {
+    setVideoReadyCalled(false);
   
   // Reset video player
   videoPlayerRef.current?.resetVideo();
@@ -460,10 +437,6 @@ export default function EnhancedMusicPlayer() {
       }
 
       setIsTransitioning(true)
-      // if (activeView === "youtube") { // REMOVED
-      //   console.log('New song selected in YouTube view - activating sync delay'); // REMOVED
-      //   setSyncDelayActive(true); // REMOVED
-      // } // REMOVED
       if (currentSong?.url) URL.revokeObjectURL(currentSong.url)
       preloadUpcomingSongs()
       setCurrentSong(song)
@@ -499,16 +472,10 @@ export default function EnhancedMusicPlayer() {
           })
 
           initializeAudioContext()
-          // if (!syncDelayActive) { // REMOVED
-          playPromiseRef.current = audioRef.current.play(); // REMOVED
-          await playPromiseRef.current // REMOVED
-          setIsPlaying(true) // REMOVED
-          // } else { // REMOVED
-          //     console.log('audioRef.current.play() skipped due to syncDelayActive'); // REMOVED
-          //     // Don't set isPlaying to true when sync delay is active // REMOVED
-          //     // The handleVideoReady callback will handle playing and setting isPlaying // REMOVED
-          //   } // REMOVED
-          } catch (error) {
+          playPromiseRef.current = audioRef.current.play()
+          await playPromiseRef.current
+          setIsPlaying(true)
+        } catch (error) {
             if ((error as DOMException).name !== "AbortError") {
               console.error("Error playing song:", error)
               toast({ title: "Playback Error", variant: "destructive" })
@@ -535,8 +502,6 @@ export default function EnhancedMusicPlayer() {
       }, 1000); // 1 second delay after video is playing
     }
   }, []);
-
-  const [videoReadyCalled, setVideoReadyCalled] = useState(false);
 
   const removeSong = async (songId: string) => {
     await PlaylistStorage.removeSongFile(songId)
@@ -602,12 +567,6 @@ export default function EnhancedMusicPlayer() {
       audioRef.current.pause()
       setIsPlaying(false)
     } else {
-      // Check if we're in sync delay mode first
-      // if (syncDelayActive) { // REMOVED
-      //   console.log('Play/pause triggered during sync delay - ignoring'); // REMOVED
-      //   return; // Don't allow manual play during sync // REMOVED
-      // } // REMOVED
-      
       try {
         if (audioContextRef.current?.state === "suspended") {
           await audioContextRef.current.resume()
@@ -898,8 +857,6 @@ export default function EnhancedMusicPlayer() {
 
   useEffect(() => {
     if (activeView !== "youtube") {
-      // console.log('Left YouTube view - resetting sync delay'); // REMOVED
-      // setSyncDelayActive(false); // REMOVED
       setVideoReadyCalled(false);
     }
   }, [activeView]);
@@ -971,10 +928,8 @@ export default function EnhancedMusicPlayer() {
       <div className="container mx-auto p-6 relative z-10">
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-2">
-            <Music className="w-8 h-8" />
-            <h1 className="text-3xl font-bold">Enhanced Music Player</h1>
             {isRestoringPlaylist && (
-              <Badge variant="secondary" className="ml-2">
+              <Badge variant="secondary">
                 Restoring...
               </Badge>
             )}
@@ -997,7 +952,7 @@ export default function EnhancedMusicPlayer() {
             
           </div>
         </div>
-        <div className="grid lg:grid-cols-2 gap-6 h-[calc(100vh-120px)] overflow-hidden">
+        <div className="grid lg:grid-cols-2 gap-6 h-[calc(100vh-70px)] overflow-hidden">
           <div className="flex flex-col gap-6 h-full overflow-hidden">
             {activeView === "lyrics" ? (
               <LyricsDisplay

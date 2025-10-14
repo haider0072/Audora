@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Badge } from "@/components/ui/badge"
 import { Music, Play, Trash2, Clock } from "lucide-react"
-import type { AudioMetadata } from "../utils/metadata-extractor"
+import type { AudioMetadata } from "@/lib/metadata-extractor"
 
 interface Song extends AudioMetadata {
   id: string
