@@ -237,8 +237,13 @@ export function EnhancedPlaylist({
   const [searchQuery, setSearchQuery] = useState("")
 
   const formatTime = (time: number) => {
-    const minutes = Math.floor(time / 60)
+    const hours = Math.floor(time / 3600)
+    const minutes = Math.floor((time % 3600) / 60)
     const seconds = Math.floor(time % 60)
+
+    if (hours > 0) {
+      return `${hours} hour${hours > 1 ? 's' : ''} ${minutes} min${minutes !== 1 ? 's' : ''}`
+    }
     return `${minutes}:${seconds.toString().padStart(2, "0")}`
   }
 
