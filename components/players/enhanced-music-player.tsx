@@ -37,6 +37,7 @@ import { PlaylistStorage } from "@/lib/playlist-storage"
 import { PlaylistManager } from "@/components/playlist-manager"
 import { AlbumArtCache } from "@/lib/album-art-cache"
 import { useAlbumArtPreloader } from "@/hooks/use-album-art-preloader"
+import { useFolderSync } from "@/hooks/use-folder-sync"
 import { LyricsDisplay } from "@/components/lyrics-display"
 import { AddMusicControls } from "@/components/add-music-control"
 import { YouTubeVideoPlayer } from "@/components/youtube-video-player"
@@ -93,6 +94,24 @@ export default function EnhancedMusicPlayer() {
   const playPromiseRef = useRef<Promise<void> | null>(null)
 
   const { preloadUpcomingSongs } = useAlbumArtPreloader(songs, currentSong?.id, 3)
+
+  // Folder sync hook
+  const {
+    isSyncing,
+    syncProgress,
+    syncInputRef,
+    handleFolderSync,
+  } = useFolderSync({
+    songs,
+    onSongsAdded: (newSongs) => {
+      setSongs((prev) => [...prev, ...newSongs])
+      if (newSongs.length === 1) {
+        setTimeout(() => {
+          setForceRefreshTrigger(prev => prev + 1)
+        }, 100)
+      }
+    },
+  })
 
   const [equalizerBands, setEqualizerBands] = useState<EqualizerBand[]>([
     { frequency: 32, gain: 0, label: "32Hz" },
@@ -945,8 +964,11 @@ export default function EnhancedMusicPlayer() {
             isRestoringPlaylist={isRestoringPlaylist}
             fileInputRef={fileInputRef}
             folderInputRef={folderInputRef}
+            syncInputRef={syncInputRef}
             handleFileUpload={handleFileUpload}
             handleFolderUpload={handleFolderUpload}
+            handleFolderSync={handleFolderSync}
+            isSyncing={isSyncing}
             loadingProgress={loadingProgress}
             />
             

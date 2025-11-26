@@ -1,6 +1,6 @@
 import {Button} from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "./ui/dropdown-menu";
-import {Plus, Music, Folder} from "lucide-react";
+import {Plus, Music, Folder, RefreshCw} from "lucide-react";
 import React from "react";
 
 export function AddMusicControls({
@@ -8,16 +8,22 @@ export function AddMusicControls({
     isRestoringPlaylist,
     fileInputRef,
     folderInputRef,
+    syncInputRef,
     handleFileUpload,
     handleFolderUpload,
+    handleFolderSync,
+    isSyncing,
     loadingProgress,
 }: {
     isLoadingSongs: boolean;
     isRestoringPlaylist: boolean;
     fileInputRef: React.RefObject<HTMLInputElement>;
     folderInputRef: React.RefObject<HTMLInputElement>;
+    syncInputRef?: React.RefObject<HTMLInputElement>;
     handleFileUpload: (e: React.ChangeEvent<HTMLInputElement>) => void;
     handleFolderUpload: (e: React.ChangeEvent<HTMLInputElement>) => void;
+    handleFolderSync?: (e: React.ChangeEvent<HTMLInputElement>) => void;
+    isSyncing?: boolean;
     loadingProgress: { current: number; total: number };
 }
 ) {
@@ -43,6 +49,18 @@ export function AddMusicControls({
                             </DropdownMenuItem>
                           </DropdownMenuContent>
                         </DropdownMenu>
+                        {/* Sync Folder Button */}
+                        {handleFolderSync && (
+                          <Button
+                            variant="outline"
+                            className="gap-2"
+                            disabled={isLoadingSongs || isRestoringPlaylist || isSyncing}
+                            onClick={() => syncInputRef?.current?.click()}
+                          >
+                            <RefreshCw className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`}/>
+                            {isSyncing ? 'Syncing...' : 'Sync Folder'}
+                          </Button>
+                        )}
                         {/* Uploading File/Folder Functionaility */}
                         <input
                           ref={fileInputRef}
@@ -60,6 +78,17 @@ export function AddMusicControls({
                           className="hidden"
                           {...({ webkitdirectory: "" } as any)}
                         />
+                        {/* Sync Folder Input */}
+                        {handleFolderSync && (
+                          <input
+                            ref={syncInputRef}
+                            type="file"
+                            multiple
+                            onChange={handleFolderSync}
+                            className="hidden"
+                            {...({ webkitdirectory: "" } as any)}
+                          />
+                        )}
                       </div>
                       {/* Upload Progress Handeling */}
                       {/* {(isLoadingSongs || isRestoringPlaylist) && (
