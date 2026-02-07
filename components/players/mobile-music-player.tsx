@@ -4,7 +4,6 @@ import type React from "react"
 import { useState, useRef, useEffect, useCallback, useMemo } from "react"
 import { toast } from "@/hooks/use-toast"
 
-import { MetadataExtractor } from "@/lib/metadata-extractor"
 import { StorageManager } from "@/lib/storage"
 import { PlaylistStorage } from "@/lib/playlist-storage"
 import { AlbumArtCache } from "@/lib/album-art-cache"
@@ -12,6 +11,7 @@ import { useAlbumArtPreloader } from "@/hooks/use-album-art-preloader"
 import { usePlaylistManager } from "@/hooks/use-playlist-manager"
 import { useAudioEngine } from "@/hooks/use-audio-engine"
 import { useEqualizerManager, DEFAULT_EQUALIZER_BANDS } from "@/hooks/use-equalizer-manager"
+import { useFileImporter } from "@/hooks/use-file-importer"
 import type { Song } from "@/components/enhanced-playlist"
 
 import { MobileHeader } from "@/components/mobile-header"
@@ -27,8 +27,6 @@ import type { EqualizerBand } from "@/components/refined-equalizer"
 
 export default function MobileMusicPlayer() {
   const [searchQuery, setSearchQuery] = useState("")
-  const [isLoadingSongs, setIsLoadingSongs] = useState(false)
-  const [loadingProgress, setLoadingProgress] = useState({ current: 0, total: 0 })
   const [isTransitioning, setIsTransitioning] = useState(false)
   const [isInitialized, setIsInitialized] = useState(false)
   const [isRestoringPlaylist, setIsRestoringPlaylist] = useState(false)
@@ -84,12 +82,21 @@ export default function MobileMusicPlayer() {
   const [forceRefreshTrigger, setForceRefreshTrigger] = useState(0)
   const [showVideo, setShowVideo] = useState(false)
 
-  const fileInputRef = useRef<HTMLInputElement>(null)
-  const folderInputRef = useRef<HTMLInputElement>(null)
-  const processingRef = useRef(false)
-
   // Use album art preloader hook
   const { preloadUpcomingSongs } = useAlbumArtPreloader(songs, currentSong?.id, 3)
+
+  const {
+    isLoadingSongs, loadingProgress, fileInputRef, folderInputRef,
+    handleFileUpload, handleFolderUpload,
+  } = useFileImporter({
+    songs,
+    onSongsAdded: (newSongs) => {
+      setSongs((prev) => [...prev, ...newSongs])
+      if (newSongs.length === 1) {
+        setTimeout(() => setForceRefreshTrigger(prev => prev + 1), 100)
+      }
+    },
+  })
 
 
   // Calculate current time in milliseconds for lyrics sync
@@ -321,170 +328,6 @@ export default function MobileMusicPlayer() {
   ])
 
 
-  // File handling functions
-  const generateSongId = (file: File): string => {
-    return `${file.name}-${file.size}-${file.lastModified}`
-  }
-
-  const isDuplicateSong = (file: File): boolean => {
-    const id = generateSongId(file)
-    return songs.some((song) => song.id === id)
-  }
-
-  const addSongsToPlaylist = async (files: File[]) => {
-    if (processingRef.current) {
-      toast({
-        title: "Import in progress",
-        description: "Please wait for the current import to complete.",
-      })
-      return
-    }
-
-    const supportedFormats = ["mp3", "flac", "wav", "m4a", "aac"]
-    const validFiles = files.filter((file) => {
-      const extension = file.name.split(".").pop()?.toLowerCase()
-      return extension && supportedFormats.includes(extension)
-    })
-
-    if (validFiles.length === 0) {
-      toast({
-        title: "No supported files",
-        description: "Please select MP3, FLAC, WAV, M4A, or AAC files.",
-        variant: "destructive",
-      })
-      return
-    }
-
-    processingRef.current = true
-    setIsLoadingSongs(true)
-    setLoadingProgress({ current: 0, total: validFiles.length })
-
-    const newSongs: Song[] = []
-    const duplicates: string[] = []
-    const errors: string[] = []
-    const BATCH_SIZE = 3 // Smaller batch size for mobile
-
-    try {
-      for (let i = 0; i < validFiles.length; i += BATCH_SIZE) {
-        const batch = validFiles.slice(i, i + BATCH_SIZE)
-
-        const batchPromises = batch.map(async (file, batchIndex) => {
-          const globalIndex = i + batchIndex
-
-          try {
-            setLoadingProgress({ current: globalIndex + 1, total: validFiles.length })
-
-            if (isDuplicateSong(file)) {
-              duplicates.push(file.name)
-              return null
-            }
-
-            const metadata = await MetadataExtractor.extractMetadata(file)
-            const songId = generateSongId(file)
-
-            const song: Song = {
-              ...metadata,
-              id: songId,
-              file,
-              url: "",
-            }
-
-            await PlaylistStorage.storeSongFile(songId, file)
-
-            if (metadata.albumArt) {
-              try {
-                await PlaylistStorage.storeAlbumArt(songId, metadata.albumArt)
-                await AlbumArtCache.preloadAlbumArt(songId, metadata.albumArt)
-              } catch (error) {
-                console.error(`Error storing album art for ${file.name}:`, error)
-              }
-            }
-
-            return song
-          } catch (error) {
-            console.error(`Error processing ${file.name}:`, error)
-            errors.push(file.name)
-            return null
-          }
-        })
-
-        const batchResults = await Promise.allSettled(batchPromises)
-
-        batchResults.forEach((result) => {
-          if (result.status === "fulfilled" && result.value) {
-            newSongs.push(result.value)
-          }
-        })
-
-        if (i + BATCH_SIZE < validFiles.length) {
-          await new Promise((resolve) => setTimeout(resolve, 150))
-        }
-      }
-
-      if (newSongs.length > 0) {
-        setSongs((prev) => [...prev, ...newSongs])
-
-        toast({
-          title: "Songs added successfully",
-          description: `Added ${newSongs.length} song${newSongs.length > 1 ? "s" : ""} to playlist.`,
-          duration: 3000,
-        })
-
-        // Force refresh lyrics and YouTube for single song imports
-        if (newSongs.length === 1) {
-          setTimeout(() => {
-            setForceRefreshTrigger(prev => prev + 1)
-          }, 100)
-        }
-      }
-
-      if (duplicates.length > 0) {
-        toast({
-          title: "Duplicates ignored",
-          description: `${duplicates.length} duplicate song${duplicates.length > 1 ? "s" : ""} were not added.`,
-        })
-      }
-
-      if (errors.length > 0) {
-        toast({
-          title: "Some files failed to import",
-          description: `${errors.length} file${errors.length > 1 ? "s" : ""} could not be processed.`,
-          variant: "destructive",
-        })
-      }
-    } catch (error) {
-      console.error("Error during batch processing:", error)
-      toast({
-        title: "Import error",
-        description: "There was an error importing some files.",
-        variant: "destructive",
-      })
-    } finally {
-      setIsLoadingSongs(false)
-      setLoadingProgress({ current: 0, total: 0 })
-      processingRef.current = false
-    }
-  }
-
-  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(event.target.files || [])
-    if (files.length > 0) {
-      await addSongsToPlaylist(files)
-    }
-    if (fileInputRef.current) {
-      fileInputRef.current.value = ""
-    }
-  }
-
-  const handleFolderUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(event.target.files || [])
-    if (files.length > 0) {
-      await addSongsToPlaylist(files)
-    }
-    if (folderInputRef.current) {
-      folderInputRef.current.value = ""
-    }
-  }
 
   // Player control functions
   const selectSong = async (song: Song, isAutoAdvance = false) => {

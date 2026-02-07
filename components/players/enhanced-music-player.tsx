@@ -27,7 +27,6 @@ import {
   Youtube,
 } from "lucide-react"
 
-import { MetadataExtractor } from "@/lib/metadata-extractor"
 import { EnhancedPlaylist, type Song } from "@/components/enhanced-playlist"
 import { RefinedEqualizer, type EqualizerBand } from "@/components/refined-equalizer"
 import { AlbumArtBackground } from "@/components/album-art-background"
@@ -41,14 +40,13 @@ import { useFolderSync } from "@/hooks/use-folder-sync"
 import { usePlaylistManager } from "@/hooks/use-playlist-manager"
 import { useAudioEngine } from "@/hooks/use-audio-engine"
 import { useEqualizerManager, DEFAULT_EQUALIZER_BANDS } from "@/hooks/use-equalizer-manager"
+import { useFileImporter } from "@/hooks/use-file-importer"
 import { LyricsDisplay } from "@/components/lyrics-display"
 import { AddMusicControls } from "@/components/add-music-control"
 import { YouTubeVideoPlayer } from "@/components/youtube-video-player"
 
 export default function EnhancedMusicPlayer() {
   const [currentBitrate, setCurrentBitrate] = useState<number | undefined>()
-  const [isLoadingSongs, setIsLoadingSongs] = useState(false)
-  const [loadingProgress, setLoadingProgress] = useState({ current: 0, total: 0 })
   const [isTransitioning, setIsTransitioning] = useState(false)
   const [isInitialized, setIsInitialized] = useState(false)
   const [isRestoringPlaylist, setIsRestoringPlaylist] = useState(false)
@@ -59,9 +57,6 @@ export default function EnhancedMusicPlayer() {
 
   const audioRef = useRef<HTMLAudioElement>(null)
   const skipToNextRef = useRef<() => void>(() => {})
-  const fileInputRef = useRef<HTMLInputElement>(null)
-  const folderInputRef = useRef<HTMLInputElement>(null)
-  const processingRef = useRef(false)
 
   // Stable onEnded callback using ref — THIS FIXES THE STALE CLOSURE BUG
   const handleEnded = useCallback(() => {
@@ -117,6 +112,19 @@ export default function EnhancedMusicPlayer() {
   }, [setIsPlaying])
 
   const { preloadUpcomingSongs } = useAlbumArtPreloader(songs, currentSong?.id, 3)
+
+  const {
+    isLoadingSongs, loadingProgress, fileInputRef, folderInputRef,
+    handleFileUpload, handleFolderUpload,
+  } = useFileImporter({
+    songs,
+    onSongsAdded: (newSongs) => {
+      setSongs((prev) => [...prev, ...newSongs])
+      if (newSongs.length === 1) {
+        setTimeout(() => setForceRefreshTrigger(prev => prev + 1), 100)
+      }
+    },
+  })
 
   // Folder sync hook
   const {
@@ -253,79 +261,6 @@ export default function EnhancedMusicPlayer() {
   ])
 
 
-  const addSongsToPlaylist = async (files: File[]) => {
-    if (processingRef.current) return toast({ title: "Import in progress" })
-    const supportedFormats = ["mp3", "flac", "wav", "m4a", "aac"]
-    const validFiles = files.filter((f) => supportedFormats.includes(f.name.split(".").pop()?.toLowerCase() || ""))
-    if (validFiles.length === 0) return toast({ title: "No supported files", variant: "destructive" })
-
-    processingRef.current = true
-    setIsLoadingSongs(true)
-    setLoadingProgress({ current: 0, total: validFiles.length })
-
-    const newSongs: Song[] = [],
-      duplicates: string[] = [],
-      errors: string[] = []
-    const generateSongId = (file: File) => `${file.name}-${file.size}-${file.lastModified}`
-    const existingIds = new Set(songs.map((s) => s.id))
-
-    for (let i = 0; i < validFiles.length; i += 5) {
-      const batch = validFiles.slice(i, i + 5)
-      const batchPromises = batch.map(async (file, batchIndex) => {
-        const globalIndex = i + batchIndex
-        setLoadingProgress({ current: globalIndex + 1, total: validFiles.length })
-        const songId = generateSongId(file)
-        if (existingIds.has(songId)) {
-          duplicates.push(file.name)
-          return null
-        }
-        try {
-          const metadata = await MetadataExtractor.extractMetadata(file)
-          const song: Song = { ...metadata, id: songId, file, url: "" }
-          await PlaylistStorage.storeSongFile(songId, file)
-          if (metadata.albumArt) {
-            await PlaylistStorage.storeAlbumArt(songId, metadata.albumArt)
-            await AlbumArtCache.preloadAlbumArt(songId, metadata.albumArt)
-          }
-          return song
-        } catch (error) {
-          errors.push(file.name)
-          return null
-        }
-      })
-      const batchResults = await Promise.all(batchPromises)
-      newSongs.push(...batchResults.filter((s): s is Song => s !== null))
-    }
-
-    if (newSongs.length > 0) {
-      setSongs((prev) => [...prev, ...newSongs])
-      toast({ title: `Added ${newSongs.length} new song(s).` })
-
-      // Force refresh lyrics and YouTube for single song imports
-      if (newSongs.length === 1) {
-        setTimeout(() => {
-          setForceRefreshTrigger(prev => prev + 1)
-        }, 100)
-      }
-    }
-    if (duplicates.length > 0) toast({ title: `Ignored ${duplicates.length} duplicate(s).` })
-    if (errors.length > 0) toast({ title: `Failed to process ${errors.length} file(s).`, variant: "destructive" })
-
-    setIsLoadingSongs(false)
-    processingRef.current = false
-  }
-
-  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(event.target.files || [])
-    if (files.length > 0) addSongsToPlaylist(files)
-    if (fileInputRef.current) fileInputRef.current.value = ""
-  }
-
-  const handleFolderUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(event.target.files || [])
-    if (files.length > 0) addSongsToPlaylist(files)
-    if (folderInputRef.current) folderInputRef.current.value = ""
-  }
 
   const selectSong = useCallback(
     async (song: Song, isAutoAdvance = false) => {
