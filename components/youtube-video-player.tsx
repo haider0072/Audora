@@ -4,22 +4,9 @@ import { useEffect, useRef, useState, useCallback, forwardRef, useImperativeHand
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { Separator } from '@/components/ui/separator'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { 
-  Play, 
-  Pause, 
-  Volume2, 
-  VolumeX, 
-  Maximize2, 
-  Minimize2,
-  Youtube,
-  Music,
-  X,
-  Settings,
-  RefreshCw
-} from 'lucide-react'
+import { Youtube, X, RefreshCw } from 'lucide-react'
 import { YouTubeService, type YouTubeVideo } from '@/lib/youtube-service'
+import { formatTime } from '@/lib/utils'
 import { VideoCache } from '@/lib/video-cache'
 import { toast } from '@/hooks/use-toast'
 
@@ -75,7 +62,6 @@ export const YouTubeVideoPlayer = forwardRef<
   // Expose resetVideo to parent
   useImperativeHandle(ref, () => ({
     resetVideo: () => {
-      console.log('resetVideo called');
       if (videoOptions.length > 0) {
         setCurrentVideo(videoOptions[0]);
         loadVideo(videoOptions[0]);
@@ -91,18 +77,14 @@ export const YouTubeVideoPlayer = forwardRef<
       const firstScriptTag = document.getElementsByTagName('script')[0]
       firstScriptTag.parentNode?.insertBefore(tag, firstScriptTag)
 
-      window.onYouTubeIframeAPIReady = () => {
-        console.log('YouTube IFrame API ready')
-      }
+      window.onYouTubeIframeAPIReady = () => {}
     }
   }, [])
 
   const MAX_LOAD_VIDEO_RETRIES = 10;
 
   const loadVideo = useCallback((video: YouTubeVideo, retryCount = 0) => {
-    console.log('loadVideo called for:', video.title, 'retryCount:', retryCount);
     if (!window.YT || !window.YT.Player) {
-      console.log('YouTube API not ready, waiting...');
       setTimeout(() => loadVideo(video, retryCount), 100);
       return;
     }
@@ -111,9 +93,7 @@ export const YouTubeVideoPlayer = forwardRef<
     if (playerRef.current) {
       try {
         playerRef.current.destroy();
-      } catch (e) {
-        console.log('Error destroying previous player:', e);
-      }
+      } catch (_) {}
       playerRef.current = null;
     }
     setTimeout(() => {
@@ -127,7 +107,6 @@ export const YouTubeVideoPlayer = forwardRef<
         }
         return;
       }
-      console.log('Creating YouTube player for video:', video.id);
       playerRef.current = new window.YT.Player(playerContainerId, {
         height: '360',
         width: '640',
@@ -143,27 +122,18 @@ export const YouTubeVideoPlayer = forwardRef<
         },
         events: {
           onReady: (event: any) => {
-            console.log('YouTube player ready');
             try {
               event.target.mute();
               event.target.setVolume(0);
-              console.log('Video muted successfully (onReady)');
-            } catch (e) {
-              console.log('Error muting video (onReady):', e);
-            }
+            } catch (_) {}
           },
           onStateChange: (event: any) => {
-            console.log('YouTube player state changed:', event.data);
             if (event.data === window.YT.PlayerState.PLAYING && onVideoReady) {
-              console.log('Video started playing - calling onVideoReady');
               onVideoReady();
               try {
                 event.target.mute();
                 event.target.setVolume(0);
-                console.log('Video muted successfully (onStateChange)');
-              } catch (e) {
-                console.log('Error ensuring video mute (onStateChange):', e);
-              }
+              } catch (_) {}
             }
           },
           onError: (event: any) => {
@@ -183,19 +153,9 @@ export const YouTubeVideoPlayer = forwardRef<
     }, 100);
   }, [videoOptions, onVideoReady]);
 
-  // Ensure searchForVideos is called whenever currentSong or isVisible changes, or if videoOptions are empty but isVisible is true
   useEffect(() => {
-    console.log('YouTube useEffect:', {
-      currentSong: currentSong?.title,
-      hasArtist: !!currentSong?.artist,
-      hasTitle: !!currentSong?.title,
-      isVisible,
-      videoOptionsLength: videoOptions.length,
-      willTriggerSearch: currentSong?.title && currentSong?.artist && isVisible && videoOptions.length === 0
-    })
     if (currentSong?.title && currentSong?.artist && isVisible) {
       if (videoOptions.length === 0) {
-        console.log('Triggering searchForVideos due to empty videoOptions');
         searchForVideos();
       } else {
         // Always reload video when switching to video mode or song changes
@@ -207,7 +167,6 @@ export const YouTubeVideoPlayer = forwardRef<
   // Force refresh when new songs are imported
   useEffect(() => {
     if (forceRefresh && currentSong?.title && currentSong?.artist && isVisible) {
-      console.log('Force refreshing YouTube videos for newly imported song')
       setVideoOptions([])
       setCurrentVideo(null)
       searchForVideos()
@@ -277,12 +236,6 @@ export const YouTubeVideoPlayer = forwardRef<
       }
     };
   }, []);
-
-  const formatTime = (seconds: number) => {
-    const mins = Math.floor(seconds / 60)
-    const secs = Math.floor(seconds % 60)
-    return `${mins}:${secs.toString().padStart(2, '0')}`
-  }
 
   const formatViewCount = (count: number) => {
     if (count >= 1000000) {
@@ -385,10 +338,7 @@ export const YouTubeVideoPlayer = forwardRef<
                 <div
                   key={video.id}
                   className="flex items-center gap-3 p-2 rounded-lg hover:bg-muted cursor-pointer"
-                  onClick={() => {
-                    console.log('Loading alternative video:', video.title);
-                    loadVideo(video);
-                  }}
+                  onClick={() => loadVideo(video)}
                 >
                   <img
                     src={video.thumbnail}

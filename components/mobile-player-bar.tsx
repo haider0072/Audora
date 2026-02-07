@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Slider } from "@/components/ui/slider"
 import { Badge } from "@/components/ui/badge"
 import { Play, Pause, SkipBack, SkipForward, Settings, Mic, Share2, Music, Volume2, VolumeX, Youtube } from "lucide-react"
+import { formatTime } from "@/lib/utils"
 
 interface Song {
   id: string
@@ -51,18 +52,6 @@ export function MobilePlayerBar({
   const [showVolumeControl, setShowVolumeControl] = useState(false)
   const [volume, setVolume] = useState([80])
   const [isMuted, setIsMuted] = useState(false)
-
-  const formatTime = (time: number) => {
-    if (isNaN(time)) return "0:00"
-    const minutes = Math.floor(time / 60)
-    const seconds = Math.floor(time % 60)
-    return `${minutes}:${seconds.toString().padStart(2, "0")}`
-  }
-
-  const formatBitrate = (bitrate?: number) => {
-    if (!bitrate) return ""
-    return bitrate >= 1000 ? `${(bitrate / 1000).toFixed(1)}M` : `${Math.round(bitrate)}k`
-  }
 
   // Auto-hide volume control after 3 seconds of inactivity
   useEffect(() => {
