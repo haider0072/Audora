@@ -172,7 +172,7 @@ export function MobilePlayerBar({
 
           {/* Playback Controls */}
           <div className="flex items-center gap-1">
-            <Button variant="ghost" size="icon" className="w-8 h-8" onClick={onSkipPrevious} disabled={isTransitioning}>
+            <Button variant="ghost" size="icon" className="w-8 h-8" onClick={onSkipPrevious} disabled={isTransitioning} aria-label="Previous track">
               <SkipBack className="w-4 h-4" />
             </Button>
 
@@ -182,11 +182,12 @@ export function MobilePlayerBar({
               className="w-10 h-10 rounded-full shadow-lg"
               onClick={onPlayPause}
               disabled={isTransitioning}
+              aria-label={isPlaying ? "Pause" : "Play"}
             >
               {isPlaying ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5 ml-0.5" />}
             </Button>
 
-            <Button variant="ghost" size="icon" className="w-8 h-8" onClick={onSkipNext} disabled={isTransitioning}>
+            <Button variant="ghost" size="icon" className="w-8 h-8" onClick={onSkipNext} disabled={isTransitioning} aria-label="Next track">
               <SkipForward className="w-4 h-4" />
             </Button>
           </div>
@@ -196,15 +197,15 @@ export function MobilePlayerBar({
         <div className="flex items-center justify-between mt-3">
           {/* Left Controls */}
           <div className="flex items-center gap-1">
-            <Button variant="ghost" size="icon" className="w-8 h-8" onClick={handleVolumeToggle}>
+            <Button variant="ghost" size="icon" className="w-8 h-8" onClick={handleVolumeToggle} aria-label={isMuted ? "Unmute" : "Mute"}>
               {isMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
             </Button>
 
-            <Button variant="ghost" size="icon" className="w-8 h-8" onClick={onLyricsClick}>
+            <Button variant="ghost" size="icon" className="w-8 h-8" onClick={onLyricsClick} aria-label="Show lyrics">
               <Mic className="w-4 h-4" />
             </Button>
 
-            <Button variant="ghost" size="icon" className="w-8 h-8" onClick={onVideoClick}>
+            <Button variant="ghost" size="icon" className="w-8 h-8" onClick={onVideoClick} aria-label="Show video">
               <Youtube className="w-4 h-4" />
             </Button>
           </div>

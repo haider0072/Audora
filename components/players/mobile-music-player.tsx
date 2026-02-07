@@ -156,9 +156,9 @@ export default function MobileMusicPlayer() {
     return sortedGrouped
   }, [filteredSongs, viewMode])
 
-  const getTotalDuration = () => {
+  const totalDuration = useMemo(() => {
     return songs.reduce((total, song) => total + (song.duration || 0), 0)
-  }
+  }, [songs])
 
   // Restore playlist on mount
   useEffect(() => {
@@ -388,7 +388,7 @@ export default function MobileMusicPlayer() {
           onViewModeChange={setViewMode}
           onPlaylistReset={resetPlaylist}
           songCount={songs.length}
-          totalDuration={formatTime(getTotalDuration())}
+          totalDuration={formatTime(totalDuration)}
         />
 
         {/* Playlist */}
