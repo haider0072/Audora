@@ -10,6 +10,7 @@ import { PlaylistStorage } from "@/lib/playlist-storage"
 import { AlbumArtCache } from "@/lib/album-art-cache"
 import { useAlbumArtPreloader } from "@/hooks/use-album-art-preloader"
 import { usePlaylistManager } from "@/hooks/use-playlist-manager"
+import { useAudioEngine } from "@/hooks/use-audio-engine"
 import type { Song } from "@/components/enhanced-playlist"
 
 import { MobileHeader } from "@/components/mobile-header"
@@ -21,18 +22,9 @@ import { MobileLyricsDisplay } from "@/components/mobile-lyrics-display"
 import { AlbumArtBackground } from "@/components/album-art-background"
 import { MobileYouTubeVideoPlayer } from "@/components/mobile-youtube-video-player"
 
-interface EqualizerBand {
-  frequency: number
-  gain: number
-  label: string
-}
+import type { EqualizerBand } from "@/components/refined-equalizer"
 
 export default function MobileMusicPlayer() {
-  const [isPlaying, setIsPlaying] = useState(false)
-  const [currentTime, setCurrentTime] = useState(0)
-  const [duration, setDuration] = useState(0)
-  const [volume, setVolume] = useState([80])
-  const [isMuted, setIsMuted] = useState(false)
   const [searchQuery, setSearchQuery] = useState("")
   const [showEqualizer, setShowEqualizer] = useState(false)
   const [isLoadingSongs, setIsLoadingSongs] = useState(false)
@@ -42,49 +34,13 @@ export default function MobileMusicPlayer() {
   const [isRestoringPlaylist, setIsRestoringPlaylist] = useState(false)
 
   const audioRef = useRef<HTMLAudioElement>(null)
+  const skipToNextRef = useRef<() => void>(() => {})
 
-  const {
-    songs, setSongs, currentSong, setCurrentSong,
-    shuffleMode, setShuffleMode, viewMode, setViewMode,
-    sortedSongs, getNextSong, getPreviousSong, toggleShuffle,
-    removeSong, resetPlaylist,
-  } = usePlaylistManager({
-    onCurrentSongRemoved: () => {
-      if (audioRef.current) {
-        audioRef.current.pause()
-        audioRef.current.src = ""
-      }
-      setIsPlaying(false)
-    },
-    onPlaylistReset: () => {
-      if (audioRef.current) {
-        audioRef.current.pause()
-        audioRef.current.src = ""
-      }
-      setIsPlaying(false)
-      setCurrentTime(0)
-      setDuration(0)
-    },
-  })
+  // Stable onEnded callback using ref — THIS FIXES THE STALE CLOSURE BUG
+  const handleEnded = useCallback(() => {
+    skipToNextRef.current()
+  }, [])
 
-  // New state for lyrics and network sharing
-  const [showLyrics, setShowLyrics] = useState(false)
-  const [showNetworkSharing, setShowNetworkSharing] = useState(false)
-  const [forceRefreshTrigger, setForceRefreshTrigger] = useState(0)
-  const [showVideo, setShowVideo] = useState(false)
-
-  const fileInputRef = useRef<HTMLInputElement>(null)
-  const folderInputRef = useRef<HTMLInputElement>(null)
-  const audioContextRef = useRef<AudioContext | null>(null)
-  const sourceNodeRef = useRef<MediaElementAudioSourceNode | null>(null)
-  const gainNodeRef = useRef<GainNode | null>(null)
-  const analyserRef = useRef<AnalyserNode | null>(null)
-  const processingRef = useRef(false)
-
-  // Use album art preloader hook
-  const { preloadUpcomingSongs } = useAlbumArtPreloader(songs, currentSong?.id, 3)
-
-  // Equalizer bands
   const [equalizerBands, setEqualizerBands] = useState<EqualizerBand[]>([
     { frequency: 32, gain: 0, label: "32Hz" },
     { frequency: 64, gain: 0, label: "64Hz" },
@@ -98,7 +54,49 @@ export default function MobileMusicPlayer() {
     { frequency: 16000, gain: 0, label: "16kHz" },
   ])
 
-  const [filterNodes, setFilterNodes] = useState<BiquadFilterNode[]>([])
+  const {
+    isPlaying, setIsPlaying, currentTime, setCurrentTime,
+    duration, setDuration, volume, setVolume, isMuted,
+    filterNodes, audioContextRef, playPromiseRef, gainNodeRef,
+    initializeAudioContext, play, pause, seek,
+    changeVolume, toggleMute, adjustVolume,
+  } = useAudioEngine({
+    audioRef,
+    equalizerBands,
+    onEnded: handleEnded,
+  })
+
+  const {
+    songs, setSongs, currentSong, setCurrentSong,
+    shuffleMode, setShuffleMode, viewMode, setViewMode,
+    sortedSongs, getNextSong, getPreviousSong, toggleShuffle,
+    removeSong, resetPlaylist,
+  } = usePlaylistManager({
+    onCurrentSongRemoved: () => {
+      pause()
+      if (audioRef.current) audioRef.current.src = ""
+    },
+    onPlaylistReset: () => {
+      pause()
+      if (audioRef.current) audioRef.current.src = ""
+      setCurrentTime(0)
+      setDuration(0)
+    },
+  })
+
+  // New state for lyrics and network sharing
+  const [showLyrics, setShowLyrics] = useState(false)
+  const [showNetworkSharing, setShowNetworkSharing] = useState(false)
+  const [forceRefreshTrigger, setForceRefreshTrigger] = useState(0)
+  const [showVideo, setShowVideo] = useState(false)
+
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const folderInputRef = useRef<HTMLInputElement>(null)
+  const processingRef = useRef(false)
+
+  // Use album art preloader hook
+  const { preloadUpcomingSongs } = useAlbumArtPreloader(songs, currentSong?.id, 3)
+
 
   // Calculate current time in milliseconds for lyrics sync
   const currentTimeMs = useMemo(() => {
@@ -328,42 +326,6 @@ export default function MobileMusicPlayer() {
     isRestoringPlaylist,
   ])
 
-  // Initialize audio context
-  const initializeAudioContext = useCallback(() => {
-    if (!audioContextRef.current && audioRef.current) {
-      audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)()
-      sourceNodeRef.current = audioContextRef.current.createMediaElementSource(audioRef.current)
-      gainNodeRef.current = audioContextRef.current.createGain()
-      analyserRef.current = audioContextRef.current.createAnalyser()
-
-      const filters = equalizerBands.map((band, index) => {
-        const filter = audioContextRef.current!.createBiquadFilter()
-        if (index === 0) {
-          filter.type = "lowshelf"
-        } else if (index === equalizerBands.length - 1) {
-          filter.type = "highshelf"
-        } else {
-          filter.type = "peaking"
-          filter.Q.value = 1
-        }
-        filter.frequency.value = band.frequency
-        filter.gain.value = band.gain
-        return filter
-      })
-
-      setFilterNodes(filters)
-
-      let currentNode: AudioNode = sourceNodeRef.current
-      filters.forEach((filter) => {
-        currentNode.connect(filter)
-        currentNode = filter
-      })
-
-      currentNode.connect(gainNodeRef.current!)
-      gainNodeRef.current!.connect(analyserRef.current!)
-      analyserRef.current!.connect(audioContextRef.current.destination)
-    }
-  }, [equalizerBands])
 
   // File handling functions
   const generateSongId = (file: File): string => {
@@ -684,45 +646,20 @@ export default function MobileMusicPlayer() {
     if (nextSong) selectSong(nextSong, true)
   }
 
+  // Keep skipToNextRef always pointing to the latest skipToNext (bug fix)
+  skipToNextRef.current = skipToNext
+
   const skipToPrevious = () => {
     const prevSong = getPreviousSong()
     if (prevSong) selectSong(prevSong, false)
   }
 
   const handleSeek = (value: number[]) => {
-    if (audioRef.current) {
-      audioRef.current.currentTime = value[0]
-      setCurrentTime(value[0])
-    }
+    seek(value[0])
   }
 
   const handleVideoSeek = (time: number) => {
-    if (audioRef.current) {
-      audioRef.current.currentTime = time
-      setCurrentTime(time)
-    }
-  }
-
-  const handleVolumeChange = (value: number[]) => {
-    setVolume(value)
-    if (audioRef.current) {
-      audioRef.current.volume = value[0] / 100
-    }
-    if (gainNodeRef.current) {
-      gainNodeRef.current.gain.value = value[0] / 100
-    }
-  }
-
-  const adjustVolume = (delta: number) => {
-    const newVolume = Math.max(0, Math.min(100, volume[0] + delta))
-    handleVolumeChange([newVolume])
-  }
-
-  const toggleMute = () => {
-    setIsMuted(!isMuted)
-    if (audioRef.current) {
-      audioRef.current.muted = !isMuted
-    }
+    seek(time)
   }
 
   const updateEqualizerBand = (index: number, gain: number) => {
@@ -889,46 +826,6 @@ export default function MobileMusicPlayer() {
     }
   }, [currentSong, isPlaying, songs, volume])
 
-  // Audio event handlers
-  useEffect(() => {
-    const audio = audioRef.current
-    if (audio) {
-      const handleTimeUpdate = () => {
-        setCurrentTime(audio.currentTime)
-      }
-
-      const handleLoadedMetadata = () => {
-        setDuration(audio.duration)
-        if (currentSong && !currentSong.duration) {
-          setCurrentSong((prev) =>
-            prev
-              ? {
-                  ...prev,
-                  duration: audio.duration,
-                }
-              : null,
-          )
-        }
-      }
-
-      const handleEnded = () => {
-        setIsPlaying(false)
-        setTimeout(() => {
-          skipToNext()
-        }, 300)
-      }
-
-      audio.addEventListener("timeupdate", handleTimeUpdate)
-      audio.addEventListener("loadedmetadata", handleLoadedMetadata)
-      audio.addEventListener("ended", handleEnded)
-
-      return () => {
-        audio.removeEventListener("timeupdate", handleTimeUpdate)
-        audio.removeEventListener("loadedmetadata", handleLoadedMetadata)
-        audio.removeEventListener("ended", handleEnded)
-      }
-    }
-  }, [])
 
   // Cleanup URLs on unmount
   useEffect(() => {
@@ -1028,7 +925,7 @@ export default function MobileMusicPlayer() {
           onBandChange={updateEqualizerBand}
           onReset={resetEqualizer}
           volume={volume}
-          onVolumeChange={handleVolumeChange}
+          onVolumeChange={changeVolume}
           isMuted={isMuted}
           onToggleMute={toggleMute}
         />

@@ -2,6 +2,7 @@ import { useRef, useState, useCallback, useEffect } from "react"
 import type { EqualizerBand } from "@/components/refined-equalizer"
 
 export interface UseAudioEngineOptions {
+  audioRef: React.RefObject<HTMLAudioElement | null>
   equalizerBands: EqualizerBand[]
   onTimeUpdate?: (time: number) => void
   onDurationChange?: (duration: number) => void
@@ -10,12 +11,11 @@ export interface UseAudioEngineOptions {
 
 export interface UseAudioEngineReturn {
   // Refs
-  audioRef: React.RefObject<HTMLAudioElement>
   audioContextRef: React.RefObject<AudioContext | null>
   sourceNodeRef: React.RefObject<MediaElementAudioSourceNode | null>
   gainNodeRef: React.RefObject<GainNode | null>
   analyserRef: React.RefObject<AnalyserNode | null>
-  playPromiseRef: React.RefObject<Promise<void> | null>
+  playPromiseRef: React.MutableRefObject<Promise<void> | null>
 
   // State
   isPlaying: boolean
@@ -54,10 +54,9 @@ export interface UseAudioEngineReturn {
  * - Audio event listeners
  */
 export function useAudioEngine(options: UseAudioEngineOptions): UseAudioEngineReturn {
-  const { equalizerBands, onTimeUpdate, onDurationChange, onEnded } = options
+  const { audioRef, equalizerBands, onTimeUpdate, onDurationChange, onEnded } = options
 
   // Refs
-  const audioRef = useRef<HTMLAudioElement>(null)
   const audioContextRef = useRef<AudioContext | null>(null)
   const sourceNodeRef = useRef<MediaElementAudioSourceNode | null>(null)
   const gainNodeRef = useRef<GainNode | null>(null)
@@ -218,7 +217,6 @@ export function useAudioEngine(options: UseAudioEngineOptions): UseAudioEngineRe
 
   return {
     // Refs
-    audioRef,
     audioContextRef,
     sourceNodeRef,
     gainNodeRef,

@@ -39,16 +39,12 @@ import { AlbumArtCache } from "@/lib/album-art-cache"
 import { useAlbumArtPreloader } from "@/hooks/use-album-art-preloader"
 import { useFolderSync } from "@/hooks/use-folder-sync"
 import { usePlaylistManager } from "@/hooks/use-playlist-manager"
+import { useAudioEngine } from "@/hooks/use-audio-engine"
 import { LyricsDisplay } from "@/components/lyrics-display"
 import { AddMusicControls } from "@/components/add-music-control"
 import { YouTubeVideoPlayer } from "@/components/youtube-video-player"
 
 export default function EnhancedMusicPlayer() {
-  const [isPlaying, setIsPlaying] = useState(false)
-  const [currentTime, setCurrentTime] = useState(0)
-  const [duration, setDuration] = useState(0)
-  const [volume, setVolume] = useState([80])
-  const [isMuted, setIsMuted] = useState(false)
   const [showEqualizer, setShowEqualizer] = useState(false)
   const [currentBitrate, setCurrentBitrate] = useState<number | undefined>()
   const [isLoadingSongs, setIsLoadingSongs] = useState(false)
@@ -62,6 +58,40 @@ export default function EnhancedMusicPlayer() {
   const [videoReadyCalled, setVideoReadyCalled] = useState(false);
 
   const audioRef = useRef<HTMLAudioElement>(null)
+  const skipToNextRef = useRef<() => void>(() => {})
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const folderInputRef = useRef<HTMLInputElement>(null)
+  const processingRef = useRef(false)
+
+  // Stable onEnded callback using ref — THIS FIXES THE STALE CLOSURE BUG
+  const handleEnded = useCallback(() => {
+    skipToNextRef.current()
+  }, [])
+
+  const [equalizerBands, setEqualizerBands] = useState<EqualizerBand[]>([
+    { frequency: 32, gain: 0, label: "32Hz" },
+    { frequency: 64, gain: 0, label: "64Hz" },
+    { frequency: 125, gain: 0, label: "125Hz" },
+    { frequency: 250, gain: 0, label: "250Hz" },
+    { frequency: 500, gain: 0, label: "500Hz" },
+    { frequency: 1000, gain: 0, label: "1kHz" },
+    { frequency: 2000, gain: 0, label: "2kHz" },
+    { frequency: 4000, gain: 0, label: "4kHz" },
+    { frequency: 8000, gain: 0, label: "8kHz" },
+    { frequency: 16000, gain: 0, label: "16kHz" },
+  ])
+
+  const {
+    isPlaying, setIsPlaying, currentTime, setCurrentTime,
+    duration, setDuration, volume, setVolume, isMuted,
+    filterNodes, audioContextRef, playPromiseRef, gainNodeRef,
+    initializeAudioContext, play, pause, seek,
+    changeVolume, toggleMute, adjustVolume,
+  } = useAudioEngine({
+    audioRef,
+    equalizerBands,
+    onEnded: handleEnded,
+  })
 
   const {
     songs, setSongs, currentSong, setCurrentSong,
@@ -71,18 +101,12 @@ export default function EnhancedMusicPlayer() {
     removeSong, resetPlaylist,
   } = usePlaylistManager({
     onCurrentSongRemoved: () => {
-      if (audioRef.current) {
-        audioRef.current.pause()
-        audioRef.current.src = ""
-      }
-      setIsPlaying(false)
+      pause()
+      if (audioRef.current) audioRef.current.src = ""
     },
     onPlaylistReset: () => {
-      if (audioRef.current) {
-        audioRef.current.pause()
-        audioRef.current.src = ""
-      }
-      setIsPlaying(false)
+      pause()
+      if (audioRef.current) audioRef.current.src = ""
       setCurrentTime(0)
       setDuration(0)
     },
@@ -90,28 +114,13 @@ export default function EnhancedMusicPlayer() {
 
   const handleSync = useCallback(() => {
     setVideoReadyCalled(false);
-  
-  // Reset video player
-  videoPlayerRef.current?.resetVideo();
-  
-  // Pause and reset audio
-  if (audioRef.current) {
-    audioRef.current.pause();
-    audioRef.current.currentTime = 0;
-  }
-  setIsPlaying(false);
-  
-  // The handleVideoReady will be called automatically when video resets
-}, []);
-
-  const fileInputRef = useRef<HTMLInputElement>(null)
-  const folderInputRef = useRef<HTMLInputElement>(null)
-  const audioContextRef = useRef<AudioContext | null>(null)
-  const sourceNodeRef = useRef<MediaElementAudioSourceNode | null>(null)
-  const gainNodeRef = useRef<GainNode | null>(null)
-  const analyserRef = useRef<AnalyserNode | null>(null)
-  const processingRef = useRef(false)
-  const playPromiseRef = useRef<Promise<void> | null>(null)
+    videoPlayerRef.current?.resetVideo();
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.currentTime = 0;
+    }
+    setIsPlaying(false);
+  }, [setIsPlaying])
 
   const { preloadUpcomingSongs } = useAlbumArtPreloader(songs, currentSong?.id, 3)
 
@@ -132,21 +141,6 @@ export default function EnhancedMusicPlayer() {
       }
     },
   })
-
-  const [equalizerBands, setEqualizerBands] = useState<EqualizerBand[]>([
-    { frequency: 32, gain: 0, label: "32Hz" },
-    { frequency: 64, gain: 0, label: "64Hz" },
-    { frequency: 125, gain: 0, label: "125Hz" },
-    { frequency: 250, gain: 0, label: "250Hz" },
-    { frequency: 500, gain: 0, label: "500Hz" },
-    { frequency: 1000, gain: 0, label: "1kHz" },
-    { frequency: 2000, gain: 0, label: "2kHz" },
-    { frequency: 4000, gain: 0, label: "4kHz" },
-    { frequency: 8000, gain: 0, label: "8kHz" },
-    { frequency: 16000, gain: 0, label: "16kHz" },
-  ])
-
-  const [filterNodes, setFilterNodes] = useState<BiquadFilterNode[]>([])
 
   useEffect(() => {
     const loadSavedData = async () => {
@@ -264,32 +258,6 @@ export default function EnhancedMusicPlayer() {
     isRestoringPlaylist,
   ])
 
-
-  const initializeAudioContext = useCallback(() => {
-    if (!audioContextRef.current && audioRef.current) {
-      audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)()
-      sourceNodeRef.current = audioContextRef.current.createMediaElementSource(audioRef.current)
-      gainNodeRef.current = audioContextRef.current.createGain()
-      analyserRef.current = audioContextRef.current.createAnalyser()
-      const filters = equalizerBands.map((band, index) => {
-        const filter = audioContextRef.current!.createBiquadFilter()
-        filter.type = index === 0 ? "lowshelf" : index === equalizerBands.length - 1 ? "highshelf" : "peaking"
-        if (filter.type === "peaking") filter.Q.value = 1
-        filter.frequency.value = band.frequency
-        filter.gain.value = band.gain
-        return filter
-      })
-      setFilterNodes(filters)
-      let currentNode: AudioNode = sourceNodeRef.current!
-      filters.forEach((filter) => {
-        currentNode.connect(filter)
-        currentNode = filter
-      })
-      currentNode.connect(gainNodeRef.current!)
-      gainNodeRef.current!.connect(analyserRef.current!)
-      analyserRef.current!.connect(audioContextRef.current.destination)
-    }
-  }, [equalizerBands])
 
   const addSongsToPlaylist = async (files: File[]) => {
     if (processingRef.current) return toast({ title: "Import in progress" })
@@ -511,6 +479,9 @@ export default function EnhancedMusicPlayer() {
     if (nextSong) selectSong(nextSong, true)
   }
 
+  // Keep skipToNextRef always pointing to the latest skipToNext (bug fix)
+  skipToNextRef.current = skipToNext
+
   const skipToPrevious = () => {
     const prevSong = getPreviousSong()
     if (prevSong) {
@@ -520,27 +491,11 @@ export default function EnhancedMusicPlayer() {
   }
 
   const handleSeek = (value: number[]) => {
-    if (audioRef.current) audioRef.current.currentTime = value[0]
+    seek(value[0])
   }
 
   const handleVideoSeek = (time: number) => {
-    if (audioRef.current) audioRef.current.currentTime = time
-  }
-
-  const handleVolumeChange = (value: number[]) => {
-    setVolume(value)
-    if (audioRef.current) audioRef.current.volume = value[0] / 100
-    if (gainNodeRef.current) gainNodeRef.current.gain.value = value[0] / 100
-  }
-
-  const adjustVolume = (delta: number) => {
-    const newVolume = Math.max(0, Math.min(100, volume[0] + delta))
-    handleVolumeChange([newVolume])
-  }
-
-  const toggleMute = () => {
-    setIsMuted(!isMuted)
-    if (audioRef.current) audioRef.current.muted = !isMuted
+    seek(time)
   }
 
   const updateEqualizerBand = (index: number, gain: number) => {
@@ -759,22 +714,6 @@ export default function EnhancedMusicPlayer() {
     }
   }, [currentSong, isPlaying, songs, volume, activeView])
 
-  useEffect(() => {
-    const audio = audioRef.current
-    if (audio) {
-      const onTimeUpdate = () => setCurrentTime(audio.currentTime)
-      const onLoadedMetadata = () => setDuration(audio.duration)
-      const onEnded = () => skipToNext()
-      audio.addEventListener("timeupdate", onTimeUpdate)
-      audio.addEventListener("loadedmetadata", onLoadedMetadata)
-      audio.addEventListener("ended", onEnded)
-      return () => {
-        audio.removeEventListener("timeupdate", onTimeUpdate)
-        audio.removeEventListener("loadedmetadata", onLoadedMetadata)
-        audio.removeEventListener("ended", onEnded)
-      }
-    }
-  }, [currentSong])
 
   useEffect(() => {
     if (activeView !== "youtube") {
@@ -993,7 +932,7 @@ export default function EnhancedMusicPlayer() {
                         <Button variant="ghost" size="icon" onClick={toggleMute}>
                           {isMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
                         </Button>
-                        <Slider value={volume} max={100} step={1} onValueChange={handleVolumeChange} className="w-24" />
+                        <Slider value={volume} max={100} step={1} onValueChange={changeVolume} className="w-24" />
                       </div>
                       <Separator orientation="vertical" className="h-8" />
                       <Button
