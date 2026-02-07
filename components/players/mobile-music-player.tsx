@@ -1,6 +1,5 @@
 "use client"
 
-import type React from "react"
 import { useState, useRef, useEffect, useCallback, useMemo } from "react"
 import { toast } from "@/hooks/use-toast"
 
@@ -76,7 +75,6 @@ export default function MobileMusicPlayer() {
 
   // New state for lyrics and network sharing
   const [showLyrics, setShowLyrics] = useState(false)
-  const [showNetworkSharing, setShowNetworkSharing] = useState(false)
   const [forceRefreshTrigger, setForceRefreshTrigger] = useState(0)
   const [showVideo, setShowVideo] = useState(false)
 
@@ -198,8 +196,6 @@ export default function MobileMusicPlayer() {
   }), [songs, currentSong?.id, equalizerBands, volume, shuffleMode, viewMode, showEqualizer])
 
   useAutoSave(persistenceData, isInitialized, isRestoringPlaylist, savePlaylist)
-
-
 
   // Player control functions
   const selectSong = async (song: Song, isAutoAdvance = false) => {
@@ -373,24 +369,6 @@ export default function MobileMusicPlayer() {
 
 
 
-  // Network sharing handlers
-  const handleNetworkPlaylistUpdate = useCallback((newSongs: any[]) => {
-    // This would be called when receiving playlist updates from network
-    console.log("Network playlist update received:", newSongs)
-    toast({
-      title: "Playlist Updated",
-      description: "The shared playlist has been updated by the host.",
-    })
-  }, [])
-
-  const handleNetworkPlaybackStateUpdate = useCallback(
-    (isPlaying: boolean, currentTime: number, currentSong?: string) => {
-      // This would be called when receiving playback state updates from network
-      console.log("Network playback state update:", { isPlaying, currentTime, currentSong })
-    },
-    [],
-  )
-
   useMediaControls({
     currentSong, isPlaying, songs, audioRef,
     onPlayPause: togglePlayPause,
@@ -495,7 +473,6 @@ export default function MobileMusicPlayer() {
           onSeek={handleSeek}
           onSettingsClick={() => setShowEqualizer(true)}
           onLyricsClick={() => setShowLyrics(true)}
-          onNetworkSharingClick={() => setShowNetworkSharing(true)}
           onVideoClick={() => setShowVideo(true)}
           isTransitioning={isTransitioning}
         />
@@ -535,25 +512,6 @@ export default function MobileMusicPlayer() {
           forceRefresh={forceRefreshTrigger}
         />
 
-        {/* Network Sharing Sheet */}
-        {/* <MobileNetworkSharingSheet
-          isOpen={showNetworkSharing}
-          onOpenChange={setShowNetworkSharing}
-          songs={songs.map((song) => ({
-            id: song.id,
-            title: song.title,
-            artist: song.artist,
-            album: song.album,
-            duration: song.duration,
-            format: song.format,
-            isHiRes: song.isHiRes,
-          }))}
-          currentSong={currentSong}
-          isPlaying={isPlaying}
-          currentTime={currentTime}
-          onPlaylistUpdate={handleNetworkPlaylistUpdate}
-          onPlaybackStateUpdate={handleNetworkPlaybackStateUpdate}
-        /> */}
       </div>
     </div>
   )

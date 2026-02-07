@@ -1,6 +1,5 @@
 "use client"
 
-import type React from "react"
 import { useState, useRef, useEffect, useCallback, useMemo } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -8,23 +7,10 @@ import { Slider } from "@/components/ui/slider"
 import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
 import { toast } from "@/hooks/use-toast"
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import {
-  Play,
-  Pause,
-  SkipBack,
-  SkipForward,
-  Volume2,
-  VolumeX,
-  Settings,
-  FolderOpen,
-  Plus,
-  Mic,
-  Upload,
-  Share2,
-  Folder,
-  Youtube,
+  Play, Pause, SkipBack, SkipForward,
+  Volume2, VolumeX, Settings, Mic, Youtube,
 } from "lucide-react"
 
 import { EnhancedPlaylist, type Song } from "@/components/enhanced-playlist"
@@ -175,8 +161,6 @@ export default function EnhancedMusicPlayer() {
 
   useAutoSave(persistenceData, isInitialized, isRestoringPlaylist, savePlaylist)
 
-
-
   const selectSong = useCallback(
     async (song: Song, isAutoAdvance = false) => {
       if (playPromiseRef.current) {
@@ -255,7 +239,6 @@ export default function EnhancedMusicPlayer() {
       }, 1000); // 1 second delay after video is playing
     }
   }, []);
-
 
   const togglePlayPause = async () => {
     if (!audioRef.current || !currentSong) return
@@ -342,7 +325,6 @@ export default function EnhancedMusicPlayer() {
     seek(time)
   }
 
-
   const formatTime = (time: number) => {
     if (isNaN(time)) return "0:00"
     const minutes = Math.floor(time / 60)
@@ -376,72 +358,11 @@ export default function EnhancedMusicPlayer() {
     enableExtendedShortcuts: true,
   })
 
-
   useEffect(() => {
     if (activeView !== "youtube") {
       setVideoReadyCalled(false);
     }
   }, [activeView]);
-
-  // Network sharing handlers
-  const handleNetworkPlaylistUpdate = useCallback((newSongs: any[]) => {
-    let playlistChanged = false;
-    setSongs((prevSongs) => {
-      if (JSON.stringify(prevSongs) !== JSON.stringify(newSongs)) {
-        playlistChanged = true;
-        return newSongs;
-      }
-      return prevSongs;
-    });
-    // Only show toast after state update, not inside setSongs
-    if (playlistChanged) {
-      toast({
-        title: "Playlist Updated",
-        description: "The shared playlist has been updated by the host.",
-      });
-      if (newSongs.length > 0 && (!newSongs[0].file && !newSongs[0].url)) {
-        toast({
-          title: "Cannot Play Song",
-          description: "This song cannot be played because the file is not available on your device.",
-          variant: "destructive",
-        });
-      }
-    }
-    // Try to set currentSong to the first song if not already set
-    if (newSongs.length > 0 && (!currentSong || !newSongs.find((s) => s.id === currentSong.id))) {
-      setCurrentSong(newSongs[0]);
-    }
-    console.log("Network playlist update received:", newSongs)
-  }, [currentSong])
-
-  const handleNetworkPlaybackStateUpdate = useCallback(
-    (isPlayingFromHost: boolean, currentTimeFromHost: number, currentSongIdFromHost?: string) => {
-      // Find the song by ID if provided
-      if (currentSongIdFromHost && songs.length > 0) {
-        const song = songs.find((s) => s.id === currentSongIdFromHost);
-        if (song && (!currentSong || currentSong.id !== song.id)) {
-          setCurrentSong(song);
-          if (audioRef.current) {
-            audioRef.current.src = song.url || "";
-            audioRef.current.currentTime = currentTimeFromHost || 0;
-          }
-        }
-      }
-      setIsPlaying(isPlayingFromHost);
-      setCurrentTime(currentTimeFromHost);
-      // Sync audio element
-      if (audioRef.current) {
-        audioRef.current.currentTime = currentTimeFromHost || 0;
-        if (isPlayingFromHost) {
-          audioRef.current.play().catch(() => {});
-        } else {
-          audioRef.current.pause();
-        }
-      }
-      console.log("Network playback state update:", { isPlayingFromHost, currentTimeFromHost, currentSongIdFromHost })
-    },
-    [songs, currentSong],
-  )
 
   return (
     <div className="min-h-screen max-h-screen overflow-hidden relative">
@@ -621,23 +542,6 @@ export default function EnhancedMusicPlayer() {
                         <Youtube className="w-4 h-4" />
                       </Button>
                     </div>
-                    {/* <Dialog open={showNetworkSharing} onOpenChange={setShowNetworkSharing}>
-                      <DialogContent>
-                        <DialogHeader>
-                          <DialogTitle>Network Sharing</DialogTitle>
-                        </DialogHeader>
-                        <NetworkSharingPanel
-                      songs={songs}
-                      currentSong={currentSong}
-                      isPlaying={isPlaying}
-                      currentTime={currentTime}
-                      onPlaylistUpdate={handleNetworkPlaylistUpdate}
-                      onPlaybackStateUpdate={handleNetworkPlaybackStateUpdate}
-                      />
-                      </DialogContent>
-                    </Dialog> */}
-                    
-
                     {/* Keyboard shortcuts info */}
                     <div className="text-xs text-muted-foreground text-center space-y-1">
                       <p>Media keys: Play/Pause • Next/Previous • Volume Up/Down • Mute</p>
