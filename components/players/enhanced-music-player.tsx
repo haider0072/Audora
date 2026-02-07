@@ -38,6 +38,7 @@ import { PlaylistManager } from "@/components/playlist-manager"
 import { AlbumArtCache } from "@/lib/album-art-cache"
 import { useAlbumArtPreloader } from "@/hooks/use-album-art-preloader"
 import { useFolderSync } from "@/hooks/use-folder-sync"
+import { usePlaylistManager } from "@/hooks/use-playlist-manager"
 import { LyricsDisplay } from "@/components/lyrics-display"
 import { AddMusicControls } from "@/components/add-music-control"
 import { YouTubeVideoPlayer } from "@/components/youtube-video-player"
@@ -48,15 +49,8 @@ export default function EnhancedMusicPlayer() {
   const [duration, setDuration] = useState(0)
   const [volume, setVolume] = useState([80])
   const [isMuted, setIsMuted] = useState(false)
-  const [currentSong, setCurrentSong] = useState<Song | null>(null)
-  const [songs, setSongs] = useState<Song[]>([])
   const [showEqualizer, setShowEqualizer] = useState(false)
   const [currentBitrate, setCurrentBitrate] = useState<number | undefined>()
-  const [shuffleMode, setShuffleMode] = useState(false)
-  const [viewMode, setViewMode] = useState<"grouped" | "list">("grouped")
-  const [shuffledQueue, setShuffledQueue] = useState<Song[]>([])
-  const [currentShuffleIndex, setCurrentShuffleIndex] = useState(0)
-  const [playedSongs, setPlayedSongs] = useState<Set<string>>(new Set())
   const [isLoadingSongs, setIsLoadingSongs] = useState(false)
   const [loadingProgress, setLoadingProgress] = useState({ current: 0, total: 0 })
   const [isTransitioning, setIsTransitioning] = useState(false)
@@ -66,6 +60,33 @@ export default function EnhancedMusicPlayer() {
   const videoPlayerRef = useRef<{ resetVideo: () => void }>(null);
   const [forceRefreshTrigger, setForceRefreshTrigger] = useState(0);
   const [videoReadyCalled, setVideoReadyCalled] = useState(false);
+
+  const audioRef = useRef<HTMLAudioElement>(null)
+
+  const {
+    songs, setSongs, currentSong, setCurrentSong,
+    shuffleMode, setShuffleMode, viewMode, setViewMode,
+    shuffledQueue, setCurrentShuffleIndex, setPlayedSongs,
+    sortedSongs, getNextSong, getPreviousSong, toggleShuffle,
+    removeSong, resetPlaylist,
+  } = usePlaylistManager({
+    onCurrentSongRemoved: () => {
+      if (audioRef.current) {
+        audioRef.current.pause()
+        audioRef.current.src = ""
+      }
+      setIsPlaying(false)
+    },
+    onPlaylistReset: () => {
+      if (audioRef.current) {
+        audioRef.current.pause()
+        audioRef.current.src = ""
+      }
+      setIsPlaying(false)
+      setCurrentTime(0)
+      setDuration(0)
+    },
+  })
 
   const handleSync = useCallback(() => {
     setVideoReadyCalled(false);
@@ -83,7 +104,6 @@ export default function EnhancedMusicPlayer() {
   // The handleVideoReady will be called automatically when video resets
 }, []);
 
-  const audioRef = useRef<HTMLAudioElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const folderInputRef = useRef<HTMLInputElement>(null)
   const audioContextRef = useRef<AudioContext | null>(null)
@@ -244,104 +264,6 @@ export default function EnhancedMusicPlayer() {
     isRestoringPlaylist,
   ])
 
-  const sortedSongs = useMemo(() => {
-    return [...songs].sort((a, b) => {
-      const artistA = (a.artists?.[0] || a.artist || "Unknown Artist").toLowerCase()
-      const artistB = (b.artists?.[0] || b.artist || "Unknown Artist").toLowerCase()
-      if (artistA === artistB) {
-        const albumA = (a.album || "Unknown Album").toLowerCase()
-        const albumB = (b.album || "Unknown Album").toLowerCase()
-        if (albumA === albumB) return (a.title || "").localeCompare(b.title || "")
-        return albumA.localeCompare(albumB)
-      }
-      return artistA.localeCompare(artistB)
-    })
-  }, [songs])
-
-  const getCurrentPlaylist = useCallback(
-    () => (viewMode === "list" ? sortedSongs : songs),
-    [viewMode, sortedSongs, songs],
-  )
-
-  const generateShuffledQueue = useCallback((songList: Song[], currentSongId?: string) => {
-    if (songList.length === 0) return []
-    let availableSongs = [...songList]
-    if (currentSongId) availableSongs = availableSongs.filter((song) => song.id !== currentSongId)
-    for (let i = availableSongs.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1))
-      ;[availableSongs[i], availableSongs[j]] = [availableSongs[j], availableSongs[i]]
-    }
-    return availableSongs
-  }, [])
-
-  const toggleShuffle = () => {
-    const newShuffleMode = !shuffleMode
-    setShuffleMode(newShuffleMode)
-    if (newShuffleMode) {
-      const currentPlaylist = getCurrentPlaylist()
-      const newShuffledQueue = generateShuffledQueue(currentPlaylist, currentSong?.id)
-      setShuffledQueue(newShuffledQueue)
-      setCurrentShuffleIndex(0)
-      setPlayedSongs(new Set(currentSong ? [currentSong.id] : []))
-      toast({ title: "Shuffle enabled" })
-    } else {
-      setShuffledQueue([])
-      setCurrentShuffleIndex(0)
-      setPlayedSongs(new Set())
-      toast({ title: "Shuffle disabled" })
-    }
-  }
-
-  const resetPlaylist = async () => {
-    if (audioRef.current) {
-      audioRef.current.pause()
-      audioRef.current.src = ""
-    }
-    songs.forEach((song) => {
-      if (song.url) URL.revokeObjectURL(song.url)
-      if (song.albumArt && song.albumArt.startsWith("blob:")) URL.revokeObjectURL(song.albumArt)
-    })
-    AlbumArtCache.clearCache()
-    setSongs([])
-    setCurrentSong(null)
-    setIsPlaying(false)
-    setCurrentTime(0)
-    setDuration(0)
-    setShuffledQueue([])
-    setCurrentShuffleIndex(0)
-    setPlayedSongs(new Set())
-    await PlaylistStorage.clearPlaylist()
-  }
-
-  const getNextSong = useCallback((): Song | null => {
-    const currentPlaylist = getCurrentPlaylist()
-    if (currentPlaylist.length === 0) return null
-    if (shuffleMode) {
-      if (currentShuffleIndex < shuffledQueue.length) return shuffledQueue[currentShuffleIndex]
-      const newQueue = generateShuffledQueue(currentPlaylist)
-      setShuffledQueue(newQueue)
-      setCurrentShuffleIndex(0)
-      setPlayedSongs(new Set())
-      return newQueue.length > 0 ? newQueue[0] : null
-    }
-    if (!currentSong) return currentPlaylist[0] || null
-    const currentIndex = currentPlaylist.findIndex((s) => s.id === currentSong.id)
-    if (currentIndex === -1) return currentPlaylist[0] || null
-    return currentPlaylist[(currentIndex + 1) % currentPlaylist.length]
-  }, [getCurrentPlaylist, shuffleMode, shuffledQueue, currentShuffleIndex, currentSong, generateShuffledQueue])
-
-  const getPreviousSong = useCallback((): Song | null => {
-    const currentPlaylist = getCurrentPlaylist()
-    if (currentPlaylist.length === 0) return null
-    if (shuffleMode) {
-      if (currentShuffleIndex > 1) return shuffledQueue[currentShuffleIndex - 2]
-      return null
-    }
-    if (!currentSong) return currentPlaylist[currentPlaylist.length - 1] || null
-    const currentIndex = currentPlaylist.findIndex((s) => s.id === currentSong.id)
-    if (currentIndex === -1) return currentPlaylist[currentPlaylist.length - 1] || null
-    return currentPlaylist[currentIndex === 0 ? currentPlaylist.length - 1 : currentIndex - 1]
-  }, [getCurrentPlaylist, shuffleMode, shuffledQueue, currentShuffleIndex, currentSong])
 
   const initializeAudioContext = useCallback(() => {
     if (!audioContextRef.current && audioRef.current) {
@@ -522,26 +444,6 @@ export default function EnhancedMusicPlayer() {
     }
   }, []);
 
-  const removeSong = async (songId: string) => {
-    await PlaylistStorage.removeSongFile(songId)
-    await PlaylistStorage.removeAlbumArt(songId)
-    AlbumArtCache.removeCachedAlbumArt(songId)
-    setSongs((prev) => {
-      const newSongs = prev.filter((s) => s.id !== songId)
-      if (shuffleMode) setShuffledQueue((prevQ) => prevQ.filter((s) => s.id !== songId))
-      if (currentSong?.id === songId) {
-        if (audioRef.current) {
-          audioRef.current.pause()
-          audioRef.current.src = ""
-        }
-        if (currentSong.url) URL.revokeObjectURL(currentSong.url)
-        setCurrentSong(null)
-        setIsPlaying(false)
-      }
-      return newSongs
-    })
-    toast({ title: "Song removed" })
-  }
 
   const togglePlayPause = async () => {
     if (!audioRef.current || !currentSong) return

@@ -9,6 +9,8 @@ import { StorageManager } from "@/lib/storage"
 import { PlaylistStorage } from "@/lib/playlist-storage"
 import { AlbumArtCache } from "@/lib/album-art-cache"
 import { useAlbumArtPreloader } from "@/hooks/use-album-art-preloader"
+import { usePlaylistManager } from "@/hooks/use-playlist-manager"
+import type { Song } from "@/components/enhanced-playlist"
 
 import { MobileHeader } from "@/components/mobile-header"
 import { MobilePlaylistControls } from "@/components/mobile-playlist-controls"
@@ -18,24 +20,6 @@ import { MobileEqualizerSheet } from "@/components/mobile-equalizer-sheet"
 import { MobileLyricsDisplay } from "@/components/mobile-lyrics-display"
 import { AlbumArtBackground } from "@/components/album-art-background"
 import { MobileYouTubeVideoPlayer } from "@/components/mobile-youtube-video-player"
-
-interface Song {
-  id: string
-  title?: string
-  artist?: string
-  album?: string
-  year?: string
-  genre?: string
-  bitrate?: number
-  sampleRate?: number
-  duration?: number
-  isHiRes?: boolean
-  albumArt?: string
-  fileSize?: number
-  format?: string
-  file: File
-  url: string
-}
 
 interface EqualizerBand {
   frequency: number
@@ -49,20 +33,39 @@ export default function MobileMusicPlayer() {
   const [duration, setDuration] = useState(0)
   const [volume, setVolume] = useState([80])
   const [isMuted, setIsMuted] = useState(false)
-  const [currentSong, setCurrentSong] = useState<Song | null>(null)
-  const [songs, setSongs] = useState<Song[]>([])
   const [searchQuery, setSearchQuery] = useState("")
-  const [shuffleMode, setShuffleMode] = useState(false)
-  const [viewMode, setViewMode] = useState<"grouped" | "list">("grouped")
   const [showEqualizer, setShowEqualizer] = useState(false)
-  const [shuffledQueue, setShuffledQueue] = useState<Song[]>([])
-  const [currentShuffleIndex, setCurrentShuffleIndex] = useState(0)
-  const [playedSongs, setPlayedSongs] = useState<Set<string>>(new Set())
   const [isLoadingSongs, setIsLoadingSongs] = useState(false)
   const [loadingProgress, setLoadingProgress] = useState({ current: 0, total: 0 })
   const [isTransitioning, setIsTransitioning] = useState(false)
   const [isInitialized, setIsInitialized] = useState(false)
   const [isRestoringPlaylist, setIsRestoringPlaylist] = useState(false)
+
+  const audioRef = useRef<HTMLAudioElement>(null)
+
+  const {
+    songs, setSongs, currentSong, setCurrentSong,
+    shuffleMode, setShuffleMode, viewMode, setViewMode,
+    sortedSongs, getNextSong, getPreviousSong, toggleShuffle,
+    removeSong, resetPlaylist,
+  } = usePlaylistManager({
+    onCurrentSongRemoved: () => {
+      if (audioRef.current) {
+        audioRef.current.pause()
+        audioRef.current.src = ""
+      }
+      setIsPlaying(false)
+    },
+    onPlaylistReset: () => {
+      if (audioRef.current) {
+        audioRef.current.pause()
+        audioRef.current.src = ""
+      }
+      setIsPlaying(false)
+      setCurrentTime(0)
+      setDuration(0)
+    },
+  })
 
   // New state for lyrics and network sharing
   const [showLyrics, setShowLyrics] = useState(false)
@@ -70,7 +73,6 @@ export default function MobileMusicPlayer() {
   const [forceRefreshTrigger, setForceRefreshTrigger] = useState(0)
   const [showVideo, setShowVideo] = useState(false)
 
-  const audioRef = useRef<HTMLAudioElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const folderInputRef = useRef<HTMLInputElement>(null)
   const audioContextRef = useRef<AudioContext | null>(null)
@@ -102,30 +104,6 @@ export default function MobileMusicPlayer() {
   const currentTimeMs = useMemo(() => {
     return Math.round(currentTime * 1000)
   }, [currentTime])
-
-  // Create sorted songs list for list mode
-  const sortedSongs = useMemo(() => {
-    return [...songs].sort((a, b) => {
-      const artistA = (a.artist || "Unknown Artist").toLowerCase()
-      const artistB = (b.artist || "Unknown Artist").toLowerCase()
-
-      if (artistA === artistB) {
-        const albumA = (a.album || "Unknown Album").toLowerCase()
-        const albumB = (b.album || "Unknown Album").toLowerCase()
-
-        if (albumA === albumB) {
-          return (a.title || "").localeCompare(b.title || "")
-        }
-        return albumA.localeCompare(albumB)
-      }
-      return artistA.localeCompare(artistB)
-    })
-  }, [songs])
-
-  // Get the current playlist based on view mode
-  const getCurrentPlaylist = useCallback(() => {
-    return viewMode === "list" ? sortedSongs : songs
-  }, [viewMode, sortedSongs, songs])
 
   // Filtered songs for search
   const filteredSongs = useMemo(() => {
@@ -648,46 +626,6 @@ export default function MobileMusicPlayer() {
     }
   }
 
-  const removeSong = async (songId: string) => {
-    try {
-      await PlaylistStorage.removeSongFile(songId)
-      await PlaylistStorage.removeAlbumArt(songId)
-      AlbumArtCache.removeCachedAlbumArt(songId)
-
-      setSongs((prev) => {
-        const newSongs = prev.filter((s) => s.id !== songId)
-
-        if (currentSong?.id === songId) {
-          if (audioRef.current) {
-            audioRef.current.pause()
-            audioRef.current.src = ""
-          }
-          if (currentSong.url) {
-            URL.revokeObjectURL(currentSong.url)
-          }
-          if (currentSong.albumArt && currentSong.albumArt.startsWith("blob:")) {
-            URL.revokeObjectURL(currentSong.albumArt)
-          }
-          setCurrentSong(null)
-          setIsPlaying(false)
-        }
-
-        return newSongs
-      })
-
-      toast({
-        title: "Song removed",
-        description: "Song has been removed from storage.",
-      })
-    } catch (error) {
-      console.error("Error removing song:", error)
-      toast({
-        title: "Error removing song",
-        description: "There was an error removing the song.",
-        variant: "destructive",
-      })
-    }
-  }
 
   const togglePlayPause = async () => {
     if (!audioRef.current || !currentSong) return
@@ -742,41 +680,13 @@ export default function MobileMusicPlayer() {
   }
 
   const skipToNext = () => {
-    const currentPlaylist = getCurrentPlaylist()
-    if (currentPlaylist.length === 0) return
-
-    if (!currentSong) {
-      selectSong(currentPlaylist[0], true)
-      return
-    }
-
-    const currentIndex = currentPlaylist.findIndex((song) => song.id === currentSong.id)
-    if (currentIndex === -1) {
-      selectSong(currentPlaylist[0], true)
-      return
-    }
-
-    const nextIndex = (currentIndex + 1) % currentPlaylist.length
-    selectSong(currentPlaylist[nextIndex], true)
+    const nextSong = getNextSong()
+    if (nextSong) selectSong(nextSong, true)
   }
 
   const skipToPrevious = () => {
-    const currentPlaylist = getCurrentPlaylist()
-    if (currentPlaylist.length === 0) return
-
-    if (!currentSong) {
-      selectSong(currentPlaylist[currentPlaylist.length - 1], false)
-      return
-    }
-
-    const currentIndex = currentPlaylist.findIndex((song) => song.id === currentSong.id)
-    if (currentIndex === -1) {
-      selectSong(currentPlaylist[currentPlaylist.length - 1], false)
-      return
-    }
-
-    const prevIndex = currentIndex === 0 ? currentPlaylist.length - 1 : currentIndex - 1
-    selectSong(currentPlaylist[prevIndex], false)
+    const prevSong = getPreviousSong()
+    if (prevSong) selectSong(prevSong, false)
   }
 
   const handleSeek = (value: number[]) => {
@@ -833,39 +743,6 @@ export default function MobileMusicPlayer() {
     })
   }
 
-  const resetPlaylist = async () => {
-    try {
-      if (audioRef.current) {
-        audioRef.current.pause()
-        audioRef.current.src = ""
-      }
-
-      songs.forEach((song) => {
-        if (song.url) {
-          URL.revokeObjectURL(song.url)
-        }
-        if (song.albumArt && song.albumArt.startsWith("blob:")) {
-          URL.revokeObjectURL(song.albumArt)
-        }
-      })
-
-      AlbumArtCache.clearCache()
-
-      setSongs([])
-      setCurrentSong(null)
-      setIsPlaying(false)
-      setCurrentTime(0)
-      setDuration(0)
-      setShuffledQueue([])
-      setCurrentShuffleIndex(0)
-      setPlayedSongs(new Set())
-
-      await PlaylistStorage.clearPlaylist()
-    } catch (error) {
-      console.error("Error resetting playlist:", error)
-      throw error
-    }
-  }
 
   // Network sharing handlers
   const handleNetworkPlaylistUpdate = useCallback((newSongs: any[]) => {
@@ -1105,7 +982,7 @@ export default function MobileMusicPlayer() {
           searchQuery={searchQuery}
           onSearchChange={setSearchQuery}
           shuffleMode={shuffleMode}
-          onShuffleToggle={() => setShuffleMode(!shuffleMode)}
+          onShuffleToggle={toggleShuffle}
           viewMode={viewMode}
           onViewModeChange={setViewMode}
           onPlaylistReset={resetPlaylist}
@@ -1202,4 +1079,3 @@ export default function MobileMusicPlayer() {
   )
 }
 
-export type { Song }

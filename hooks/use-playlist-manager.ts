@@ -6,6 +6,8 @@ import type { Song } from "@/components/enhanced-playlist"
 
 export interface UsePlaylistManagerOptions {
   onPlaylistChange?: (songs: Song[]) => void
+  onCurrentSongRemoved?: () => void
+  onPlaylistReset?: () => void
 }
 
 export interface UsePlaylistManagerReturn {
@@ -22,6 +24,7 @@ export interface UsePlaylistManagerReturn {
   // Setters
   setSongs: React.Dispatch<React.SetStateAction<Song[]>>
   setCurrentSong: React.Dispatch<React.SetStateAction<Song | null>>
+  setShuffleMode: React.Dispatch<React.SetStateAction<boolean>>
   setViewMode: React.Dispatch<React.SetStateAction<"grouped" | "list">>
   setShuffledQueue: React.Dispatch<React.SetStateAction<Song[]>>
   setCurrentShuffleIndex: React.Dispatch<React.SetStateAction<number>>
@@ -50,7 +53,7 @@ export interface UsePlaylistManagerReturn {
  * - Song removal and playlist reset
  */
 export function usePlaylistManager(options: UsePlaylistManagerOptions = {}): UsePlaylistManagerReturn {
-  const { onPlaylistChange } = options
+  const { onPlaylistChange, onCurrentSongRemoved, onPlaylistReset } = options
 
   // State
   const [songs, setSongs] = useState<Song[]>([])
@@ -211,6 +214,7 @@ export function usePlaylistManager(options: UsePlaylistManagerOptions = {}): Use
             URL.revokeObjectURL(currentSong.url)
           }
           setCurrentSong(null)
+          onCurrentSongRemoved?.()
         }
 
         onPlaylistChange?.(newSongs)
@@ -219,7 +223,7 @@ export function usePlaylistManager(options: UsePlaylistManagerOptions = {}): Use
 
       toast({ title: "Song removed" })
     },
-    [currentSong, shuffleMode, onPlaylistChange]
+    [currentSong, shuffleMode, onPlaylistChange, onCurrentSongRemoved]
   )
 
   /**
@@ -245,8 +249,9 @@ export function usePlaylistManager(options: UsePlaylistManagerOptions = {}): Use
     setCurrentShuffleIndex(0)
     setPlayedSongs(new Set())
 
+    onPlaylistReset?.()
     onPlaylistChange?.([])
-  }, [songs, onPlaylistChange])
+  }, [songs, onPlaylistChange, onPlaylistReset])
 
   return {
     // State
@@ -262,6 +267,7 @@ export function usePlaylistManager(options: UsePlaylistManagerOptions = {}): Use
     // Setters
     setSongs,
     setCurrentSong,
+    setShuffleMode,
     setViewMode,
     setShuffledQueue,
     setCurrentShuffleIndex,
