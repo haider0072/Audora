@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useRef, useEffect, useCallback, useMemo } from "react"
+import { useState, useRef, useEffect, useCallback, useMemo, lazy, Suspense } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Slider } from "@/components/ui/slider"
@@ -28,9 +28,14 @@ import { usePlaylistPersistence, useAutoSave } from "@/hooks/use-playlist-persis
 import { useMediaControls } from "@/hooks/use-media-controls"
 import { AlbumArtCache } from "@/lib/album-art-cache"
 import { formatTime, waitForCanPlay } from "@/lib/utils"
-import { LyricsDisplay } from "@/components/lyrics-display"
 import { AddMusicControls } from "@/components/add-music-control"
-import { YouTubeVideoPlayer } from "@/components/youtube-video-player"
+
+const LyricsDisplay = lazy(() =>
+  import("@/components/lyrics-display").then(mod => ({ default: mod.LyricsDisplay }))
+)
+const YouTubeVideoPlayer = lazy(() =>
+  import("@/components/youtube-video-player").then(mod => ({ default: mod.YouTubeVideoPlayer }))
+)
 
 export default function EnhancedMusicPlayer() {
   const [currentBitrate, setCurrentBitrate] = useState<number | undefined>()
@@ -387,28 +392,32 @@ export default function EnhancedMusicPlayer() {
         <div className="grid lg:grid-cols-2 gap-6 h-[calc(100vh-70px)] overflow-hidden">
           <div className="flex flex-col gap-6 h-full overflow-hidden">
             {activeView === "lyrics" ? (
-              <LyricsDisplay
-                isVisible={true}
-                onClose={() => setActiveView("player")}
-                currentSong={currentSong}
-                currentTimeMs={currentTime * 1000}
-                forceRefresh={forceRefreshTrigger}
-              />
+              <Suspense fallback={null}>
+                <LyricsDisplay
+                  isVisible={true}
+                  onClose={() => setActiveView("player")}
+                  currentSong={currentSong}
+                  currentTimeMs={currentTime * 1000}
+                  forceRefresh={forceRefreshTrigger}
+                />
+              </Suspense>
             ) : activeView === "youtube" ? (
-              <YouTubeVideoPlayer
-                ref={videoPlayerRef}
-                currentSong={currentSong}
-                isPlaying={isPlaying}
-                currentTime={currentTime}
-                onPlayPause={togglePlayPause}
-                onSeek={handleVideoSeek}
-                isVisible={true}
-                onClose={() => setActiveView("player")}
-                className="h-full"
-                onSync={handleSync}
-                onVideoReady={handleVideoReady}
-                forceRefresh={forceRefreshTrigger}
-              />
+              <Suspense fallback={null}>
+                <YouTubeVideoPlayer
+                  ref={videoPlayerRef}
+                  currentSong={currentSong}
+                  isPlaying={isPlaying}
+                  currentTime={currentTime}
+                  onPlayPause={togglePlayPause}
+                  onSeek={handleVideoSeek}
+                  isVisible={true}
+                  onClose={() => setActiveView("player")}
+                  className="h-full"
+                  onSync={handleSync}
+                  onVideoReady={handleVideoReady}
+                  forceRefresh={forceRefreshTrigger}
+                />
+              </Suspense>
             ) : (
               <>
                 <Card className="bg-transparent border-none shadow-none">

@@ -52,8 +52,38 @@ export class MetadataExtractor {
 
       URL.revokeObjectURL(url)
 
-      // Extract metadata from file buffer for more detailed info
-      const buffer = await file.arrayBuffer()
+      // Read only the metadata portion of the file instead of the entire file.
+      // MP3: ID3v2 tag size is in the header (bytes 6-9).
+      // FLAC: scan block headers (4 bytes each) to compute exact metadata section end.
+      let metadataSize: number
+      const headerBuffer = await file.slice(0, 10).arrayBuffer()
+      const headerView = new DataView(headerBuffer)
+
+      if (headerView.getUint8(0) === 0x49 && headerView.getUint8(1) === 0x44 && headerView.getUint8(2) === 0x33) {
+        // MP3 with ID3v2 — read exactly the tag
+        metadataSize = 10 + this.getId3Size(headerView, 6)
+      } else if (
+        headerView.getUint8(0) === 0x66 && headerView.getUint8(1) === 0x4C &&
+        headerView.getUint8(2) === 0x61 && headerView.getUint8(3) === 0x43  // "fLaC"
+      ) {
+        // FLAC — scan block headers to find exact metadata end (handles large embedded art)
+        let scanOffset = 4
+        let isLastBlock = false
+        while (!isLastBlock && scanOffset < file.size) {
+          const blockHeaderBuf = await file.slice(scanOffset, scanOffset + 4).arrayBuffer()
+          const bh = new DataView(blockHeaderBuf)
+          if (bh.byteLength < 4) break
+          isLastBlock = (bh.getUint8(0) & 0x80) !== 0
+          const blockSize = (bh.getUint8(1) << 16) | (bh.getUint8(2) << 8) | bh.getUint8(3)
+          scanOffset += 4 + blockSize
+        }
+        metadataSize = Math.min(file.size, scanOffset)
+      } else {
+        // Other formats — read up to 4MB
+        metadataSize = Math.min(file.size, 4 * 1024 * 1024)
+      }
+
+      const buffer = await file.slice(0, metadataSize).arrayBuffer()
       const additionalMetadata = await this.parseFileMetadata(buffer, file.type)
 
       // Merge metadata, keeping filename fallbacks for missing values

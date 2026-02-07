@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { AlbumArtCache } from "@/lib/album-art-cache"
 import { ColorExtractor } from "@/lib/color-extractor"
 
@@ -58,6 +58,13 @@ export function AlbumArtBackground({ albumArt, songId, isTransitioning = false }
     loadBackgroundImage()
   }, [albumArt, songId, isMounted])
 
+  // Memoize color variations (must be before early returns to satisfy hook ordering rules)
+  const { lightColor, darkColor, veryDarkColor } = useMemo(() => ({
+    lightColor: ColorExtractor.lightenColor(dominantColor, 20),
+    darkColor: ColorExtractor.darkenColor(dominantColor, 40),
+    veryDarkColor: ColorExtractor.darkenColor(dominantColor, 60),
+  }), [dominantColor])
+
   if (!isMounted) {
     return <div className="fixed inset-0 bg-gradient-to-br from-gray-900 via-gray-900/95 to-black -z-20" />
   }
@@ -65,11 +72,6 @@ export function AlbumArtBackground({ albumArt, songId, isTransitioning = false }
   if (!backgroundImage) {
     return <div className="fixed inset-0 bg-gradient-to-br from-gray-900 via-gray-900/95 to-black -z-20" />
   }
-
-  // Create color variations for the gradient
-  const lightColor = ColorExtractor.lightenColor(dominantColor, 20)
-  const darkColor = ColorExtractor.darkenColor(dominantColor, 40)
-  const veryDarkColor = ColorExtractor.darkenColor(dominantColor, 60)
 
   return (
     <>
