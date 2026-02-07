@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useRef, useEffect, useCallback, useMemo, MutableRefObject } from "react"
+import { useState, useRef, useEffect, useCallback, useMemo } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Slider } from "@/components/ui/slider"
@@ -27,11 +27,10 @@ import { useFileImporter } from "@/hooks/use-file-importer"
 import { usePlaylistPersistence, useAutoSave } from "@/hooks/use-playlist-persistence"
 import { useMediaControls } from "@/hooks/use-media-controls"
 import { AlbumArtCache } from "@/lib/album-art-cache"
+import { formatTime, waitForCanPlay } from "@/lib/utils"
 import { LyricsDisplay } from "@/components/lyrics-display"
 import { AddMusicControls } from "@/components/add-music-control"
 import { YouTubeVideoPlayer } from "@/components/youtube-video-player"
-
-const CANPLAY_TIMEOUT_MS = 8000
 
 export default function EnhancedMusicPlayer() {
   const [currentBitrate, setCurrentBitrate] = useState<number | undefined>()
@@ -200,29 +199,7 @@ export default function EnhancedMusicPlayer() {
         audioRef.current.load()
 
         try {
-          // Wait for canplay with timeout to prevent infinite hang
-          await new Promise<void>((resolve, reject) => {
-            const audio = audioRef.current!
-            const onCanPlay = () => {
-              audio.removeEventListener("canplay", onCanPlay)
-              audio.removeEventListener("error", onError)
-              resolve()
-            }
-            const onError = (e: Event) => {
-              audio.removeEventListener("canplay", onCanPlay)
-              audio.removeEventListener("error", onError)
-              reject(new Error(`Failed to load audio: ${(e.target as HTMLAudioElement)?.error?.message || "Unknown error"}`))
-            }
-            audio.addEventListener("canplay", onCanPlay)
-            audio.addEventListener("error", onError)
-
-            // Timeout fallback
-            setTimeout(() => {
-              audio.removeEventListener("canplay", onCanPlay)
-              audio.removeEventListener("error", onError)
-              reject(new Error("Audio load timed out"))
-            }, CANPLAY_TIMEOUT_MS)
-          })
+          await waitForCanPlay(audioRef.current)
 
           if (abort.signal.aborted) return
 
@@ -280,28 +257,7 @@ export default function EnhancedMusicPlayer() {
       audioRef.current.src = audioUrl
       audioRef.current.load()
       
-      // Wait for the audio to be ready before playing (with timeout)
-      await new Promise<void>((resolve, reject) => {
-        const audio = audioRef.current!
-        const onCanPlay = () => {
-          audio.removeEventListener("canplay", onCanPlay)
-          audio.removeEventListener("error", onError)
-          resolve()
-        }
-        const onError = (e: Event) => {
-          audio.removeEventListener("canplay", onCanPlay)
-          audio.removeEventListener("error", onError)
-          reject(new Error(`Failed to load audio: ${(e.target as HTMLAudioElement)?.error?.message || "Unknown error"}`))
-        }
-        audio.addEventListener("canplay", onCanPlay)
-        audio.addEventListener("error", onError)
-
-        setTimeout(() => {
-          audio.removeEventListener("canplay", onCanPlay)
-          audio.removeEventListener("error", onError)
-          reject(new Error("Audio load timed out"))
-        }, CANPLAY_TIMEOUT_MS)
-      })
+      await waitForCanPlay(audioRef.current)
     }
 
     if (isPlaying) {
@@ -346,13 +302,6 @@ export default function EnhancedMusicPlayer() {
 
   const handleVideoSeek = (time: number) => {
     seek(time)
-  }
-
-  const formatTime = (time: number) => {
-    if (isNaN(time)) return "0:00"
-    const minutes = Math.floor(time / 60)
-    const seconds = Math.floor(time % 60)
-    return `${minutes}:${seconds.toString().padStart(2, "0")}`
   }
 
   const formatBitrate = (bitrate?: number) => {

@@ -23,8 +23,7 @@ import { AlbumArtBackground } from "@/components/album-art-background"
 import { MobileYouTubeVideoPlayer } from "@/components/mobile-youtube-video-player"
 
 import type { EqualizerBand } from "@/components/refined-equalizer"
-
-const CANPLAY_TIMEOUT_MS = 8000
+import { formatTime, waitForCanPlay } from "@/lib/utils"
 
 export default function MobileMusicPlayer() {
   const [searchQuery, setSearchQuery] = useState("")
@@ -157,13 +156,6 @@ export default function MobileMusicPlayer() {
     return sortedGrouped
   }, [filteredSongs, viewMode])
 
-  // Format total duration
-  const formatTime = (time: number) => {
-    const minutes = Math.floor(time / 60)
-    const seconds = Math.floor(time % 60)
-    return `${minutes}:${seconds.toString().padStart(2, "0")}`
-  }
-
   const getTotalDuration = () => {
     return songs.reduce((total, song) => total + (song.duration || 0), 0)
   }
@@ -229,31 +221,8 @@ export default function MobileMusicPlayer() {
         setCurrentSong(updatedSong)
         audioRef.current.src = audioUrl
 
-        // Wait for canplay with timeout to prevent infinite hang
-        await new Promise<void>((resolve, reject) => {
-          const audio = audioRef.current!
-
-          const onCanPlay = () => {
-            audio.removeEventListener("canplay", onCanPlay)
-            audio.removeEventListener("error", onError)
-            resolve()
-          }
-          const onError = (e: Event) => {
-            audio.removeEventListener("canplay", onCanPlay)
-            audio.removeEventListener("error", onError)
-            reject(new Error(`Failed to load audio: ${(e.target as HTMLAudioElement)?.error?.message || "Unknown error"}`))
-          }
-
-          audio.addEventListener("canplay", onCanPlay)
-          audio.addEventListener("error", onError)
-          audio.load()
-
-          setTimeout(() => {
-            audio.removeEventListener("canplay", onCanPlay)
-            audio.removeEventListener("error", onError)
-            reject(new Error("Audio load timed out"))
-          }, CANPLAY_TIMEOUT_MS)
-        })
+        audioRef.current.load()
+        await waitForCanPlay(audioRef.current)
 
         if (abort.signal.aborted) return
 
@@ -300,28 +269,7 @@ export default function MobileMusicPlayer() {
       audioRef.current.src = audioUrl
       audioRef.current.load()
 
-      // Wait for the audio to be ready before playing (with timeout)
-      await new Promise<void>((resolve, reject) => {
-        const audio = audioRef.current!
-        const onCanPlay = () => {
-          audio.removeEventListener("canplay", onCanPlay)
-          audio.removeEventListener("error", onError)
-          resolve()
-        }
-        const onError = (e: Event) => {
-          audio.removeEventListener("canplay", onCanPlay)
-          audio.removeEventListener("error", onError)
-          reject(new Error(`Failed to load audio: ${(e.target as HTMLAudioElement)?.error?.message || "Unknown error"}`))
-        }
-        audio.addEventListener("canplay", onCanPlay)
-        audio.addEventListener("error", onError)
-
-        setTimeout(() => {
-          audio.removeEventListener("canplay", onCanPlay)
-          audio.removeEventListener("error", onError)
-          reject(new Error("Audio load timed out"))
-        }, CANPLAY_TIMEOUT_MS)
-      })
+      await waitForCanPlay(audioRef.current)
     }
 
     if (isPlaying) {
