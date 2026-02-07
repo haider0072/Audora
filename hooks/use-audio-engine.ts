@@ -184,6 +184,28 @@ export function useAudioEngine(options: UseAudioEngineOptions): UseAudioEngineRe
   }, [audioRef])
 
   /**
+   * Cleanup AudioContext and audio nodes on unmount
+   */
+  useEffect(() => {
+    return () => {
+      if (audioContextRef.current) {
+        // Disconnect all nodes before closing
+        try {
+          sourceNodeRef.current?.disconnect()
+          gainNodeRef.current?.disconnect()
+          analyserRef.current?.disconnect()
+          filterNodes.forEach((f) => { try { f.disconnect() } catch {} })
+        } catch {}
+        audioContextRef.current.close().catch(() => {})
+        audioContextRef.current = null
+        sourceNodeRef.current = null
+        gainNodeRef.current = null
+        analyserRef.current = null
+      }
+    }
+  }, [filterNodes])
+
+  /**
    * Setup audio event listeners for time updates, metadata, and end events
    */
   useEffect(() => {

@@ -144,11 +144,11 @@ export class PlaylistStorage {
 
       const data = JSON.parse(stored) as PlaylistData
 
-      // Version check
+      // Version migration: preserve user data, update stamp
       if (data.version !== this.VERSION) {
-        console.log("Playlist version mismatch, clearing old data")
-        this.clearPlaylist()
-        return null
+        console.info(`Playlist version migrated: ${data.version} → ${this.VERSION}`)
+        data.version = this.VERSION
+        localStorage.setItem(this.METADATA_KEY, JSON.stringify(data))
       }
 
       return data

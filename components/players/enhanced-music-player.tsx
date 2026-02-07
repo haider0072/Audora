@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useRef, useEffect, useCallback, useMemo } from "react"
+import { useState, useRef, useEffect, useCallback, useMemo, MutableRefObject } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Slider } from "@/components/ui/slider"
@@ -26,9 +26,12 @@ import { useEqualizerManager, DEFAULT_EQUALIZER_BANDS } from "@/hooks/use-equali
 import { useFileImporter } from "@/hooks/use-file-importer"
 import { usePlaylistPersistence, useAutoSave } from "@/hooks/use-playlist-persistence"
 import { useMediaControls } from "@/hooks/use-media-controls"
+import { AlbumArtCache } from "@/lib/album-art-cache"
 import { LyricsDisplay } from "@/components/lyrics-display"
 import { AddMusicControls } from "@/components/add-music-control"
 import { YouTubeVideoPlayer } from "@/components/youtube-video-player"
+
+const CANPLAY_TIMEOUT_MS = 8000
 
 export default function EnhancedMusicPlayer() {
   const [currentBitrate, setCurrentBitrate] = useState<number | undefined>()
@@ -40,6 +43,7 @@ export default function EnhancedMusicPlayer() {
 
   const audioRef = useRef<HTMLAudioElement>(null)
   const skipToNextRef = useRef<() => void>(() => {})
+  const selectSongAbortRef = useRef<AbortController | null>(null)
 
   // Stable onEnded callback using ref — THIS FIXES THE STALE CLOSURE BUG
   const handleEnded = useCallback(() => {
@@ -162,6 +166,11 @@ export default function EnhancedMusicPlayer() {
 
   const selectSong = useCallback(
     async (song: Song, isAutoAdvance = false) => {
+      // Abort any previous in-flight selectSong call
+      selectSongAbortRef.current?.abort()
+      const abort = new AbortController()
+      selectSongAbortRef.current = abort
+
       if (playPromiseRef.current) {
         try {
           await playPromiseRef.current
@@ -171,6 +180,8 @@ export default function EnhancedMusicPlayer() {
           }
         }
       }
+
+      if (abort.signal.aborted) return
 
       setIsTransitioning(true)
       if (currentSong?.url) URL.revokeObjectURL(currentSong.url)
@@ -189,33 +200,50 @@ export default function EnhancedMusicPlayer() {
         audioRef.current.load()
 
         try {
+          // Wait for canplay with timeout to prevent infinite hang
           await new Promise<void>((resolve, reject) => {
+            const audio = audioRef.current!
             const onCanPlay = () => {
-              audioRef.current?.removeEventListener("canplay", onCanPlay)
+              audio.removeEventListener("canplay", onCanPlay)
+              audio.removeEventListener("error", onError)
               resolve()
             }
-            audioRef.current?.addEventListener("canplay", onCanPlay)
-            audioRef.current?.addEventListener("error", reject)
+            const onError = (e: Event) => {
+              audio.removeEventListener("canplay", onCanPlay)
+              audio.removeEventListener("error", onError)
+              reject(new Error(`Failed to load audio: ${(e.target as HTMLAudioElement)?.error?.message || "Unknown error"}`))
+            }
+            audio.addEventListener("canplay", onCanPlay)
+            audio.addEventListener("error", onError)
+
+            // Timeout fallback
+            setTimeout(() => {
+              audio.removeEventListener("canplay", onCanPlay)
+              audio.removeEventListener("error", onError)
+              reject(new Error("Audio load timed out"))
+            }, CANPLAY_TIMEOUT_MS)
           })
+
+          if (abort.signal.aborted) return
 
           initializeAudioContext()
           playPromiseRef.current = audioRef.current.play()
           await playPromiseRef.current
-          setIsPlaying(true)
+          if (!abort.signal.aborted) setIsPlaying(true)
         } catch (error) {
+          if (!abort.signal.aborted) {
             if ((error as DOMException).name !== "AbortError") {
               console.error("Error playing song:", error)
               toast({ title: "Playback Error", variant: "destructive" })
             }
             setIsPlaying(false)
-          } finally {
-            setIsTransitioning(false)
-        
           }
-      
+        } finally {
+          if (!abort.signal.aborted) setIsTransitioning(false)
         }
+      }
     },
-    [currentSong, notifySongSelected, initializeAudioContext, preloadUpcomingSongs, activeView],
+    [currentSong, notifySongSelected, initializeAudioContext, preloadUpcomingSongs],
   )
   
   // Remove syncDelayActive and all related logic
@@ -252,20 +280,27 @@ export default function EnhancedMusicPlayer() {
       audioRef.current.src = audioUrl
       audioRef.current.load()
       
-      // Wait for the audio to be ready before playing
+      // Wait for the audio to be ready before playing (with timeout)
       await new Promise<void>((resolve, reject) => {
+        const audio = audioRef.current!
         const onCanPlay = () => {
-          audioRef.current?.removeEventListener("canplay", onCanPlay)
-          audioRef.current?.removeEventListener("error", onError)
+          audio.removeEventListener("canplay", onCanPlay)
+          audio.removeEventListener("error", onError)
           resolve()
         }
         const onError = (e: Event) => {
-          audioRef.current?.removeEventListener("canplay", onCanPlay)
-          audioRef.current?.removeEventListener("error", onError)
+          audio.removeEventListener("canplay", onCanPlay)
+          audio.removeEventListener("error", onError)
           reject(new Error(`Failed to load audio: ${(e.target as HTMLAudioElement)?.error?.message || "Unknown error"}`))
         }
-        audioRef.current?.addEventListener("canplay", onCanPlay)
-        audioRef.current?.addEventListener("error", onError)
+        audio.addEventListener("canplay", onCanPlay)
+        audio.addEventListener("error", onError)
+
+        setTimeout(() => {
+          audio.removeEventListener("canplay", onCanPlay)
+          audio.removeEventListener("error", onError)
+          reject(new Error("Audio load timed out"))
+        }, CANPLAY_TIMEOUT_MS)
       })
     }
 
@@ -345,6 +380,16 @@ export default function EnhancedMusicPlayer() {
     onPlayFirstSong: () => { if (songs.length > 0) selectSong(songs[0], false) },
     enableExtendedShortcuts: true,
   })
+
+  // Cleanup Object URLs and caches on unmount
+  useEffect(() => {
+    return () => {
+      songs.forEach((song) => {
+        if (song.url) URL.revokeObjectURL(song.url)
+      })
+      AlbumArtCache.clearCache()
+    }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps -- intentional: cleanup only on unmount
 
   useEffect(() => {
     if (activeView !== "youtube") {
