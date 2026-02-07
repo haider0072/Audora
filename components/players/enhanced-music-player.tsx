@@ -63,9 +63,8 @@ export default function EnhancedMusicPlayer() {
   const {
     songs, setSongs, currentSong, setCurrentSong,
     shuffleMode, setShuffleMode, viewMode, setViewMode,
-    shuffledQueue, setCurrentShuffleIndex, setPlayedSongs,
-    sortedSongs, getNextSong, getPreviousSong, toggleShuffle,
-    removeSong, resetPlaylist,
+    sortedSongs, getNextSong, getPreviousSong, notifySongSelected,
+    toggleShuffle, removeSong, resetPlaylist,
   } = usePlaylistManager({
     onCurrentSongRemoved: () => {
       pause()
@@ -179,16 +178,7 @@ export default function EnhancedMusicPlayer() {
       setCurrentSong(song)
       setCurrentBitrate(song.bitrate)
       setIsPlaying(false)
-
-      if (shuffleMode) {
-        if (isAutoAdvance) {
-          setCurrentShuffleIndex((prev) => prev + 1)
-        } else {
-          const songIndex = shuffledQueue.findIndex((s) => s.id === song.id)
-          if (songIndex !== -1) setCurrentShuffleIndex(songIndex)
-        }
-        setPlayedSongs((prev) => new Set(prev).add(song.id))
-      }
+      notifySongSelected(song, isAutoAdvance)
 
       if (audioRef.current) {
         audioRef.current.pause()
@@ -225,7 +215,7 @@ export default function EnhancedMusicPlayer() {
       
         }
     },
-    [currentSong, shuffleMode, shuffledQueue, initializeAudioContext, preloadUpcomingSongs, activeView],
+    [currentSong, notifySongSelected, initializeAudioContext, preloadUpcomingSongs, activeView],
   )
   
   // Remove syncDelayActive and all related logic
@@ -311,10 +301,7 @@ export default function EnhancedMusicPlayer() {
 
   const skipToPrevious = () => {
     const prevSong = getPreviousSong()
-    if (prevSong) {
-      if (shuffleMode) setCurrentShuffleIndex((prev) => Math.max(0, prev - 1))
-      selectSong(prevSong, false)
-    }
+    if (prevSong) selectSong(prevSong, false)
   }
 
   const handleSeek = (value: number[]) => {

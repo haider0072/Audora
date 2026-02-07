@@ -53,8 +53,8 @@ export default function MobileMusicPlayer() {
   const {
     songs, setSongs, currentSong, setCurrentSong,
     shuffleMode, setShuffleMode, viewMode, setViewMode,
-    sortedSongs, getNextSong, getPreviousSong, toggleShuffle,
-    removeSong, resetPlaylist,
+    sortedSongs, getNextSong, getPreviousSong, notifySongSelected,
+    toggleShuffle, removeSong, resetPlaylist,
   } = usePlaylistManager({
     onCurrentSongRemoved: () => {
       pause()
@@ -215,6 +215,7 @@ export default function MobileMusicPlayer() {
 
       setCurrentSong(song)
       setIsPlaying(false) // Reset playing state first
+      notifySongSelected(song, isAutoAdvance)
 
       if (audioRef.current) {
         // Stop current playback
