@@ -4,14 +4,13 @@ import type React from "react"
 import { useState, useRef, useEffect, useCallback, useMemo } from "react"
 import { toast } from "@/hooks/use-toast"
 
-import { StorageManager } from "@/lib/storage"
-import { PlaylistStorage } from "@/lib/playlist-storage"
 import { AlbumArtCache } from "@/lib/album-art-cache"
 import { useAlbumArtPreloader } from "@/hooks/use-album-art-preloader"
 import { usePlaylistManager } from "@/hooks/use-playlist-manager"
 import { useAudioEngine } from "@/hooks/use-audio-engine"
 import { useEqualizerManager, DEFAULT_EQUALIZER_BANDS } from "@/hooks/use-equalizer-manager"
 import { useFileImporter } from "@/hooks/use-file-importer"
+import { usePlaylistPersistence, useAutoSave } from "@/hooks/use-playlist-persistence"
 import type { Song } from "@/components/enhanced-playlist"
 
 import { MobileHeader } from "@/components/mobile-header"
@@ -28,8 +27,6 @@ import type { EqualizerBand } from "@/components/refined-equalizer"
 export default function MobileMusicPlayer() {
   const [searchQuery, setSearchQuery] = useState("")
   const [isTransitioning, setIsTransitioning] = useState(false)
-  const [isInitialized, setIsInitialized] = useState(false)
-  const [isRestoringPlaylist, setIsRestoringPlaylist] = useState(false)
 
   const audioRef = useRef<HTMLAudioElement>(null)
   const skipToNextRef = useRef<() => void>(() => {})
@@ -98,6 +95,7 @@ export default function MobileMusicPlayer() {
     },
   })
 
+  const { isInitialized, isRestoringPlaylist, restorePlaylist, savePlaylist } = usePlaylistPersistence()
 
   // Calculate current time in milliseconds for lyrics sync
   const currentTimeMs = useMemo(() => {
@@ -168,164 +166,37 @@ export default function MobileMusicPlayer() {
     return songs.reduce((total, song) => total + (song.duration || 0), 0)
   }
 
-  // Load saved data and restore playlist on component mount
+  // Restore playlist on mount
   useEffect(() => {
-    const loadSavedData = async () => {
-      try {
-        setIsRestoringPlaylist(true)
+    restorePlaylist().then(({ songs: restoredSongs, currentSong: current, settings }) => {
+      if (settings.equalizerBands) setEqualizerBands(settings.equalizerBands)
+      if (settings.volume !== undefined) setVolume([settings.volume])
+      if (settings.shuffleMode !== undefined) setShuffleMode(settings.shuffleMode)
+      if (settings.viewMode) setViewMode(settings.viewMode)
+      if (settings.showEqualizer !== undefined) setShowEqualizer(settings.showEqualizer)
 
-        // Load general settings
-        const savedData = StorageManager.loadData()
-
-        // Restore equalizer settings
-        if (savedData.equalizerBands) {
-          setEqualizerBands(savedData.equalizerBands)
-        }
-
-        // Restore player settings
-        if (savedData.playerSettings) {
-          setVolume([savedData.playerSettings.volume])
-          setShuffleMode(savedData.playerSettings.shuffleMode)
-          setViewMode(savedData.playerSettings.viewMode)
-          setShowLyrics(savedData.playerSettings.showLyrics || false)
-        }
-
-        // Restore playlist from IndexedDB
-        const playlistData = PlaylistStorage.loadPlaylistMetadata()
-        if (playlistData && playlistData.songs.length > 0) {
-          const validSongs = await PlaylistStorage.validateStoredFiles(playlistData.songs)
-
-          if (validSongs.length > 0) {
-            const restoredSongs: Song[] = []
-
-            for (const songMetadata of validSongs) {
-              const file = await PlaylistStorage.getSongFile(songMetadata.id)
-              if (file) {
-                let albumArt = songMetadata.albumArt
-                if (songMetadata.albumArt && songMetadata.albumArt.startsWith("blob:")) {
-                  const restoredAlbumArt = await PlaylistStorage.getAlbumArt(songMetadata.id)
-                  if (restoredAlbumArt) {
-                    albumArt = restoredAlbumArt
-                    await AlbumArtCache.preloadAlbumArt(songMetadata.id, restoredAlbumArt)
-                  } else {
-                    albumArt = undefined
-                  }
-                }
-
-                const song: Song = {
-                  ...songMetadata,
-                  file,
-                  url: "",
-                  albumArt,
-                }
-                restoredSongs.push(song)
-              }
-            }
-
-            if (restoredSongs.length > 0) {
-              setSongs(restoredSongs)
-
-              toast({
-                title: "Playlist restored",
-                description: `Successfully restored ${restoredSongs.length} song${
-                  restoredSongs.length > 1 ? "s" : ""
-                } from your previous session.`,
-                duration: 3000,
-              })
-
-              if (playlistData.currentSongId) {
-                const currentSong = restoredSongs.find((song) => song.id === playlistData.currentSongId)
-                if (currentSong) {
-                  setCurrentSong(currentSong)
-                  // Initialize the audio element with the current song
-                  if (audioRef.current) {
-                    const audioUrl = URL.createObjectURL(currentSong.file)
-                    const updatedSong = { ...currentSong, url: audioUrl }
-                    setCurrentSong(updatedSong)
-                    audioRef.current.src = audioUrl
-                    audioRef.current.load()
-                  }
-                }
-              }
-            }
+      if (restoredSongs.length > 0) {
+        setSongs(restoredSongs)
+        if (current) {
+          setCurrentSong(current)
+          if (audioRef.current) {
+            const audioUrl = URL.createObjectURL(current.file)
+            setCurrentSong({ ...current, url: audioUrl })
+            audioRef.current.src = audioUrl
+            audioRef.current.load()
           }
         }
-
-        setIsInitialized(true)
-      } catch (error) {
-        console.error("Error loading saved data:", error)
-        toast({
-          title: "Error loading playlist",
-          description: "Starting fresh.",
-          variant: "destructive",
-        })
-        setIsInitialized(true)
-      } finally {
-        setIsRestoringPlaylist(false)
       }
-    }
-
-    loadSavedData()
+    })
   }, [])
 
-  // Save playlist data whenever songs change
-  useEffect(() => {
-    if (!isInitialized || isRestoringPlaylist) return
+  // Auto-save playlist data
+  const persistenceData = useMemo(() => ({
+    songs, currentSongId: currentSong?.id, equalizerBands,
+    volume: volume[0], shuffleMode, viewMode, showEqualizer,
+  }), [songs, currentSong?.id, equalizerBands, volume, shuffleMode, viewMode, showEqualizer])
 
-    const savePlaylistData = async () => {
-      try {
-        const serializableSongs = songs.map((song) => ({
-          id: song.id,
-          title: song.title,
-          artist: song.artist,
-          album: song.album,
-          year: song.year,
-          genre: song.genre,
-          bitrate: song.bitrate,
-          sampleRate: song.sampleRate,
-          duration: song.duration,
-          isHiRes: song.isHiRes,
-          albumArt: song.albumArt,
-          fileSize: song.fileSize,
-          format: song.format,
-          fileName: song.file.name,
-          fileLastModified: song.file.lastModified,
-          fileType: song.file.type,
-        }))
-
-        PlaylistStorage.savePlaylistMetadata(serializableSongs, currentSong?.id)
-
-        StorageManager.saveData({
-          songs: serializableSongs,
-          equalizerBands,
-          playerSettings: {
-            volume: volume[0],
-            shuffleMode,
-            viewMode,
-            showEqualizer,
-            showLyrics,
-          },
-          currentSongId: currentSong?.id,
-        })
-      } catch (error) {
-        console.error("Error saving playlist data:", error)
-      }
-    }
-
-    const timeoutId = setTimeout(savePlaylistData, 1000)
-    return () => clearTimeout(timeoutId)
-  }, [
-    songs,
-    currentSong?.id,
-    equalizerBands,
-    volume,
-    shuffleMode,
-    viewMode,
-    showEqualizer,
-    showLyrics,
-    isInitialized,
-    isRestoringPlaylist,
-  ])
+  useAutoSave(persistenceData, isInitialized, isRestoringPlaylist, savePlaylist)
 
 
 

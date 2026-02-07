@@ -31,16 +31,14 @@ import { EnhancedPlaylist, type Song } from "@/components/enhanced-playlist"
 import { RefinedEqualizer, type EqualizerBand } from "@/components/refined-equalizer"
 import { AlbumArtBackground } from "@/components/album-art-background"
 import { AlbumArtDisplay } from "@/components/album-art-display"
-import { StorageManager } from "@/lib/storage"
-import { PlaylistStorage } from "@/lib/playlist-storage"
 import { PlaylistManager } from "@/components/playlist-manager"
-import { AlbumArtCache } from "@/lib/album-art-cache"
 import { useAlbumArtPreloader } from "@/hooks/use-album-art-preloader"
 import { useFolderSync } from "@/hooks/use-folder-sync"
 import { usePlaylistManager } from "@/hooks/use-playlist-manager"
 import { useAudioEngine } from "@/hooks/use-audio-engine"
 import { useEqualizerManager, DEFAULT_EQUALIZER_BANDS } from "@/hooks/use-equalizer-manager"
 import { useFileImporter } from "@/hooks/use-file-importer"
+import { usePlaylistPersistence, useAutoSave } from "@/hooks/use-playlist-persistence"
 import { LyricsDisplay } from "@/components/lyrics-display"
 import { AddMusicControls } from "@/components/add-music-control"
 import { YouTubeVideoPlayer } from "@/components/youtube-video-player"
@@ -48,8 +46,6 @@ import { YouTubeVideoPlayer } from "@/components/youtube-video-player"
 export default function EnhancedMusicPlayer() {
   const [currentBitrate, setCurrentBitrate] = useState<number | undefined>()
   const [isTransitioning, setIsTransitioning] = useState(false)
-  const [isInitialized, setIsInitialized] = useState(false)
-  const [isRestoringPlaylist, setIsRestoringPlaylist] = useState(false)
   const [activeView, setActiveView] = useState<"player" | "lyrics" | "youtube">("player");
   const videoPlayerRef = useRef<{ resetVideo: () => void }>(null);
   const [forceRefreshTrigger, setForceRefreshTrigger] = useState(0);
@@ -126,6 +122,8 @@ export default function EnhancedMusicPlayer() {
     },
   })
 
+  const { isInitialized, isRestoringPlaylist, restorePlaylist, savePlaylist } = usePlaylistPersistence()
+
   // Folder sync hook
   const {
     isSyncing,
@@ -144,121 +142,37 @@ export default function EnhancedMusicPlayer() {
     },
   })
 
+  // Restore playlist on mount
   useEffect(() => {
-    const loadSavedData = async () => {
-      try {
-        setIsRestoringPlaylist(true)
-        const savedData = StorageManager.loadData()
-        if (savedData.equalizerBands) {
-          setEqualizerBands(savedData.equalizerBands)
-        }
-        if (savedData.playerSettings) {
-          setVolume([savedData.playerSettings.volume])
-          setShuffleMode(savedData.playerSettings.shuffleMode)
-          setViewMode(savedData.playerSettings.viewMode)
-          setShowEqualizer(savedData.playerSettings.showEqualizer)
-        }
+    restorePlaylist().then(({ songs: restoredSongs, currentSong: current, settings }) => {
+      if (settings.equalizerBands) setEqualizerBands(settings.equalizerBands)
+      if (settings.volume !== undefined) setVolume([settings.volume])
+      if (settings.shuffleMode !== undefined) setShuffleMode(settings.shuffleMode)
+      if (settings.viewMode) setViewMode(settings.viewMode)
+      if (settings.showEqualizer !== undefined) setShowEqualizer(settings.showEqualizer)
 
-        const playlistData = PlaylistStorage.loadPlaylistMetadata()
-        if (playlistData && playlistData.songs.length > 0) {
-          const validSongs = await PlaylistStorage.validateStoredFiles(playlistData.songs)
-          if (validSongs.length > 0) {
-            const restoredSongs: Song[] = []
-            for (const songMetadata of validSongs) {
-              const file = await PlaylistStorage.getSongFile(songMetadata.id)
-              if (file) {
-                let albumArt = songMetadata.albumArt
-                if (songMetadata.albumArt && songMetadata.albumArt.startsWith("blob:")) {
-                  const restoredAlbumArt = await PlaylistStorage.getAlbumArt(songMetadata.id)
-                  if (restoredAlbumArt) {
-                    albumArt = restoredAlbumArt
-                    await AlbumArtCache.preloadAlbumArt(songMetadata.id, restoredAlbumArt)
-                  } else {
-                    albumArt = undefined
-                  }
-                }
-                // Prefer artists[0] for artist if artists exists
-                const artist = songMetadata.artists && songMetadata.artists.length > 0 ? songMetadata.artists[0] : songMetadata.artist;
-                restoredSongs.push({ ...songMetadata, artist, file, url: "", albumArt })
-              }
-            }
-            if (restoredSongs.length > 0) {
-              setSongs(restoredSongs)
-              toast({
-                title: "Playlist restored",
-                description: `Restored ${restoredSongs.length} song(s).`,
-              })
-              if (playlistData.currentSongId) {
-                const current = restoredSongs.find((s) => s.id === playlistData.currentSongId)
-                if (current) {
-                  setCurrentSong(current)
-                  // Initialize the audio element with the current song
-                  if (audioRef.current) {
-                    const audioUrl = URL.createObjectURL(current.file)
-                    const updatedSong = { ...current, url: audioUrl }
-                    setCurrentSong(updatedSong)
-                    audioRef.current.src = audioUrl
-                    audioRef.current.load()
-                  }
-                }
-              }
-            }
+      if (restoredSongs.length > 0) {
+        setSongs(restoredSongs)
+        if (current) {
+          setCurrentSong(current)
+          if (audioRef.current) {
+            const audioUrl = URL.createObjectURL(current.file)
+            setCurrentSong({ ...current, url: audioUrl })
+            audioRef.current.src = audioUrl
+            audioRef.current.load()
           }
         }
-        setIsInitialized(true)
-      } catch (error) {
-        console.error("Error loading saved data:", error)
-        setIsInitialized(true)
-      } finally {
-        setIsRestoringPlaylist(false)
       }
-    }
-    loadSavedData()
+    })
   }, [])
 
-  useEffect(() => {
-    if (!isInitialized || isRestoringPlaylist) return
-    const savePlaylistData = () => {
-      const serializableSongs = songs.map((song) => ({
-        id: song.id,
-        title: song.title,
-        artist: song.artist,
-        artists: song.artists,
-        album: song.album,
-        year: song.year,
-        genre: song.genre,
-        bitrate: song.bitrate,
-        sampleRate: song.sampleRate,
-        duration: song.duration,
-        isHiRes: song.isHiRes,
-        albumArt: song.albumArt,
-        fileSize: song.fileSize,
-        format: song.format,
-        fileName: song.file ? song.file.name : "",
-        fileLastModified: song.file ? song.file.lastModified : 0,
-        fileType: song.file ? song.file.type : "",
-      }))
-      PlaylistStorage.savePlaylistMetadata(serializableSongs, currentSong?.id)
-      StorageManager.saveData({
-        songs: serializableSongs,
-        equalizerBands,
-        playerSettings: { volume: volume[0], shuffleMode, viewMode, showEqualizer },
-        currentSongId: currentSong?.id,
-      })
-    }
-    const timeoutId = setTimeout(savePlaylistData, 1000)
-    return () => clearTimeout(timeoutId)
-  }, [
-    songs,
-    currentSong?.id,
-    equalizerBands,
-    volume,
-    shuffleMode,
-    viewMode,
-    showEqualizer,
-    isInitialized,
-    isRestoringPlaylist,
-  ])
+  // Auto-save playlist data
+  const persistenceData = useMemo(() => ({
+    songs, currentSongId: currentSong?.id, equalizerBands,
+    volume: volume[0], shuffleMode, viewMode, showEqualizer,
+  }), [songs, currentSong?.id, equalizerBands, volume, shuffleMode, viewMode, showEqualizer])
+
+  useAutoSave(persistenceData, isInitialized, isRestoringPlaylist, savePlaylist)
 
 
 
