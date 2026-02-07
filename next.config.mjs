@@ -5,7 +5,6 @@ const withPWA = withPWAInit({
   cacheOnFrontEndNav: true,
   aggressiveFrontEndNavCaching: true,
   reloadOnOnline: true,
-  swcMinify: true,
   disable: false,
   workboxOptions: {
     disableDevLogs: true,
@@ -14,6 +13,7 @@ const withPWA = withPWAInit({
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  turbopack: {},
   images: {
     remotePatterns: [
       {
