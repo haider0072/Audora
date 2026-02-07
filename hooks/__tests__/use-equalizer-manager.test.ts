@@ -1,5 +1,6 @@
 import { renderHook, act } from '@testing-library/react'
-import { useEqualizerManager } from '../use-equalizer-manager'
+import { useState } from 'react'
+import { useEqualizerManager, DEFAULT_EQUALIZER_BANDS } from '../use-equalizer-manager'
 import type { EqualizerBand } from '@/components/refined-equalizer'
 
 describe('useEqualizerManager', () => {
@@ -10,11 +11,26 @@ describe('useEqualizerManager', () => {
     disconnect: jest.fn(),
   } as any)
 
-  const mockFilterNodes = Array(10).fill(null).map(() => createMockFilterNode())
+  const createMockFilterNodes = (count = 10) =>
+    Array(count).fill(null).map(() => createMockFilterNode())
 
-  it('should initialize with default bands', () => {
+  /**
+   * Helper: wraps useEqualizerManager with local useState so tests
+   * can verify band mutations via the external state pattern.
+   */
+  function useTestEqualizerManager(
+    initialBands: EqualizerBand[],
+    filterNodes: BiquadFilterNode[],
+  ) {
+    const [equalizerBands, setEqualizerBands] = useState(initialBands)
+    const manager = useEqualizerManager({ equalizerBands, setEqualizerBands, filterNodes })
+    return { ...manager, equalizerBands, setEqualizerBands }
+  }
+
+  it('should initialize with default values', () => {
+    const mockFilterNodes = createMockFilterNodes()
     const { result } = renderHook(() =>
-      useEqualizerManager({ filterNodes: mockFilterNodes })
+      useTestEqualizerManager(DEFAULT_EQUALIZER_BANDS, mockFilterNodes)
     )
 
     expect(result.current.equalizerBands).toHaveLength(10)
@@ -29,11 +45,9 @@ describe('useEqualizerManager', () => {
       { frequency: 200, gain: -3, label: '200Hz' },
     ]
 
+    const mockFilterNodes = createMockFilterNodes(2)
     const { result } = renderHook(() =>
-      useEqualizerManager({
-        initialBands: customBands,
-        filterNodes: mockFilterNodes.slice(0, 2),
-      })
+      useTestEqualizerManager(customBands, mockFilterNodes)
     )
 
     expect(result.current.equalizerBands).toHaveLength(2)
@@ -42,8 +56,9 @@ describe('useEqualizerManager', () => {
   })
 
   it('should update band gain', () => {
+    const mockFilterNodes = createMockFilterNodes()
     const { result } = renderHook(() =>
-      useEqualizerManager({ filterNodes: mockFilterNodes })
+      useTestEqualizerManager(DEFAULT_EQUALIZER_BANDS, mockFilterNodes)
     )
 
     act(() => {
@@ -55,8 +70,9 @@ describe('useEqualizerManager', () => {
   })
 
   it('should reset equalizer', () => {
+    const mockFilterNodes = createMockFilterNodes()
     const { result } = renderHook(() =>
-      useEqualizerManager({ filterNodes: mockFilterNodes })
+      useTestEqualizerManager(DEFAULT_EQUALIZER_BANDS, mockFilterNodes)
     )
 
     // Set some gains
@@ -77,7 +93,7 @@ describe('useEqualizerManager', () => {
     })
 
     // Verify all gains are 0
-    result.current.equalizerBands.forEach((band) => {
+    result.current.equalizerBands.forEach((band: EqualizerBand) => {
       expect(band.gain).toBe(0)
     })
 
@@ -87,8 +103,9 @@ describe('useEqualizerManager', () => {
   })
 
   it('should toggle equalizer visibility', () => {
+    const mockFilterNodes = createMockFilterNodes()
     const { result } = renderHook(() =>
-      useEqualizerManager({ filterNodes: mockFilterNodes })
+      useTestEqualizerManager(DEFAULT_EQUALIZER_BANDS, mockFilterNodes)
     )
 
     expect(result.current.showEqualizer).toBe(false)
@@ -106,9 +123,10 @@ describe('useEqualizerManager', () => {
     expect(result.current.showEqualizer).toBe(false)
   })
 
-  it('should set custom equalizer bands', () => {
+  it('should allow external band state updates', () => {
+    const mockFilterNodes = createMockFilterNodes()
     const { result } = renderHook(() =>
-      useEqualizerManager({ filterNodes: mockFilterNodes })
+      useTestEqualizerManager(DEFAULT_EQUALIZER_BANDS, mockFilterNodes)
     )
 
     const newBands: EqualizerBand[] = [

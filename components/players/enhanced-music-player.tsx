@@ -40,12 +40,12 @@ import { useAlbumArtPreloader } from "@/hooks/use-album-art-preloader"
 import { useFolderSync } from "@/hooks/use-folder-sync"
 import { usePlaylistManager } from "@/hooks/use-playlist-manager"
 import { useAudioEngine } from "@/hooks/use-audio-engine"
+import { useEqualizerManager, DEFAULT_EQUALIZER_BANDS } from "@/hooks/use-equalizer-manager"
 import { LyricsDisplay } from "@/components/lyrics-display"
 import { AddMusicControls } from "@/components/add-music-control"
 import { YouTubeVideoPlayer } from "@/components/youtube-video-player"
 
 export default function EnhancedMusicPlayer() {
-  const [showEqualizer, setShowEqualizer] = useState(false)
   const [currentBitrate, setCurrentBitrate] = useState<number | undefined>()
   const [isLoadingSongs, setIsLoadingSongs] = useState(false)
   const [loadingProgress, setLoadingProgress] = useState({ current: 0, total: 0 })
@@ -68,18 +68,7 @@ export default function EnhancedMusicPlayer() {
     skipToNextRef.current()
   }, [])
 
-  const [equalizerBands, setEqualizerBands] = useState<EqualizerBand[]>([
-    { frequency: 32, gain: 0, label: "32Hz" },
-    { frequency: 64, gain: 0, label: "64Hz" },
-    { frequency: 125, gain: 0, label: "125Hz" },
-    { frequency: 250, gain: 0, label: "250Hz" },
-    { frequency: 500, gain: 0, label: "500Hz" },
-    { frequency: 1000, gain: 0, label: "1kHz" },
-    { frequency: 2000, gain: 0, label: "2kHz" },
-    { frequency: 4000, gain: 0, label: "4kHz" },
-    { frequency: 8000, gain: 0, label: "8kHz" },
-    { frequency: 16000, gain: 0, label: "16kHz" },
-  ])
+  const [equalizerBands, setEqualizerBands] = useState<EqualizerBand[]>(DEFAULT_EQUALIZER_BANDS)
 
   const {
     isPlaying, setIsPlaying, currentTime, setCurrentTime,
@@ -111,6 +100,11 @@ export default function EnhancedMusicPlayer() {
       setDuration(0)
     },
   })
+
+  const {
+    showEqualizer, setShowEqualizer,
+    updateBand: updateEqualizerBand, resetEqualizer,
+  } = useEqualizerManager({ equalizerBands, setEqualizerBands, filterNodes })
 
   const handleSync = useCallback(() => {
     setVideoReadyCalled(false);
@@ -498,18 +492,6 @@ export default function EnhancedMusicPlayer() {
     seek(time)
   }
 
-  const updateEqualizerBand = (index: number, gain: number) => {
-    const newBands = [...equalizerBands]
-    newBands[index].gain = gain
-    setEqualizerBands(newBands)
-    if (filterNodes[index]) filterNodes[index].gain.value = gain
-  }
-
-  const resetEqualizer = () => {
-    const resetBands = equalizerBands.map((band) => ({ ...band, gain: 0 }))
-    setEqualizerBands(resetBands)
-    filterNodes.forEach((filter) => (filter.gain.value = 0))
-  }
 
   const formatTime = (time: number) => {
     if (isNaN(time)) return "0:00"
