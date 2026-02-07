@@ -79,35 +79,38 @@ export function usePlaylistPersistence(
         const validSongs = await PlaylistStorage.validateStoredFiles(playlistData.songs)
 
         if (validSongs.length > 0) {
+          // Restore songs from IndexedDB in parallel batches
+          const BATCH_SIZE = 10
           const restoredSongs: Song[] = []
 
-          // Restore each song from IndexedDB
-          for (const songMetadata of validSongs) {
-            const file = await PlaylistStorage.getSongFile(songMetadata.id)
+          for (let i = 0; i < validSongs.length; i += BATCH_SIZE) {
+            const batch = validSongs.slice(i, i + BATCH_SIZE)
+            const results = await Promise.all(
+              batch.map(async (songMetadata) => {
+                const file = await PlaylistStorage.getSongFile(songMetadata.id)
+                if (!file) return null
 
-            if (file) {
-              let albumArt = songMetadata.albumArt
+                let albumArt = songMetadata.albumArt
 
-              // Restore album art if it was a blob URL
-              if (songMetadata.albumArt && songMetadata.albumArt.startsWith("blob:")) {
-                const restoredAlbumArt = await PlaylistStorage.getAlbumArt(songMetadata.id)
-
-                if (restoredAlbumArt) {
-                  albumArt = restoredAlbumArt
-                  await AlbumArtCache.preloadAlbumArt(songMetadata.id, restoredAlbumArt)
-                } else {
-                  albumArt = undefined
+                if (songMetadata.albumArt && songMetadata.albumArt.startsWith("blob:")) {
+                  const restoredAlbumArt = await PlaylistStorage.getAlbumArt(songMetadata.id)
+                  if (restoredAlbumArt) {
+                    albumArt = restoredAlbumArt
+                    await AlbumArtCache.preloadAlbumArt(songMetadata.id, restoredAlbumArt)
+                  } else {
+                    albumArt = undefined
+                  }
                 }
-              }
 
-              // Prefer artists[0] for artist if artists exists
-              const artist =
-                songMetadata.artists && songMetadata.artists.length > 0
-                  ? songMetadata.artists[0]
-                  : songMetadata.artist
+                const artist =
+                  songMetadata.artists && songMetadata.artists.length > 0
+                    ? songMetadata.artists[0]
+                    : songMetadata.artist
 
-              restoredSongs.push({ ...songMetadata, artist, file, url: "", albumArt })
-            }
+                return { ...songMetadata, artist, file, url: "", albumArt } as Song
+              })
+            )
+            restoredSongs.push(...results.filter((s): s is Song => s !== null))
           }
 
           if (restoredSongs.length > 0) {

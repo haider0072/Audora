@@ -52,8 +52,20 @@ export class MetadataExtractor {
 
       URL.revokeObjectURL(url)
 
-      // Extract metadata from file buffer for more detailed info
-      const buffer = await file.arrayBuffer()
+      // Read only the metadata portion of the file instead of the entire file.
+      // MP3: ID3v2 tag size is in the header (bytes 6-9). FLAC/other: 4MB cap covers metadata + album art.
+      let metadataSize: number
+      const headerBuffer = await file.slice(0, 10).arrayBuffer()
+      const headerView = new DataView(headerBuffer)
+      if (headerView.getUint8(0) === 0x49 && headerView.getUint8(1) === 0x44 && headerView.getUint8(2) === 0x33) {
+        // MP3 with ID3v2 — read exactly the tag
+        metadataSize = 10 + this.getId3Size(headerView, 6)
+      } else {
+        // FLAC and other formats — 4MB covers virtually all metadata blocks
+        metadataSize = Math.min(file.size, 4 * 1024 * 1024)
+      }
+
+      const buffer = await file.slice(0, metadataSize).arrayBuffer()
       const additionalMetadata = await this.parseFileMetadata(buffer, file.type)
 
       // Merge metadata, keeping filename fallbacks for missing values

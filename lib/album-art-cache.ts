@@ -129,24 +129,20 @@ export class AlbumArtCache {
     }
   }
 
-  // Preload album art for multiple songs with better batching
+  // Preload album art for multiple songs in parallel
   static async preloadMultiple(songs: Array<{ id: string; albumArt?: string }>): Promise<void> {
     if (!this.isBrowser()) return
 
     const songsToPreload = songs
       .filter((song) => song.albumArt && !this.cache.has(song.id) && !this.loadingPromises.has(song.id))
-      .slice(0, 2) // Reduced to 2 concurrent preloads
+      .slice(0, 3)
 
-    // Process sequentially to avoid overwhelming
-    for (const song of songsToPreload) {
-      try {
-        await this.preloadAlbumArt(song.id, song.albumArt)
-        // Longer delay between preloads
-        await new Promise((resolve) => setTimeout(resolve, 200))
-      } catch (error) {
-        console.error(`Error preloading ${song.id}:`, error)
-      }
-    }
+    // Load in parallel — preloadAlbumArt already deduplicates via loadingPromises
+    await Promise.all(
+      songsToPreload.map((song) =>
+        this.preloadAlbumArt(song.id, song.albumArt).catch(() => {})
+      )
+    )
   }
 
   // Very conservative cleanup that preserves active entries
