@@ -14,6 +14,8 @@ const withPWA = withPWAInit({
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // Turbopack config (Next.js 16 default bundler)
+  turbopack: {},
   images: {
     remotePatterns: [
       {
@@ -26,6 +28,21 @@ const nextConfig = {
       },
     ],
   },
+  // Production security headers
+  headers: async () => [
+    {
+      source: '/(.*)',
+      headers: [
+        { key: 'X-Content-Type-Options', value: 'nosniff' },
+        { key: 'X-Frame-Options', value: 'DENY' },
+        { key: 'X-XSS-Protection', value: '1; mode=block' },
+        { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
+        { key: 'Permissions-Policy', value: 'camera=(), microphone=(), geolocation=()' },
+      ],
+    },
+  ],
+  // Powered by header hata do — security best practice
+  poweredByHeader: false,
 }
 
 export default withPWA(nextConfig);

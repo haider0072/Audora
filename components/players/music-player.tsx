@@ -224,6 +224,7 @@ export default function Component() {
     setEqualizerBands(newBands)
 
     if (filterNodes[index]) {
+      // eslint-disable-next-line react-hooks/immutability -- Web Audio API node, not React state
       filterNodes[index].gain.value = gain
     }
   }

@@ -16,13 +16,13 @@ export function AlbumArtBackground({ albumArt, songId, isTransitioning = false }
   const [isMounted, setIsMounted] = useState(false)
 
   useEffect(() => {
-    setIsMounted(true)
+    setIsMounted(true) // eslint-disable-line react-hooks/set-state-in-effect -- mount detection pattern
   }, [])
 
   useEffect(() => {
     if (!isMounted || !songId || !albumArt) {
-      setBackgroundImage(null)
-      setDominantColor("#1a1a1a")
+      setBackgroundImage(null) // eslint-disable-line react-hooks/set-state-in-effect -- cleanup on unmount/missing data
+      setDominantColor("#1a1a1a") // eslint-disable-line react-hooks/set-state-in-effect
       return
     }
 
