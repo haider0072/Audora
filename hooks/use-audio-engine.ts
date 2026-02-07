@@ -1,4 +1,4 @@
-import { useRef, useState, useCallback, useEffect } from "react"
+import { useRef, useState, useCallback, useEffect, type MutableRefObject } from "react"
 import type { EqualizerBand } from "@/components/refined-equalizer"
 
 export interface UseAudioEngineOptions {
@@ -70,13 +70,17 @@ export function useAudioEngine(options: UseAudioEngineOptions): UseAudioEngineRe
   const [volume, setVolume] = useState([80])
   const [isMuted, setIsMuted] = useState(false)
   const [filterNodes, setFilterNodes] = useState<BiquadFilterNode[]>([])
+  const filterNodesRef = useRef<BiquadFilterNode[]>([])
 
   /**
    * Initialize Web Audio API context and create audio graph:
    * source -> filters[] -> gain -> analyser -> destination
+   *
+   * IMPORTANT: createMediaElementSource can only be called ONCE per
+   * HTMLMediaElement. Guard on sourceNodeRef to prevent InvalidStateError.
    */
   const initializeAudioContext = useCallback(() => {
-    if (!audioContextRef.current && audioRef.current) {
+    if (!audioContextRef.current && !sourceNodeRef.current && audioRef.current) {
       // Create audio context
       audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)()
       sourceNodeRef.current = audioContextRef.current.createMediaElementSource(audioRef.current)
@@ -93,6 +97,7 @@ export function useAudioEngine(options: UseAudioEngineOptions): UseAudioEngineRe
         return filter
       })
       setFilterNodes(filters)
+      filterNodesRef.current = filters
 
       // Connect audio graph: source -> filters -> gain -> analyser -> destination
       let currentNode: AudioNode = sourceNodeRef.current!
@@ -182,6 +187,31 @@ export function useAudioEngine(options: UseAudioEngineOptions): UseAudioEngineRe
       return newMuted
     })
   }, [audioRef])
+
+  /**
+   * Cleanup AudioContext and audio nodes on unmount only.
+   * Uses filterNodesRef to avoid stale closure — dependency must be []
+   * so this doesn't fire when filters change (which would destroy the
+   * audio graph and trigger the createMediaElementSource bug).
+   */
+  useEffect(() => {
+    return () => {
+      if (audioContextRef.current) {
+        try {
+          sourceNodeRef.current?.disconnect()
+          gainNodeRef.current?.disconnect()
+          analyserRef.current?.disconnect()
+          filterNodesRef.current.forEach((f) => { try { f.disconnect() } catch {} })
+        } catch {}
+        audioContextRef.current.close().catch(() => {})
+        audioContextRef.current = null
+        sourceNodeRef.current = null
+        gainNodeRef.current = null
+        analyserRef.current = null
+      }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   /**
    * Setup audio event listeners for time updates, metadata, and end events

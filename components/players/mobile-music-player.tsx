@@ -23,6 +23,7 @@ import { AlbumArtBackground } from "@/components/album-art-background"
 import { MobileYouTubeVideoPlayer } from "@/components/mobile-youtube-video-player"
 
 import type { EqualizerBand } from "@/components/refined-equalizer"
+import { formatTime, waitForCanPlay } from "@/lib/utils"
 
 export default function MobileMusicPlayer() {
   const [searchQuery, setSearchQuery] = useState("")
@@ -30,6 +31,7 @@ export default function MobileMusicPlayer() {
 
   const audioRef = useRef<HTMLAudioElement>(null)
   const skipToNextRef = useRef<() => void>(() => {})
+  const selectSongAbortRef = useRef<AbortController | null>(null)
 
   // Stable onEnded callback using ref — THIS FIXES THE STALE CLOSURE BUG
   const handleEnded = useCallback(() => {
@@ -154,16 +156,9 @@ export default function MobileMusicPlayer() {
     return sortedGrouped
   }, [filteredSongs, viewMode])
 
-  // Format total duration
-  const formatTime = (time: number) => {
-    const minutes = Math.floor(time / 60)
-    const seconds = Math.floor(time % 60)
-    return `${minutes}:${seconds.toString().padStart(2, "0")}`
-  }
-
-  const getTotalDuration = () => {
+  const totalDuration = useMemo(() => {
     return songs.reduce((total, song) => total + (song.duration || 0), 0)
-  }
+  }, [songs])
 
   // Restore playlist on mount
   useEffect(() => {
@@ -198,101 +193,65 @@ export default function MobileMusicPlayer() {
   useAutoSave(persistenceData, isInitialized, isRestoringPlaylist, savePlaylist)
 
   // Player control functions
-  const selectSong = async (song: Song, isAutoAdvance = false) => {
+  const selectSong = useCallback(async (song: Song, isAutoAdvance = false) => {
+    // Abort any previous in-flight selectSong call
+    selectSongAbortRef.current?.abort()
+    const abort = new AbortController()
+    selectSongAbortRef.current = abort
+
     try {
-      // Start transition effect
       setIsTransitioning(true)
 
-      // Clean up previous song URL if different
       if (currentSong?.url && currentSong.url !== song.url) {
         URL.revokeObjectURL(currentSong.url)
       }
 
-      // Preload upcoming songs' album art
-      setTimeout(() => {
-        preloadUpcomingSongs()
-      }, 100)
+      setTimeout(() => preloadUpcomingSongs(), 100)
 
       setCurrentSong(song)
-      setIsPlaying(false) // Reset playing state first
+      setIsPlaying(false)
       notifySongSelected(song, isAutoAdvance)
 
       if (audioRef.current) {
-        // Stop current playback
         audioRef.current.pause()
         audioRef.current.currentTime = 0
 
-        // Create a fresh URL for the file
         const audioUrl = URL.createObjectURL(song.file)
-
-        // Update the song with the new URL
         const updatedSong = { ...song, url: audioUrl }
         setCurrentSong(updatedSong)
-
-        // Set the audio source
         audioRef.current.src = audioUrl
 
-        // Wait for the audio to be ready
-        await new Promise<void>((resolve, reject) => {
-          const audio = audioRef.current!
+        audioRef.current.load()
+        await waitForCanPlay(audioRef.current)
 
-          const onCanPlay = () => {
-            audio.removeEventListener("canplay", onCanPlay)
-            audio.removeEventListener("error", onError)
-            resolve()
-          }
+        if (abort.signal.aborted) return
 
-          const onError = (e: Event) => {
-            audio.removeEventListener("canplay", onCanPlay)
-            audio.removeEventListener("error", onError)
-            reject(
-              new Error(`Failed to load audio: ${(e.target as HTMLAudioElement)?.error?.message || "Unknown error"}`),
-            )
-          }
-
-          audio.addEventListener("canplay", onCanPlay)
-          audio.addEventListener("error", onError)
-
-          // Load the audio
-          audio.load()
-        })
-
-        // Initialize audio context if needed
         initializeAudioContext()
 
-        // End transition effect
         setTimeout(() => {
-          setIsTransitioning(false)
+          if (!abort.signal.aborted) setIsTransitioning(false)
         }, 500)
 
-        // Auto-play the selected song
         try {
           await audioRef.current.play()
-          setIsPlaying(true)
+          if (!abort.signal.aborted) setIsPlaying(true)
         } catch (error) {
-          console.error("Error auto-playing song:", error)
-          // Don't throw here, just log the error
-          setIsPlaying(false)
-
-          toast({
-            title: "Playback error",
-            description: "Click play to start the song manually.",
-            variant: "default",
-          })
+          if (!abort.signal.aborted) {
+            console.error("Error auto-playing song:", error)
+            setIsPlaying(false)
+            toast({ title: "Playback error", description: "Click play to start the song manually.", variant: "default" })
+          }
         }
       }
     } catch (error) {
-      console.error("Error selecting song:", error)
-      setIsPlaying(false)
-      setIsTransitioning(false)
-
-      toast({
-        title: "Error loading song",
-        description: "Unable to load the selected audio file. Please try another song.",
-        variant: "destructive",
-      })
+      if (!abort.signal.aborted) {
+        console.error("Error selecting song:", error)
+        setIsPlaying(false)
+        setIsTransitioning(false)
+        toast({ title: "Error loading song", description: "Unable to load the selected audio file.", variant: "destructive" })
+      }
     }
-  }
+  }, [currentSong, notifySongSelected, initializeAudioContext, preloadUpcomingSongs, setIsPlaying, setCurrentSong, pause])
 
 
   const togglePlayPause = async () => {
@@ -304,47 +263,29 @@ export default function MobileMusicPlayer() {
 
     // Check if audio element is properly initialized
     if (!audioRef.current.src && currentSong.file) {
-      console.log("Audio element not initialized, setting up current song...")
       const audioUrl = URL.createObjectURL(currentSong.file)
       const updatedSong = { ...currentSong, url: audioUrl }
       setCurrentSong(updatedSong)
       audioRef.current.src = audioUrl
       audioRef.current.load()
-      
-      // Wait for the audio to be ready before playing
-      await new Promise<void>((resolve, reject) => {
-        const onCanPlay = () => {
-          audioRef.current?.removeEventListener("canplay", onCanPlay)
-          audioRef.current?.removeEventListener("error", onError)
-          resolve()
-        }
-        const onError = (e: Event) => {
-          audioRef.current?.removeEventListener("canplay", onCanPlay)
-          audioRef.current?.removeEventListener("error", onError)
-          reject(new Error(`Failed to load audio: ${(e.target as HTMLAudioElement)?.error?.message || "Unknown error"}`))
-        }
-        audioRef.current?.addEventListener("canplay", onCanPlay)
-        audioRef.current?.addEventListener("error", onError)
-      })
+
+      await waitForCanPlay(audioRef.current)
     }
 
     if (isPlaying) {
       audioRef.current.pause()
+      setIsPlaying(false)
     } else {
       initializeAudioContext()
       try {
         await audioRef.current.play()
+        setIsPlaying(true)
       } catch (error) {
         console.error("Error playing audio:", error)
-        toast({
-          title: "Playback error",
-          description: "Unable to play the selected song.",
-          variant: "destructive",
-        })
-        return
+        setIsPlaying(false)
+        toast({ title: "Playback error", description: "Unable to play the selected song.", variant: "destructive" })
       }
     }
-    setIsPlaying(!isPlaying)
   }
 
   const skipToNext = () => {
@@ -447,7 +388,7 @@ export default function MobileMusicPlayer() {
           onViewModeChange={setViewMode}
           onPlaylistReset={resetPlaylist}
           songCount={songs.length}
-          totalDuration={formatTime(getTotalDuration())}
+          totalDuration={formatTime(totalDuration)}
         />
 
         {/* Playlist */}

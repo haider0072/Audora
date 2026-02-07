@@ -26,6 +26,8 @@ import { useEqualizerManager, DEFAULT_EQUALIZER_BANDS } from "@/hooks/use-equali
 import { useFileImporter } from "@/hooks/use-file-importer"
 import { usePlaylistPersistence, useAutoSave } from "@/hooks/use-playlist-persistence"
 import { useMediaControls } from "@/hooks/use-media-controls"
+import { AlbumArtCache } from "@/lib/album-art-cache"
+import { formatTime, waitForCanPlay } from "@/lib/utils"
 import { LyricsDisplay } from "@/components/lyrics-display"
 import { AddMusicControls } from "@/components/add-music-control"
 import { YouTubeVideoPlayer } from "@/components/youtube-video-player"
@@ -40,6 +42,7 @@ export default function EnhancedMusicPlayer() {
 
   const audioRef = useRef<HTMLAudioElement>(null)
   const skipToNextRef = useRef<() => void>(() => {})
+  const selectSongAbortRef = useRef<AbortController | null>(null)
 
   // Stable onEnded callback using ref — THIS FIXES THE STALE CLOSURE BUG
   const handleEnded = useCallback(() => {
@@ -162,6 +165,11 @@ export default function EnhancedMusicPlayer() {
 
   const selectSong = useCallback(
     async (song: Song, isAutoAdvance = false) => {
+      // Abort any previous in-flight selectSong call
+      selectSongAbortRef.current?.abort()
+      const abort = new AbortController()
+      selectSongAbortRef.current = abort
+
       if (playPromiseRef.current) {
         try {
           await playPromiseRef.current
@@ -171,6 +179,8 @@ export default function EnhancedMusicPlayer() {
           }
         }
       }
+
+      if (abort.signal.aborted) return
 
       setIsTransitioning(true)
       if (currentSong?.url) URL.revokeObjectURL(currentSong.url)
@@ -189,33 +199,28 @@ export default function EnhancedMusicPlayer() {
         audioRef.current.load()
 
         try {
-          await new Promise<void>((resolve, reject) => {
-            const onCanPlay = () => {
-              audioRef.current?.removeEventListener("canplay", onCanPlay)
-              resolve()
-            }
-            audioRef.current?.addEventListener("canplay", onCanPlay)
-            audioRef.current?.addEventListener("error", reject)
-          })
+          await waitForCanPlay(audioRef.current)
+
+          if (abort.signal.aborted) return
 
           initializeAudioContext()
           playPromiseRef.current = audioRef.current.play()
           await playPromiseRef.current
-          setIsPlaying(true)
+          if (!abort.signal.aborted) setIsPlaying(true)
         } catch (error) {
+          if (!abort.signal.aborted) {
             if ((error as DOMException).name !== "AbortError") {
               console.error("Error playing song:", error)
               toast({ title: "Playback Error", variant: "destructive" })
             }
             setIsPlaying(false)
-          } finally {
-            setIsTransitioning(false)
-        
           }
-      
+        } finally {
+          if (!abort.signal.aborted) setIsTransitioning(false)
         }
+      }
     },
-    [currentSong, notifySongSelected, initializeAudioContext, preloadUpcomingSongs, activeView],
+    [currentSong, notifySongSelected, initializeAudioContext, preloadUpcomingSongs],
   )
   
   // Remove syncDelayActive and all related logic
@@ -224,7 +229,7 @@ export default function EnhancedMusicPlayer() {
     if (audioRef.current) {
       audioRef.current.currentTime = 0;
       setTimeout(() => {
-        console.log('handleVideoReady: playing audio after video is ready and delay');
+        // Play audio after video is ready
         audioRef.current?.play();
       }, 1000); // 1 second delay after video is playing
     }
@@ -245,28 +250,14 @@ export default function EnhancedMusicPlayer() {
 
     // Check if audio element is properly initialized
     if (!audioRef.current.src && currentSong.file) {
-      console.log("Audio element not initialized, setting up current song...")
+      // Audio element not initialized — set up current song
       const audioUrl = URL.createObjectURL(currentSong.file)
       const updatedSong = { ...currentSong, url: audioUrl }
       setCurrentSong(updatedSong)
       audioRef.current.src = audioUrl
       audioRef.current.load()
       
-      // Wait for the audio to be ready before playing
-      await new Promise<void>((resolve, reject) => {
-        const onCanPlay = () => {
-          audioRef.current?.removeEventListener("canplay", onCanPlay)
-          audioRef.current?.removeEventListener("error", onError)
-          resolve()
-        }
-        const onError = (e: Event) => {
-          audioRef.current?.removeEventListener("canplay", onCanPlay)
-          audioRef.current?.removeEventListener("error", onError)
-          reject(new Error(`Failed to load audio: ${(e.target as HTMLAudioElement)?.error?.message || "Unknown error"}`))
-        }
-        audioRef.current?.addEventListener("canplay", onCanPlay)
-        audioRef.current?.addEventListener("error", onError)
-      })
+      await waitForCanPlay(audioRef.current)
     }
 
     if (isPlaying) {
@@ -313,13 +304,6 @@ export default function EnhancedMusicPlayer() {
     seek(time)
   }
 
-  const formatTime = (time: number) => {
-    if (isNaN(time)) return "0:00"
-    const minutes = Math.floor(time / 60)
-    const seconds = Math.floor(time % 60)
-    return `${minutes}:${seconds.toString().padStart(2, "0")}`
-  }
-
   const formatBitrate = (bitrate?: number) => {
     if (!bitrate) return "Unknown"
     return bitrate >= 1000 ? `${(bitrate / 1000).toFixed(1)}M` : `${Math.round(bitrate)}k`
@@ -346,6 +330,16 @@ export default function EnhancedMusicPlayer() {
     enableExtendedShortcuts: true,
   })
 
+  // Cleanup Object URLs and caches on unmount
+  useEffect(() => {
+    return () => {
+      songs.forEach((song) => {
+        if (song.url) URL.revokeObjectURL(song.url)
+      })
+      AlbumArtCache.clearCache()
+    }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps -- intentional: cleanup only on unmount
+
   useEffect(() => {
     if (activeView !== "youtube") {
       setVideoReadyCalled(false);
@@ -356,6 +350,10 @@ export default function EnhancedMusicPlayer() {
     <div className="min-h-screen max-h-screen overflow-hidden relative">
       <AlbumArtBackground albumArt={currentSong?.albumArt} songId={currentSong?.id} isTransitioning={isTransitioning} />
       <audio ref={audioRef} preload="metadata" className="hidden" />
+      {/* Screen reader announcements for song changes */}
+      <div aria-live="polite" aria-atomic="true" className="sr-only">
+        {currentSong && `Now playing: ${currentSong.title}${currentSong.artist ? ` by ${currentSong.artist}` : ""}`}
+      </div>
       <div className="container mx-auto p-6 relative z-10">
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-2">
@@ -476,6 +474,7 @@ export default function EnhancedMusicPlayer() {
                           step={1}
                           onValueChange={handleSeek}
                           className="w-full"
+                          aria-label="Seek position"
                         />
                         <div className="flex justify-between text-sm text-muted-foreground">
                           <span>{formatTime(currentTime)}</span>
@@ -484,7 +483,7 @@ export default function EnhancedMusicPlayer() {
                       </div>
                     )}
                     <div className="flex items-center justify-center gap-4">
-                      <Button variant="outline" size="icon" onClick={skipToPrevious} disabled={songs.length === 0}>
+                      <Button variant="outline" size="icon" onClick={skipToPrevious} disabled={songs.length === 0} aria-label="Previous track">
                         <SkipBack className="w-4 h-4" />
                       </Button>
                       <Button
@@ -492,24 +491,26 @@ export default function EnhancedMusicPlayer() {
                         size="icon"
                         className="w-14 h-14 shadow-lg"
                         disabled={!currentSong}
+                        aria-label={isPlaying ? "Pause" : "Play"}
                       >
                         {isPlaying ? <Pause className="w-7 h-7" /> : <Play className="w-7 h-7" />}
                       </Button>
-                      <Button variant="outline" size="icon" onClick={skipToNext} disabled={songs.length === 0}>
+                      <Button variant="outline" size="icon" onClick={skipToNext} disabled={songs.length === 0} aria-label="Next track">
                         <SkipForward className="w-4 h-4" />
                       </Button>
                       <Separator orientation="vertical" className="h-8" />
                       <div className="flex items-center gap-2">
-                        <Button variant="ghost" size="icon" onClick={toggleMute}>
+                        <Button variant="ghost" size="icon" onClick={toggleMute} aria-label={isMuted ? "Unmute" : "Mute"}>
                           {isMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
                         </Button>
-                        <Slider value={volume} max={100} step={1} onValueChange={changeVolume} className="w-24" />
+                        <Slider value={volume} max={100} step={1} onValueChange={changeVolume} className="w-24" aria-label="Volume" />
                       </div>
                       <Separator orientation="vertical" className="h-8" />
                       <Button
                         variant={showEqualizer ? "default" : "outline"}
                         size="icon"
                         onClick={() => setShowEqualizer(true)}
+                        aria-label="Equalizer settings"
                       >
                         <Settings className="w-4 h-4" />
                       </Button>
@@ -518,6 +519,7 @@ export default function EnhancedMusicPlayer() {
                         size="icon"
                         onClick={() => setActiveView("lyrics")}
                         disabled={!currentSong}
+                        aria-label="Show lyrics"
                       >
                         <Mic className="w-4 h-4" />
                       </Button>
@@ -526,6 +528,7 @@ export default function EnhancedMusicPlayer() {
                         size="icon"
                         onClick={() => setActiveView("youtube")}
                         disabled={!currentSong}
+                        aria-label="Show video"
                       >
                         <Youtube className="w-4 h-4" />
                       </Button>

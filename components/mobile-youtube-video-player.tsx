@@ -4,18 +4,9 @@ import { useEffect, useRef, useState, useCallback, forwardRef, useImperativeHand
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet'
 import { Badge } from '@/components/ui/badge'
-import { 
-  Youtube,
-  X,
-  Volume2,
-  VolumeX,
-  Maximize2,
-  RefreshCw,
-  Settings,
-  Play,
-  Pause
-} from 'lucide-react'
+import { Youtube, X, RefreshCw } from 'lucide-react'
 import { YouTubeService, type YouTubeVideo } from '@/lib/youtube-service'
+import { formatTime } from '@/lib/utils'
 import { VideoCache } from '@/lib/video-cache'
 import { toast } from '@/hooks/use-toast'
 
@@ -87,9 +78,7 @@ export const MobileYouTubeVideoPlayer = forwardRef<
       const firstScriptTag = document.getElementsByTagName('script')[0]
       firstScriptTag.parentNode?.insertBefore(tag, firstScriptTag)
 
-      window.onYouTubeIframeAPIReady = () => {
-        console.log('YouTube IFrame API ready')
-      }
+      window.onYouTubeIframeAPIReady = () => {}
     }
   }, [])
 
@@ -103,7 +92,6 @@ export const MobileYouTubeVideoPlayer = forwardRef<
   // Force refresh when new songs are imported
   useEffect(() => {
     if (forceRefresh && currentSong?.title && currentSong?.artist && isOpen) {
-      console.log('Force refreshing mobile YouTube videos for newly imported song')
       setVideoOptions([])
       setCurrentVideo(null)
       searchForVideos()
@@ -183,10 +171,7 @@ export const MobileYouTubeVideoPlayer = forwardRef<
         widget_referrer: window.location.origin,
       },
       events: {
-        onReady: (event: any) => {
-          console.log('YouTube player ready')
-          // No custom volume/mute logic here
-        },
+        onReady: () => {},
         onStateChange: (event: any) => {
           // No custom sync logic here
         },
@@ -207,12 +192,6 @@ export const MobileYouTubeVideoPlayer = forwardRef<
       }
     })
   }, [videoOptions])
-
-  const formatTime = (seconds: number) => {
-    const mins = Math.floor(seconds / 60)
-    const secs = Math.floor(seconds % 60)
-    return `${mins}:${secs.toString().padStart(2, '0')}`
-  }
 
   const formatViewCount = (count: number) => {
     if (count >= 1000000) {

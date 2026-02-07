@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Slider } from "@/components/ui/slider"
 import { Badge } from "@/components/ui/badge"
 import { Play, Pause, SkipBack, SkipForward, Settings, Mic, Share2, Music, Volume2, VolumeX, Youtube } from "lucide-react"
+import { formatTime } from "@/lib/utils"
 
 interface Song {
   id: string
@@ -51,18 +52,6 @@ export function MobilePlayerBar({
   const [showVolumeControl, setShowVolumeControl] = useState(false)
   const [volume, setVolume] = useState([80])
   const [isMuted, setIsMuted] = useState(false)
-
-  const formatTime = (time: number) => {
-    if (isNaN(time)) return "0:00"
-    const minutes = Math.floor(time / 60)
-    const seconds = Math.floor(time % 60)
-    return `${minutes}:${seconds.toString().padStart(2, "0")}`
-  }
-
-  const formatBitrate = (bitrate?: number) => {
-    if (!bitrate) return ""
-    return bitrate >= 1000 ? `${(bitrate / 1000).toFixed(1)}M` : `${Math.round(bitrate)}k`
-  }
 
   // Auto-hide volume control after 3 seconds of inactivity
   useEffect(() => {
@@ -172,7 +161,7 @@ export function MobilePlayerBar({
 
           {/* Playback Controls */}
           <div className="flex items-center gap-1">
-            <Button variant="ghost" size="icon" className="w-8 h-8" onClick={onSkipPrevious} disabled={isTransitioning}>
+            <Button variant="ghost" size="icon" className="w-8 h-8" onClick={onSkipPrevious} disabled={isTransitioning} aria-label="Previous track">
               <SkipBack className="w-4 h-4" />
             </Button>
 
@@ -182,11 +171,12 @@ export function MobilePlayerBar({
               className="w-10 h-10 rounded-full shadow-lg"
               onClick={onPlayPause}
               disabled={isTransitioning}
+              aria-label={isPlaying ? "Pause" : "Play"}
             >
               {isPlaying ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5 ml-0.5" />}
             </Button>
 
-            <Button variant="ghost" size="icon" className="w-8 h-8" onClick={onSkipNext} disabled={isTransitioning}>
+            <Button variant="ghost" size="icon" className="w-8 h-8" onClick={onSkipNext} disabled={isTransitioning} aria-label="Next track">
               <SkipForward className="w-4 h-4" />
             </Button>
           </div>
@@ -196,15 +186,15 @@ export function MobilePlayerBar({
         <div className="flex items-center justify-between mt-3">
           {/* Left Controls */}
           <div className="flex items-center gap-1">
-            <Button variant="ghost" size="icon" className="w-8 h-8" onClick={handleVolumeToggle}>
+            <Button variant="ghost" size="icon" className="w-8 h-8" onClick={handleVolumeToggle} aria-label={isMuted ? "Unmute" : "Mute"}>
               {isMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
             </Button>
 
-            <Button variant="ghost" size="icon" className="w-8 h-8" onClick={onLyricsClick}>
+            <Button variant="ghost" size="icon" className="w-8 h-8" onClick={onLyricsClick} aria-label="Show lyrics">
               <Mic className="w-4 h-4" />
             </Button>
 
-            <Button variant="ghost" size="icon" className="w-8 h-8" onClick={onVideoClick}>
+            <Button variant="ghost" size="icon" className="w-8 h-8" onClick={onVideoClick} aria-label="Show video">
               <Youtube className="w-4 h-4" />
             </Button>
           </div>

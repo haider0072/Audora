@@ -59,9 +59,10 @@ export class StorageManager {
       const data = JSON.parse(stored)
 
       if (data.version !== this.VERSION) {
-        console.warn("Storage version mismatch, using defaults.")
-        this.clearData()
-        return this.getDefaultData()
+        // Migrate: preserve user data, just update the version stamp
+        console.info(`Storage version migrated: ${data.version} → ${this.VERSION}`)
+        data.version = this.VERSION
+        localStorage.setItem(this.STORAGE_KEY, JSON.stringify(data))
       }
 
       return {

@@ -63,7 +63,6 @@ export class MetadataExtractor {
       if (!finalMetadata.title || finalMetadata.title.trim() === "") {
         const nameWithoutExt = file.name.replace(/\.[^/.]+$/, "")
         finalMetadata.title = nameWithoutExt
-        console.log('Using filename as title fallback:', finalMetadata.title)
       }
 
       // Only apply artist fallback if BOTH artist and artists are missing
@@ -96,24 +95,11 @@ export class MetadataExtractor {
     const view = new DataView(buffer)
     const metadata: Partial<AudioMetadata> = {}
 
-    console.log('parseFileMetadata called:', {
-      mimeType,
-      bufferSize: buffer.byteLength,
-      isFlacMime: mimeType.includes("flac"),
-      isFlacBuffer: this.isFlacBuffer(view)
-    })
-
     try {
       if (mimeType.includes("mp3") || this.isMp3Buffer(view)) {
-        console.log('Parsing as MP3')
         return this.parseMp3Metadata(view)
       } else if (mimeType.includes("flac") || this.isFlacBuffer(view)) {
-        console.log('Parsing as FLAC')
-        const flacMetadata = this.parseFlacMetadata(view)
-        console.log('FLAC metadata result:', flacMetadata)
-        return flacMetadata
-      } else {
-        console.log('No matching format detected, mimeType:', mimeType)
+        return this.parseFlacMetadata(view)
       }
     } catch (error) {
       console.error("Error parsing file metadata:", error)
@@ -156,15 +142,12 @@ export class MetadataExtractor {
   private static parseFlacMetadata(view: DataView): Partial<AudioMetadata> {
     const metadata: Partial<AudioMetadata> = {}
 
-    console.log('parseFlacMetadata starting, buffer size:', view.byteLength)
-
     try {
       let offset = 4 // Skip 'fLaC' signature
       let blockCount = 0
 
       while (offset < view.byteLength && blockCount < 10) { // Safety limit
         if (offset + 4 > view.byteLength) {
-          console.log('Not enough bytes for block header at offset:', offset)
           break
         }
 
@@ -174,31 +157,20 @@ export class MetadataExtractor {
         const blockSize =
           (view.getUint8(offset + 1) << 16) | (view.getUint8(offset + 2) << 8) | view.getUint8(offset + 3)
 
-        console.log(`FLAC block ${blockCount}:`, {
-          offset,
-          blockType,
-          blockSize,
-          isLast
-        })
-
         offset += 4
 
         if (blockType === 4) {
           // VORBIS_COMMENT
-          console.log('Found VORBIS_COMMENT block, parsing...')
           const vorbisData = this.parseVorbisComment(view, offset, blockSize)
-          console.log('Vorbis data extracted:', vorbisData)
           Object.assign(metadata, vorbisData)
         } else if (blockType === 6) {
           // PICTURE
-          console.log('Found PICTURE block')
           metadata.albumArt = this.extractFlacAlbumArt(view, offset, blockSize)
         }
 
         offset += blockSize
         blockCount++
         if (isLast) {
-          console.log('Last FLAC block processed')
           break
         }
       }
@@ -243,7 +215,6 @@ export class MetadataExtractor {
         case "TPE1":
           metadata.artist = textContent
           metadata.artists = textContent.split(/;|,|\//).map(a => a.trim()).filter(Boolean)
-          console.log('Parsed artists (ID3v2):', metadata.artists)
           break
         case "TALB":
           metadata.album = textContent
@@ -283,10 +254,6 @@ export class MetadataExtractor {
         const comment = new TextDecoder("utf-8").decode(commentBytes)
         const [key, value] = comment.split("=", 2)
 
-        console.log(`VORBIS comment: "${key}" = "${value}"`)
-        console.log('Raw comment bytes:', Array.from(commentBytes).slice(0, Math.min(50, commentBytes.length)))
-        console.log('Comment length:', commentLength, 'Decoded length:', comment.length)
-
         switch (key.toUpperCase()) {
           case "TITLE":
           case "TRACKTITLE":
@@ -294,20 +261,11 @@ export class MetadataExtractor {
           case "NAME":
             if (!metadata.title || metadata.title.trim() === "") {
               metadata.title = value
-              console.log('Title processing:', {
-                fieldName: key,
-                rawValue: value,
-                valueLength: value.length,
-                charCodes: Array.from(value).map(c => c.charCodeAt(0)),
-                trimmed: value.trim(),
-                trimmedLength: value.trim().length
-              })
             }
             break
           case "ARTIST":
             if (!metadata.artists) metadata.artists = [];
             metadata.artists.push(...value.split(/;|,|\//).map(a => a.trim()).filter(Boolean))
-            console.log('Parsed artists (Vorbis):', metadata.artists)
             break
           case "ALBUM":
             metadata.album = value
