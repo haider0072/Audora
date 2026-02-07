@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { LyricsService, type LyricsData } from "@/lib/lyrics-service"
 import { Loader2, Mic, X, RefreshCw } from "lucide-react"
-import type { Song } from "@/components/players/mobile-music-player"
+import type { Song } from "@/components/enhanced-playlist"
 
 interface MobileLyricsDisplayProps {
   isOpen: boolean

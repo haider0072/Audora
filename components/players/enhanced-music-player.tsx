@@ -1,6 +1,5 @@
 "use client"
 
-import type React from "react"
 import { useState, useRef, useEffect, useCallback, useMemo } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -8,92 +7,108 @@ import { Slider } from "@/components/ui/slider"
 import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
 import { toast } from "@/hooks/use-toast"
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import {
-  Play,
-  Pause,
-  SkipBack,
-  SkipForward,
-  Volume2,
-  VolumeX,
-  Settings,
-  FolderOpen,
-  Plus,
-  Mic,
-  Upload,
-  Share2,
-  Folder,
-  Youtube,
+  Play, Pause, SkipBack, SkipForward,
+  Volume2, VolumeX, Settings, Mic, Youtube,
 } from "lucide-react"
 
-import { MetadataExtractor } from "@/lib/metadata-extractor"
 import { EnhancedPlaylist, type Song } from "@/components/enhanced-playlist"
 import { RefinedEqualizer, type EqualizerBand } from "@/components/refined-equalizer"
 import { AlbumArtBackground } from "@/components/album-art-background"
 import { AlbumArtDisplay } from "@/components/album-art-display"
-import { StorageManager } from "@/lib/storage"
-import { PlaylistStorage } from "@/lib/playlist-storage"
 import { PlaylistManager } from "@/components/playlist-manager"
-import { AlbumArtCache } from "@/lib/album-art-cache"
 import { useAlbumArtPreloader } from "@/hooks/use-album-art-preloader"
 import { useFolderSync } from "@/hooks/use-folder-sync"
+import { usePlaylistManager } from "@/hooks/use-playlist-manager"
+import { useAudioEngine } from "@/hooks/use-audio-engine"
+import { useEqualizerManager, DEFAULT_EQUALIZER_BANDS } from "@/hooks/use-equalizer-manager"
+import { useFileImporter } from "@/hooks/use-file-importer"
+import { usePlaylistPersistence, useAutoSave } from "@/hooks/use-playlist-persistence"
+import { useMediaControls } from "@/hooks/use-media-controls"
 import { LyricsDisplay } from "@/components/lyrics-display"
 import { AddMusicControls } from "@/components/add-music-control"
 import { YouTubeVideoPlayer } from "@/components/youtube-video-player"
 
 export default function EnhancedMusicPlayer() {
-  const [isPlaying, setIsPlaying] = useState(false)
-  const [currentTime, setCurrentTime] = useState(0)
-  const [duration, setDuration] = useState(0)
-  const [volume, setVolume] = useState([80])
-  const [isMuted, setIsMuted] = useState(false)
-  const [currentSong, setCurrentSong] = useState<Song | null>(null)
-  const [songs, setSongs] = useState<Song[]>([])
-  const [showEqualizer, setShowEqualizer] = useState(false)
   const [currentBitrate, setCurrentBitrate] = useState<number | undefined>()
-  const [shuffleMode, setShuffleMode] = useState(false)
-  const [viewMode, setViewMode] = useState<"grouped" | "list">("grouped")
-  const [shuffledQueue, setShuffledQueue] = useState<Song[]>([])
-  const [currentShuffleIndex, setCurrentShuffleIndex] = useState(0)
-  const [playedSongs, setPlayedSongs] = useState<Set<string>>(new Set())
-  const [isLoadingSongs, setIsLoadingSongs] = useState(false)
-  const [loadingProgress, setLoadingProgress] = useState({ current: 0, total: 0 })
   const [isTransitioning, setIsTransitioning] = useState(false)
-  const [isInitialized, setIsInitialized] = useState(false)
-  const [isRestoringPlaylist, setIsRestoringPlaylist] = useState(false)
   const [activeView, setActiveView] = useState<"player" | "lyrics" | "youtube">("player");
   const videoPlayerRef = useRef<{ resetVideo: () => void }>(null);
   const [forceRefreshTrigger, setForceRefreshTrigger] = useState(0);
   const [videoReadyCalled, setVideoReadyCalled] = useState(false);
 
+  const audioRef = useRef<HTMLAudioElement>(null)
+  const skipToNextRef = useRef<() => void>(() => {})
+
+  // Stable onEnded callback using ref — THIS FIXES THE STALE CLOSURE BUG
+  const handleEnded = useCallback(() => {
+    skipToNextRef.current()
+  }, [])
+
+  const [equalizerBands, setEqualizerBands] = useState<EqualizerBand[]>(DEFAULT_EQUALIZER_BANDS)
+
+  const {
+    isPlaying, setIsPlaying, currentTime, setCurrentTime,
+    duration, setDuration, volume, setVolume, isMuted,
+    filterNodes, audioContextRef, playPromiseRef, gainNodeRef,
+    initializeAudioContext, play, pause, seek,
+    changeVolume, toggleMute, adjustVolume,
+  } = useAudioEngine({
+    audioRef,
+    equalizerBands,
+    onEnded: handleEnded,
+  })
+
+  const {
+    songs, setSongs, currentSong, setCurrentSong,
+    shuffleMode, setShuffleMode, viewMode, setViewMode,
+    sortedSongs, getNextSong, getPreviousSong, notifySongSelected,
+    toggleShuffle, removeSong, resetPlaylist,
+  } = usePlaylistManager({
+    onCurrentSongRemoved: () => {
+      pause()
+      if (audioRef.current) audioRef.current.src = ""
+    },
+    onPlaylistReset: () => {
+      pause()
+      if (audioRef.current) audioRef.current.src = ""
+      setCurrentTime(0)
+      setDuration(0)
+    },
+  })
+
+  const {
+    showEqualizer, setShowEqualizer,
+    updateBand: updateEqualizerBand, resetEqualizer,
+  } = useEqualizerManager({ equalizerBands, setEqualizerBands, filterNodes })
+
   const handleSync = useCallback(() => {
     setVideoReadyCalled(false);
-  
-  // Reset video player
-  videoPlayerRef.current?.resetVideo();
-  
-  // Pause and reset audio
-  if (audioRef.current) {
-    audioRef.current.pause();
-    audioRef.current.currentTime = 0;
-  }
-  setIsPlaying(false);
-  
-  // The handleVideoReady will be called automatically when video resets
-}, []);
-
-  const audioRef = useRef<HTMLAudioElement>(null)
-  const fileInputRef = useRef<HTMLInputElement>(null)
-  const folderInputRef = useRef<HTMLInputElement>(null)
-  const audioContextRef = useRef<AudioContext | null>(null)
-  const sourceNodeRef = useRef<MediaElementAudioSourceNode | null>(null)
-  const gainNodeRef = useRef<GainNode | null>(null)
-  const analyserRef = useRef<AnalyserNode | null>(null)
-  const processingRef = useRef(false)
-  const playPromiseRef = useRef<Promise<void> | null>(null)
+    videoPlayerRef.current?.resetVideo();
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.currentTime = 0;
+    }
+    setIsPlaying(false);
+  }, [setIsPlaying])
 
   const { preloadUpcomingSongs } = useAlbumArtPreloader(songs, currentSong?.id, 3)
+
+  const {
+    isLoadingSongs, loadingProgress, fileInputRef, folderInputRef,
+    handleFileUpload, handleFolderUpload,
+  } = useFileImporter({
+    songs,
+    onSongsAdded: (newSongs) => {
+      setSongs((prev) => [...prev, ...newSongs])
+      if (newSongs.length === 1) {
+        setTimeout(() => setForceRefreshTrigger(prev => prev + 1), 100)
+      }
+    },
+  })
+
+  const { isInitialized, isRestoringPlaylist, restorePlaylist, savePlaylist } = usePlaylistPersistence()
 
   // Folder sync hook
   const {
@@ -113,335 +128,37 @@ export default function EnhancedMusicPlayer() {
     },
   })
 
-  const [equalizerBands, setEqualizerBands] = useState<EqualizerBand[]>([
-    { frequency: 32, gain: 0, label: "32Hz" },
-    { frequency: 64, gain: 0, label: "64Hz" },
-    { frequency: 125, gain: 0, label: "125Hz" },
-    { frequency: 250, gain: 0, label: "250Hz" },
-    { frequency: 500, gain: 0, label: "500Hz" },
-    { frequency: 1000, gain: 0, label: "1kHz" },
-    { frequency: 2000, gain: 0, label: "2kHz" },
-    { frequency: 4000, gain: 0, label: "4kHz" },
-    { frequency: 8000, gain: 0, label: "8kHz" },
-    { frequency: 16000, gain: 0, label: "16kHz" },
-  ])
-
-  const [filterNodes, setFilterNodes] = useState<BiquadFilterNode[]>([])
-
+  // Restore playlist on mount
   useEffect(() => {
-    const loadSavedData = async () => {
-      try {
-        setIsRestoringPlaylist(true)
-        const savedData = StorageManager.loadData()
-        if (savedData.equalizerBands) {
-          setEqualizerBands(savedData.equalizerBands)
-        }
-        if (savedData.playerSettings) {
-          setVolume([savedData.playerSettings.volume])
-          setShuffleMode(savedData.playerSettings.shuffleMode)
-          setViewMode(savedData.playerSettings.viewMode)
-          setShowEqualizer(savedData.playerSettings.showEqualizer)
-        }
+    restorePlaylist().then(({ songs: restoredSongs, currentSong: current, settings }) => {
+      if (settings.equalizerBands) setEqualizerBands(settings.equalizerBands)
+      if (settings.volume !== undefined) setVolume([settings.volume])
+      if (settings.shuffleMode !== undefined) setShuffleMode(settings.shuffleMode)
+      if (settings.viewMode) setViewMode(settings.viewMode)
+      if (settings.showEqualizer !== undefined) setShowEqualizer(settings.showEqualizer)
 
-        const playlistData = PlaylistStorage.loadPlaylistMetadata()
-        if (playlistData && playlistData.songs.length > 0) {
-          const validSongs = await PlaylistStorage.validateStoredFiles(playlistData.songs)
-          if (validSongs.length > 0) {
-            const restoredSongs: Song[] = []
-            for (const songMetadata of validSongs) {
-              const file = await PlaylistStorage.getSongFile(songMetadata.id)
-              if (file) {
-                let albumArt = songMetadata.albumArt
-                if (songMetadata.albumArt && songMetadata.albumArt.startsWith("blob:")) {
-                  const restoredAlbumArt = await PlaylistStorage.getAlbumArt(songMetadata.id)
-                  if (restoredAlbumArt) {
-                    albumArt = restoredAlbumArt
-                    await AlbumArtCache.preloadAlbumArt(songMetadata.id, restoredAlbumArt)
-                  } else {
-                    albumArt = undefined
-                  }
-                }
-                // Prefer artists[0] for artist if artists exists
-                const artist = songMetadata.artists && songMetadata.artists.length > 0 ? songMetadata.artists[0] : songMetadata.artist;
-                restoredSongs.push({ ...songMetadata, artist, file, url: "", albumArt })
-              }
-            }
-            if (restoredSongs.length > 0) {
-              setSongs(restoredSongs)
-              toast({
-                title: "Playlist restored",
-                description: `Restored ${restoredSongs.length} song(s).`,
-              })
-              if (playlistData.currentSongId) {
-                const current = restoredSongs.find((s) => s.id === playlistData.currentSongId)
-                if (current) {
-                  setCurrentSong(current)
-                  // Initialize the audio element with the current song
-                  if (audioRef.current) {
-                    const audioUrl = URL.createObjectURL(current.file)
-                    const updatedSong = { ...current, url: audioUrl }
-                    setCurrentSong(updatedSong)
-                    audioRef.current.src = audioUrl
-                    audioRef.current.load()
-                  }
-                }
-              }
-            }
+      if (restoredSongs.length > 0) {
+        setSongs(restoredSongs)
+        if (current) {
+          setCurrentSong(current)
+          if (audioRef.current) {
+            const audioUrl = URL.createObjectURL(current.file)
+            setCurrentSong({ ...current, url: audioUrl })
+            audioRef.current.src = audioUrl
+            audioRef.current.load()
           }
         }
-        setIsInitialized(true)
-      } catch (error) {
-        console.error("Error loading saved data:", error)
-        setIsInitialized(true)
-      } finally {
-        setIsRestoringPlaylist(false)
       }
-    }
-    loadSavedData()
+    })
   }, [])
 
-  useEffect(() => {
-    if (!isInitialized || isRestoringPlaylist) return
-    const savePlaylistData = () => {
-      const serializableSongs = songs.map((song) => ({
-        id: song.id,
-        title: song.title,
-        artist: song.artist,
-        artists: song.artists,
-        album: song.album,
-        year: song.year,
-        genre: song.genre,
-        bitrate: song.bitrate,
-        sampleRate: song.sampleRate,
-        duration: song.duration,
-        isHiRes: song.isHiRes,
-        albumArt: song.albumArt,
-        fileSize: song.fileSize,
-        format: song.format,
-        fileName: song.file ? song.file.name : "",
-        fileLastModified: song.file ? song.file.lastModified : 0,
-        fileType: song.file ? song.file.type : "",
-      }))
-      PlaylistStorage.savePlaylistMetadata(serializableSongs, currentSong?.id)
-      StorageManager.saveData({
-        songs: serializableSongs,
-        equalizerBands,
-        playerSettings: { volume: volume[0], shuffleMode, viewMode, showEqualizer },
-        currentSongId: currentSong?.id,
-      })
-    }
-    const timeoutId = setTimeout(savePlaylistData, 1000)
-    return () => clearTimeout(timeoutId)
-  }, [
-    songs,
-    currentSong?.id,
-    equalizerBands,
-    volume,
-    shuffleMode,
-    viewMode,
-    showEqualizer,
-    isInitialized,
-    isRestoringPlaylist,
-  ])
+  // Auto-save playlist data
+  const persistenceData = useMemo(() => ({
+    songs, currentSongId: currentSong?.id, equalizerBands,
+    volume: volume[0], shuffleMode, viewMode, showEqualizer,
+  }), [songs, currentSong?.id, equalizerBands, volume, shuffleMode, viewMode, showEqualizer])
 
-  const sortedSongs = useMemo(() => {
-    return [...songs].sort((a, b) => {
-      const artistA = (a.artists?.[0] || a.artist || "Unknown Artist").toLowerCase()
-      const artistB = (b.artists?.[0] || b.artist || "Unknown Artist").toLowerCase()
-      if (artistA === artistB) {
-        const albumA = (a.album || "Unknown Album").toLowerCase()
-        const albumB = (b.album || "Unknown Album").toLowerCase()
-        if (albumA === albumB) return (a.title || "").localeCompare(b.title || "")
-        return albumA.localeCompare(albumB)
-      }
-      return artistA.localeCompare(artistB)
-    })
-  }, [songs])
-
-  const getCurrentPlaylist = useCallback(
-    () => (viewMode === "list" ? sortedSongs : songs),
-    [viewMode, sortedSongs, songs],
-  )
-
-  const generateShuffledQueue = useCallback((songList: Song[], currentSongId?: string) => {
-    if (songList.length === 0) return []
-    let availableSongs = [...songList]
-    if (currentSongId) availableSongs = availableSongs.filter((song) => song.id !== currentSongId)
-    for (let i = availableSongs.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1))
-      ;[availableSongs[i], availableSongs[j]] = [availableSongs[j], availableSongs[i]]
-    }
-    return availableSongs
-  }, [])
-
-  const toggleShuffle = () => {
-    const newShuffleMode = !shuffleMode
-    setShuffleMode(newShuffleMode)
-    if (newShuffleMode) {
-      const currentPlaylist = getCurrentPlaylist()
-      const newShuffledQueue = generateShuffledQueue(currentPlaylist, currentSong?.id)
-      setShuffledQueue(newShuffledQueue)
-      setCurrentShuffleIndex(0)
-      setPlayedSongs(new Set(currentSong ? [currentSong.id] : []))
-      toast({ title: "Shuffle enabled" })
-    } else {
-      setShuffledQueue([])
-      setCurrentShuffleIndex(0)
-      setPlayedSongs(new Set())
-      toast({ title: "Shuffle disabled" })
-    }
-  }
-
-  const resetPlaylist = async () => {
-    if (audioRef.current) {
-      audioRef.current.pause()
-      audioRef.current.src = ""
-    }
-    songs.forEach((song) => {
-      if (song.url) URL.revokeObjectURL(song.url)
-      if (song.albumArt && song.albumArt.startsWith("blob:")) URL.revokeObjectURL(song.albumArt)
-    })
-    AlbumArtCache.clearCache()
-    setSongs([])
-    setCurrentSong(null)
-    setIsPlaying(false)
-    setCurrentTime(0)
-    setDuration(0)
-    setShuffledQueue([])
-    setCurrentShuffleIndex(0)
-    setPlayedSongs(new Set())
-    await PlaylistStorage.clearPlaylist()
-  }
-
-  const getNextSong = useCallback((): Song | null => {
-    const currentPlaylist = getCurrentPlaylist()
-    if (currentPlaylist.length === 0) return null
-    if (shuffleMode) {
-      if (currentShuffleIndex < shuffledQueue.length) return shuffledQueue[currentShuffleIndex]
-      const newQueue = generateShuffledQueue(currentPlaylist)
-      setShuffledQueue(newQueue)
-      setCurrentShuffleIndex(0)
-      setPlayedSongs(new Set())
-      return newQueue.length > 0 ? newQueue[0] : null
-    }
-    if (!currentSong) return currentPlaylist[0] || null
-    const currentIndex = currentPlaylist.findIndex((s) => s.id === currentSong.id)
-    if (currentIndex === -1) return currentPlaylist[0] || null
-    return currentPlaylist[(currentIndex + 1) % currentPlaylist.length]
-  }, [getCurrentPlaylist, shuffleMode, shuffledQueue, currentShuffleIndex, currentSong, generateShuffledQueue])
-
-  const getPreviousSong = useCallback((): Song | null => {
-    const currentPlaylist = getCurrentPlaylist()
-    if (currentPlaylist.length === 0) return null
-    if (shuffleMode) {
-      if (currentShuffleIndex > 1) return shuffledQueue[currentShuffleIndex - 2]
-      return null
-    }
-    if (!currentSong) return currentPlaylist[currentPlaylist.length - 1] || null
-    const currentIndex = currentPlaylist.findIndex((s) => s.id === currentSong.id)
-    if (currentIndex === -1) return currentPlaylist[currentPlaylist.length - 1] || null
-    return currentPlaylist[currentIndex === 0 ? currentPlaylist.length - 1 : currentIndex - 1]
-  }, [getCurrentPlaylist, shuffleMode, shuffledQueue, currentShuffleIndex, currentSong])
-
-  const initializeAudioContext = useCallback(() => {
-    if (!audioContextRef.current && audioRef.current) {
-      audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)()
-      sourceNodeRef.current = audioContextRef.current.createMediaElementSource(audioRef.current)
-      gainNodeRef.current = audioContextRef.current.createGain()
-      analyserRef.current = audioContextRef.current.createAnalyser()
-      const filters = equalizerBands.map((band, index) => {
-        const filter = audioContextRef.current!.createBiquadFilter()
-        filter.type = index === 0 ? "lowshelf" : index === equalizerBands.length - 1 ? "highshelf" : "peaking"
-        if (filter.type === "peaking") filter.Q.value = 1
-        filter.frequency.value = band.frequency
-        filter.gain.value = band.gain
-        return filter
-      })
-      setFilterNodes(filters)
-      let currentNode: AudioNode = sourceNodeRef.current!
-      filters.forEach((filter) => {
-        currentNode.connect(filter)
-        currentNode = filter
-      })
-      currentNode.connect(gainNodeRef.current!)
-      gainNodeRef.current!.connect(analyserRef.current!)
-      analyserRef.current!.connect(audioContextRef.current.destination)
-    }
-  }, [equalizerBands])
-
-  const addSongsToPlaylist = async (files: File[]) => {
-    if (processingRef.current) return toast({ title: "Import in progress" })
-    const supportedFormats = ["mp3", "flac", "wav", "m4a", "aac"]
-    const validFiles = files.filter((f) => supportedFormats.includes(f.name.split(".").pop()?.toLowerCase() || ""))
-    if (validFiles.length === 0) return toast({ title: "No supported files", variant: "destructive" })
-
-    processingRef.current = true
-    setIsLoadingSongs(true)
-    setLoadingProgress({ current: 0, total: validFiles.length })
-
-    const newSongs: Song[] = [],
-      duplicates: string[] = [],
-      errors: string[] = []
-    const generateSongId = (file: File) => `${file.name}-${file.size}-${file.lastModified}`
-    const existingIds = new Set(songs.map((s) => s.id))
-
-    for (let i = 0; i < validFiles.length; i += 5) {
-      const batch = validFiles.slice(i, i + 5)
-      const batchPromises = batch.map(async (file, batchIndex) => {
-        const globalIndex = i + batchIndex
-        setLoadingProgress({ current: globalIndex + 1, total: validFiles.length })
-        const songId = generateSongId(file)
-        if (existingIds.has(songId)) {
-          duplicates.push(file.name)
-          return null
-        }
-        try {
-          const metadata = await MetadataExtractor.extractMetadata(file)
-          const song: Song = { ...metadata, id: songId, file, url: "" }
-          await PlaylistStorage.storeSongFile(songId, file)
-          if (metadata.albumArt) {
-            await PlaylistStorage.storeAlbumArt(songId, metadata.albumArt)
-            await AlbumArtCache.preloadAlbumArt(songId, metadata.albumArt)
-          }
-          return song
-        } catch (error) {
-          errors.push(file.name)
-          return null
-        }
-      })
-      const batchResults = await Promise.all(batchPromises)
-      newSongs.push(...batchResults.filter((s): s is Song => s !== null))
-    }
-
-    if (newSongs.length > 0) {
-      setSongs((prev) => [...prev, ...newSongs])
-      toast({ title: `Added ${newSongs.length} new song(s).` })
-
-      // Force refresh lyrics and YouTube for single song imports
-      if (newSongs.length === 1) {
-        setTimeout(() => {
-          setForceRefreshTrigger(prev => prev + 1)
-        }, 100)
-      }
-    }
-    if (duplicates.length > 0) toast({ title: `Ignored ${duplicates.length} duplicate(s).` })
-    if (errors.length > 0) toast({ title: `Failed to process ${errors.length} file(s).`, variant: "destructive" })
-
-    setIsLoadingSongs(false)
-    processingRef.current = false
-  }
-
-  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(event.target.files || [])
-    if (files.length > 0) addSongsToPlaylist(files)
-    if (fileInputRef.current) fileInputRef.current.value = ""
-  }
-
-  const handleFolderUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(event.target.files || [])
-    if (files.length > 0) addSongsToPlaylist(files)
-    if (folderInputRef.current) folderInputRef.current.value = ""
-  }
+  useAutoSave(persistenceData, isInitialized, isRestoringPlaylist, savePlaylist)
 
   const selectSong = useCallback(
     async (song: Song, isAutoAdvance = false) => {
@@ -461,16 +178,7 @@ export default function EnhancedMusicPlayer() {
       setCurrentSong(song)
       setCurrentBitrate(song.bitrate)
       setIsPlaying(false)
-
-      if (shuffleMode) {
-        if (isAutoAdvance) {
-          setCurrentShuffleIndex((prev) => prev + 1)
-        } else {
-          const songIndex = shuffledQueue.findIndex((s) => s.id === song.id)
-          if (songIndex !== -1) setCurrentShuffleIndex(songIndex)
-        }
-        setPlayedSongs((prev) => new Set(prev).add(song.id))
-      }
+      notifySongSelected(song, isAutoAdvance)
 
       if (audioRef.current) {
         audioRef.current.pause()
@@ -507,7 +215,7 @@ export default function EnhancedMusicPlayer() {
       
         }
     },
-    [currentSong, shuffleMode, shuffledQueue, initializeAudioContext, preloadUpcomingSongs, activeView],
+    [currentSong, notifySongSelected, initializeAudioContext, preloadUpcomingSongs, activeView],
   )
   
   // Remove syncDelayActive and all related logic
@@ -521,27 +229,6 @@ export default function EnhancedMusicPlayer() {
       }, 1000); // 1 second delay after video is playing
     }
   }, []);
-
-  const removeSong = async (songId: string) => {
-    await PlaylistStorage.removeSongFile(songId)
-    await PlaylistStorage.removeAlbumArt(songId)
-    AlbumArtCache.removeCachedAlbumArt(songId)
-    setSongs((prev) => {
-      const newSongs = prev.filter((s) => s.id !== songId)
-      if (shuffleMode) setShuffledQueue((prevQ) => prevQ.filter((s) => s.id !== songId))
-      if (currentSong?.id === songId) {
-        if (audioRef.current) {
-          audioRef.current.pause()
-          audioRef.current.src = ""
-        }
-        if (currentSong.url) URL.revokeObjectURL(currentSong.url)
-        setCurrentSong(null)
-        setIsPlaying(false)
-      }
-      return newSongs
-    })
-    toast({ title: "Song removed" })
-  }
 
   const togglePlayPause = async () => {
     if (!audioRef.current || !currentSong) return
@@ -609,49 +296,20 @@ export default function EnhancedMusicPlayer() {
     if (nextSong) selectSong(nextSong, true)
   }
 
+  // Keep skipToNextRef always pointing to the latest skipToNext (bug fix)
+  skipToNextRef.current = skipToNext
+
   const skipToPrevious = () => {
     const prevSong = getPreviousSong()
-    if (prevSong) {
-      if (shuffleMode) setCurrentShuffleIndex((prev) => Math.max(0, prev - 1))
-      selectSong(prevSong, false)
-    }
+    if (prevSong) selectSong(prevSong, false)
   }
 
   const handleSeek = (value: number[]) => {
-    if (audioRef.current) audioRef.current.currentTime = value[0]
+    seek(value[0])
   }
 
   const handleVideoSeek = (time: number) => {
-    if (audioRef.current) audioRef.current.currentTime = time
-  }
-
-  const handleVolumeChange = (value: number[]) => {
-    setVolume(value)
-    if (audioRef.current) audioRef.current.volume = value[0] / 100
-    if (gainNodeRef.current) gainNodeRef.current.gain.value = value[0] / 100
-  }
-
-  const adjustVolume = (delta: number) => {
-    const newVolume = Math.max(0, Math.min(100, volume[0] + delta))
-    handleVolumeChange([newVolume])
-  }
-
-  const toggleMute = () => {
-    setIsMuted(!isMuted)
-    if (audioRef.current) audioRef.current.muted = !isMuted
-  }
-
-  const updateEqualizerBand = (index: number, gain: number) => {
-    const newBands = [...equalizerBands]
-    newBands[index].gain = gain
-    setEqualizerBands(newBands)
-    if (filterNodes[index]) filterNodes[index].gain.value = gain
-  }
-
-  const resetEqualizer = () => {
-    const resetBands = equalizerBands.map((band) => ({ ...band, gain: 0 }))
-    setEqualizerBands(resetBands)
-    filterNodes.forEach((filter) => (filter.gain.value = 0))
+    seek(time)
   }
 
   const formatTime = (time: number) => {
@@ -668,277 +326,30 @@ export default function EnhancedMusicPlayer() {
 
   const currentTimeMs = useMemo(() => Math.round(currentTime * 1000), [currentTime])
 
-  // Enhanced media key controls with comprehensive support
-  useEffect(() => {
-    const handleMediaKeys = (e: KeyboardEvent) => {
-      // Prevent default behavior for media keys
-      const isMediaKey = [
-        "MediaPlayPause",
-        "MediaTrackNext",
-        "MediaTrackPrevious",
-        "MediaStop",
-        "AudioVolumeUp",
-        "AudioVolumeDown",
-        "AudioVolumeMute",
-      ].includes(e.code)
-
-      // Also handle space bar when focused on body (not in input fields)
-      const isSpaceOnBody =
-        e.code === "Space" &&
-        (e.target === document.body ||
-          (e.target as HTMLElement)?.tagName === "BODY" ||
-          !(e.target as HTMLElement)?.matches("input, textarea, [contenteditable]"))
-
-      if (isMediaKey || isSpaceOnBody) {
-        e.preventDefault()
-        e.stopPropagation()
-
-        switch (e.code) {
-          case "MediaPlayPause":
-          case "Space":
-            if (currentSong) {
-              togglePlayPause()
-            } else if (songs.length > 0) {
-              // If no current song but songs exist, play the first one
-              selectSong(songs[0], false)
-            }
-            break
-
-          case "MediaTrackNext":
-            if (songs.length > 0) {
-              skipToNext()
-            }
-            break
-
-          case "MediaTrackPrevious":
-            if (songs.length > 0) {
-              skipToPrevious()
-            }
-            break
-
-          case "MediaStop":
-            if (audioRef.current && currentSong) {
-              audioRef.current.pause()
-              audioRef.current.currentTime = 0
-              setIsPlaying(false)
-              setCurrentTime(0)
-            }
-            break
-
-          case "AudioVolumeUp":
-            adjustVolume(5) // Increase by 5%
-            break
-
-          case "AudioVolumeDown":
-            adjustVolume(-5) // Decrease by 5%
-            break
-
-          case "AudioVolumeMute":
-            toggleMute()
-            break
-        }
+  useMediaControls({
+    currentSong, isPlaying, songs, audioRef,
+    onPlayPause: togglePlayPause,
+    onSkipNext: skipToNext,
+    onSkipPrevious: skipToPrevious,
+    onStop: () => {
+      if (audioRef.current && currentSong) {
+        audioRef.current.pause()
+        audioRef.current.currentTime = 0
+        setIsPlaying(false)
+        setCurrentTime(0)
       }
-
-      // Additional keyboard shortcuts for enhanced control
-      if (e.ctrlKey || e.metaKey) {
-        switch (e.code) {
-          case "ArrowRight":
-            e.preventDefault()
-            if (songs.length > 0) skipToNext()
-            break
-
-          case "ArrowLeft":
-            e.preventDefault()
-            if (songs.length > 0) skipToPrevious()
-            break
-
-          case "ArrowUp":
-            e.preventDefault()
-            adjustVolume(5)
-            break
-
-          case "ArrowDown":
-            e.preventDefault()
-            adjustVolume(-5)
-            break
-        }
-      }
-
-      // Function keys for additional control
-      switch (e.code) {
-        case "F7":
-          e.preventDefault()
-          if (songs.length > 0) skipToPrevious()
-          break
-
-        case "F8":
-          e.preventDefault()
-          if (currentSong) {
-            togglePlayPause()
-          } else if (songs.length > 0) {
-            selectSong(songs[0], false)
-          }
-          break
-
-        case "F9":
-          e.preventDefault()
-          if (songs.length > 0) skipToNext()
-          break
-
-        case "F10":
-          e.preventDefault()
-          toggleMute()
-          break
-
-        case "F11":
-          e.preventDefault()
-          adjustVolume(-5)
-          break
-
-        case "F12":
-          e.preventDefault()
-          adjustVolume(5)
-          break
-      }
-    }
-
-    // Add event listener with capture to ensure we catch all events
-    document.addEventListener("keydown", handleMediaKeys, { capture: true })
-
-    // Also try to register with the Media Session API for better integration
-    if ("mediaSession" in navigator && currentSong) {
-      navigator.mediaSession.metadata = new MediaMetadata({
-        title: currentSong.title || "Unknown Title",
-        artist: currentSong.artist || "Unknown Artist",
-        album: currentSong.album || "Unknown Album",
-        artwork: currentSong.albumArt ? [{ src: currentSong.albumArt, sizes: "256x256", type: "image/jpeg" }] : [],
-      })
-
-      navigator.mediaSession.setActionHandler("play", () => {
-        if (!isPlaying && currentSong) togglePlayPause()
-      })
-
-      navigator.mediaSession.setActionHandler("pause", () => {
-        if (isPlaying) togglePlayPause()
-      })
-
-      navigator.mediaSession.setActionHandler("nexttrack", () => {
-        if (songs.length > 0) skipToNext()
-      })
-
-      navigator.mediaSession.setActionHandler("previoustrack", () => {
-        if (songs.length > 0) skipToPrevious()
-      })
-
-      navigator.mediaSession.setActionHandler("stop", () => {
-        if (audioRef.current && currentSong) {
-          audioRef.current.pause()
-          audioRef.current.currentTime = 0
-          setIsPlaying(false)
-          setCurrentTime(0)
-        }
-      })
-
-      // Update playback state
-      navigator.mediaSession.playbackState = isPlaying ? "playing" : "paused"
-    }
-
-    return () => {
-      document.removeEventListener("keydown", handleMediaKeys, { capture: true })
-
-      // Clear media session handlers
-      if ("mediaSession" in navigator) {
-        navigator.mediaSession.setActionHandler("play", null)
-        navigator.mediaSession.setActionHandler("pause", null)
-        navigator.mediaSession.setActionHandler("nexttrack", null)
-        navigator.mediaSession.setActionHandler("previoustrack", null)
-        navigator.mediaSession.setActionHandler("stop", null)
-      }
-    }
-  }, [currentSong, isPlaying, songs, volume, activeView])
-
-  useEffect(() => {
-    const audio = audioRef.current
-    if (audio) {
-      const onTimeUpdate = () => setCurrentTime(audio.currentTime)
-      const onLoadedMetadata = () => setDuration(audio.duration)
-      const onEnded = () => skipToNext()
-      audio.addEventListener("timeupdate", onTimeUpdate)
-      audio.addEventListener("loadedmetadata", onLoadedMetadata)
-      audio.addEventListener("ended", onEnded)
-      return () => {
-        audio.removeEventListener("timeupdate", onTimeUpdate)
-        audio.removeEventListener("loadedmetadata", onLoadedMetadata)
-        audio.removeEventListener("ended", onEnded)
-      }
-    }
-  }, [currentSong])
+    },
+    onVolumeAdjust: adjustVolume,
+    onToggleMute: toggleMute,
+    onPlayFirstSong: () => { if (songs.length > 0) selectSong(songs[0], false) },
+    enableExtendedShortcuts: true,
+  })
 
   useEffect(() => {
     if (activeView !== "youtube") {
       setVideoReadyCalled(false);
     }
   }, [activeView]);
-
-  // Network sharing handlers
-  const handleNetworkPlaylistUpdate = useCallback((newSongs: any[]) => {
-    let playlistChanged = false;
-    setSongs((prevSongs) => {
-      if (JSON.stringify(prevSongs) !== JSON.stringify(newSongs)) {
-        playlistChanged = true;
-        return newSongs;
-      }
-      return prevSongs;
-    });
-    // Only show toast after state update, not inside setSongs
-    if (playlistChanged) {
-      toast({
-        title: "Playlist Updated",
-        description: "The shared playlist has been updated by the host.",
-      });
-      if (newSongs.length > 0 && (!newSongs[0].file && !newSongs[0].url)) {
-        toast({
-          title: "Cannot Play Song",
-          description: "This song cannot be played because the file is not available on your device.",
-          variant: "destructive",
-        });
-      }
-    }
-    // Try to set currentSong to the first song if not already set
-    if (newSongs.length > 0 && (!currentSong || !newSongs.find((s) => s.id === currentSong.id))) {
-      setCurrentSong(newSongs[0]);
-    }
-    console.log("Network playlist update received:", newSongs)
-  }, [currentSong])
-
-  const handleNetworkPlaybackStateUpdate = useCallback(
-    (isPlayingFromHost: boolean, currentTimeFromHost: number, currentSongIdFromHost?: string) => {
-      // Find the song by ID if provided
-      if (currentSongIdFromHost && songs.length > 0) {
-        const song = songs.find((s) => s.id === currentSongIdFromHost);
-        if (song && (!currentSong || currentSong.id !== song.id)) {
-          setCurrentSong(song);
-          if (audioRef.current) {
-            audioRef.current.src = song.url || "";
-            audioRef.current.currentTime = currentTimeFromHost || 0;
-          }
-        }
-      }
-      setIsPlaying(isPlayingFromHost);
-      setCurrentTime(currentTimeFromHost);
-      // Sync audio element
-      if (audioRef.current) {
-        audioRef.current.currentTime = currentTimeFromHost || 0;
-        if (isPlayingFromHost) {
-          audioRef.current.play().catch(() => {});
-        } else {
-          audioRef.current.pause();
-        }
-      }
-      console.log("Network playback state update:", { isPlayingFromHost, currentTimeFromHost, currentSongIdFromHost })
-    },
-    [songs, currentSong],
-  )
 
   return (
     <div className="min-h-screen max-h-screen overflow-hidden relative">
@@ -1091,7 +502,7 @@ export default function EnhancedMusicPlayer() {
                         <Button variant="ghost" size="icon" onClick={toggleMute}>
                           {isMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
                         </Button>
-                        <Slider value={volume} max={100} step={1} onValueChange={handleVolumeChange} className="w-24" />
+                        <Slider value={volume} max={100} step={1} onValueChange={changeVolume} className="w-24" />
                       </div>
                       <Separator orientation="vertical" className="h-8" />
                       <Button
@@ -1118,23 +529,6 @@ export default function EnhancedMusicPlayer() {
                         <Youtube className="w-4 h-4" />
                       </Button>
                     </div>
-                    {/* <Dialog open={showNetworkSharing} onOpenChange={setShowNetworkSharing}>
-                      <DialogContent>
-                        <DialogHeader>
-                          <DialogTitle>Network Sharing</DialogTitle>
-                        </DialogHeader>
-                        <NetworkSharingPanel
-                      songs={songs}
-                      currentSong={currentSong}
-                      isPlaying={isPlaying}
-                      currentTime={currentTime}
-                      onPlaylistUpdate={handleNetworkPlaylistUpdate}
-                      onPlaybackStateUpdate={handleNetworkPlaybackStateUpdate}
-                      />
-                      </DialogContent>
-                    </Dialog> */}
-                    
-
                     {/* Keyboard shortcuts info */}
                     <div className="text-xs text-muted-foreground text-center space-y-1">
                       <p>Media keys: Play/Pause • Next/Previous • Volume Up/Down • Mute</p>

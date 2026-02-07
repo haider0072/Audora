@@ -28,7 +28,7 @@ interface MobilePlayerBarProps {
   onSeek: (value: number[]) => void
   onSettingsClick: () => void
   onLyricsClick: () => void
-  onNetworkSharingClick: () => void
+  onNetworkSharingClick?: () => void
   onVideoClick: () => void
   isTransitioning?: boolean
 }
@@ -210,9 +210,11 @@ export function MobilePlayerBar({
           </div>
 
           {/* Center - Network Sharing */}
-          <Button variant="ghost" size="icon" className="w-8 h-8" onClick={onNetworkSharingClick}>
-            <Share2 className="w-4 h-4" />
-          </Button>
+          {onNetworkSharingClick && (
+            <Button variant="ghost" size="icon" className="w-8 h-8" onClick={onNetworkSharingClick}>
+              <Share2 className="w-4 h-4" />
+            </Button>
+          )}
 
           {/* Right Controls */}
           <div className="flex items-center gap-1">

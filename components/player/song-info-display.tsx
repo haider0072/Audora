@@ -3,7 +3,7 @@
 import { Badge } from '@/components/ui/badge'
 import { AlbumArtDisplay } from '@/components/album-art-display'
 import { createLogger } from '@/lib/logger'
-import { Song } from '@/lib/schemas'
+import type { Song } from '@/components/enhanced-playlist'
 
 const logger = createLogger('SongInfoDisplay')
 
@@ -93,13 +93,6 @@ export function SongInfoDisplay({ song, currentBitrate, isTransitioning = false 
               </Badge>
             )}
             
-            {song.metadata?.channels && (
-              <Badge variant="outline" className="shadow-sm">
-                {song.metadata.channels === 1 ? 'Mono' : 
-                 song.metadata.channels === 2 ? 'Stereo' : 
-                 `${song.metadata.channels} Channel`}
-              </Badge>
-            )}
           </div>
         </div>
       </div>
