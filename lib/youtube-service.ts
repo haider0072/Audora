@@ -18,18 +18,14 @@ export interface VideoSearchResult {
 }
 
 export class YouTubeService {
-  private static readonly API_KEY = process.env.NEXT_PUBLIC_YOUTUBE_API_KEY || ''
-  private static readonly SEARCH_BASE_URL = 'https://www.googleapis.com/youtube/v3/search'
-  private static readonly VIDEO_BASE_URL = 'https://www.googleapis.com/youtube/v3/videos'
-
   /**
    * Search for music videos by artist and title
+   * Uses backend API route to keep API key server-side
    */
   static async searchMusicVideo(artist: string, title: string): Promise<VideoSearchResult> {
     // Check cache first
     const cachedVideos = VideoCache.getCachedVideos(artist, title)
     if (cachedVideos && cachedVideos.length > 0) {
-      console.log(`Using cached videos for: ${artist} - ${title}`)
       return {
         videos: cachedVideos,
         totalResults: cachedVideos.length,
@@ -37,99 +33,42 @@ export class YouTubeService {
       }
     }
 
-    if (!this.API_KEY) {
-      console.warn('YouTube API key not configured')
-      return { videos: [], totalResults: 0, query: `${artist} ${title}` }
-    }
-
     try {
-      console.log(`Searching YouTube for: ${artist} - ${title}`)
-      const query = `${artist} ${title} official music video`
-      const url = `${this.SEARCH_BASE_URL}?part=snippet&q=${encodeURIComponent(query)}&type=video&videoCategoryId=10&maxResults=5&key=${this.API_KEY}`
+      const params = new URLSearchParams({ artist, title })
+      const response = await fetch(`/api/youtube?${params}`)
 
-      const response = await fetch(url)
       if (!response.ok) {
-        throw new Error(`YouTube API error: ${response.status}`)
+        throw new Error(`YouTube proxy error: ${response.status}`)
       }
 
       const data = await response.json()
-      
-      if (!data.items || data.items.length === 0) {
-        return { videos: [], totalResults: 0, query }
+
+      if (!data.videos || data.videos.length === 0) {
+        return { videos: [], totalResults: 0, query: data.query || `${artist} ${title}` }
       }
 
-      // Get video details including duration
-      const videoIds = data.items.map((item: any) => item.id.videoId).join(',')
-      const videoDetails = await this.getVideoDetails(videoIds)
+      // Add relevance scores client-side and sort
+      const videos: YouTubeVideo[] = data.videos.map((video: any) => ({
+        ...video,
+        relevanceScore: this.calculateRelevanceScore(video.title, artist, title),
+      }))
 
-      const videos: YouTubeVideo[] = data.items.map((item: any, index: number) => {
-        const details = videoDetails.find((v: any) => v.id === item.id.videoId)
-        return {
-          id: item.id.videoId,
-          title: item.snippet.title,
-          thumbnail: item.snippet.thumbnails.high?.url || item.snippet.thumbnails.default?.url,
-          duration: details ? this.parseDuration(details.contentDetails.duration) : 0,
-          channelTitle: item.snippet.channelTitle,
-          publishedAt: item.snippet.publishedAt,
-          viewCount: details?.statistics?.viewCount ? parseInt(details.statistics.viewCount) : 0,
-          relevanceScore: this.calculateRelevanceScore(item.snippet.title, artist, title)
-        }
-      })
-
-      // Sort by relevance score
       videos.sort((a, b) => b.relevanceScore - a.relevanceScore)
 
       // Cache the results
       if (videos.length > 0) {
-        VideoCache.cacheVideos(artist, title, videos, data.pageInfo.totalResults)
-        console.log(`Cached ${videos.length} videos for: ${artist} - ${title}`)
+        VideoCache.cacheVideos(artist, title, videos, data.totalResults)
       }
 
       return {
         videos,
-        totalResults: data.pageInfo.totalResults,
-        query
+        totalResults: data.totalResults,
+        query: data.query || `${artist} ${title}`
       }
     } catch (error) {
       console.error('Error searching YouTube:', error)
       return { videos: [], totalResults: 0, query: `${artist} ${title}` }
     }
-  }
-
-  /**
-   * Get detailed video information including duration
-   */
-  private static async getVideoDetails(videoIds: string): Promise<any[]> {
-    if (!this.API_KEY) return []
-
-    try {
-      const url = `${this.VIDEO_BASE_URL}?part=contentDetails,statistics&id=${videoIds}&key=${this.API_KEY}`
-      const response = await fetch(url)
-      
-      if (!response.ok) {
-        throw new Error(`YouTube API error: ${response.status}`)
-      }
-
-      const data = await response.json()
-      return data.items || []
-    } catch (error) {
-      console.error('Error getting video details:', error)
-      return []
-    }
-  }
-
-  /**
-   * Parse YouTube duration format (PT4M13S) to seconds
-   */
-  private static parseDuration(duration: string): number {
-    const match = duration.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/)
-    if (!match) return 0
-
-    const hours = parseInt(match[1] || '0')
-    const minutes = parseInt(match[2] || '0')
-    const seconds = parseInt(match[3] || '0')
-
-    return hours * 3600 + minutes * 60 + seconds
   }
 
   /**

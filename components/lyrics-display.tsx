@@ -77,15 +77,6 @@ export function LyricsDisplay({ isVisible, onClose, currentSong, currentTimeMs, 
   }
 
   useEffect(() => {
-    console.log('Lyrics useEffect:', {
-      currentSong: currentSong?.title,
-      isVisible,
-      lastFetchedSongId,
-      hasArtist: !!currentSong?.artist,
-      hasTitle: !!currentSong?.title,
-      hasDuration: !!currentSong?.duration,
-      condition: currentSong && isVisible && currentSong.id !== lastFetchedSongId
-    })
     if (currentSong && isVisible && currentSong.id !== lastFetchedSongId) {
       fetchLyricsForSong(currentSong)
     }

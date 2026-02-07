@@ -11,7 +11,7 @@ import { z } from 'zod'
 // Define the schema for required environment variables
 const envSchema = z.object({
   // YouTube API Configuration
-  NEXT_PUBLIC_YOUTUBE_API_KEY: z.string().min(1, 'YouTube API key is required').optional(),
+  YOUTUBE_API_KEY: z.string().min(1, 'YouTube API key is required').optional(),
 
   // Node Environment
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
@@ -33,7 +33,7 @@ export interface EnvValidationResult {
  */
 export function validateEnv(): EnvValidationResult {
   const env = {
-    NEXT_PUBLIC_YOUTUBE_API_KEY: process.env.NEXT_PUBLIC_YOUTUBE_API_KEY,
+    YOUTUBE_API_KEY: process.env.YOUTUBE_API_KEY,
     NODE_ENV: process.env.NODE_ENV as 'development' | 'production' | 'test' | undefined,
   }
 
@@ -41,7 +41,7 @@ export function validateEnv(): EnvValidationResult {
   const warnings: string[] = []
 
   // Check for optional but recommended variables
-  if (!env.NEXT_PUBLIC_YOUTUBE_API_KEY) {
+  if (!env.YOUTUBE_API_KEY) {
     warnings.push('YouTube API key not configured - video features will be disabled')
   }
 
@@ -88,8 +88,8 @@ export function isFeatureEnabled(feature: 'youtube'): boolean {
   switch (feature) {
     case 'youtube':
       return !!(
-        env.NEXT_PUBLIC_YOUTUBE_API_KEY &&
-        env.NEXT_PUBLIC_YOUTUBE_API_KEY.length > 0
+        env.YOUTUBE_API_KEY &&
+        env.YOUTUBE_API_KEY.length > 0
       )
     default:
       return false
