@@ -51,8 +51,9 @@ export function useEqualizerManager(options: UseEqualizerManagerOptions): UseEqu
         return newBands
       })
 
-      // Update the corresponding filter node
+      // Update the corresponding Web Audio API filter node (not React state)
       if (filterNodes[index]) {
+        // eslint-disable-next-line react-hooks/immutability -- Web Audio API node, not React state
         filterNodes[index].gain.value = gain
       }
     },
@@ -65,10 +66,8 @@ export function useEqualizerManager(options: UseEqualizerManagerOptions): UseEqu
   const resetEqualizer = useCallback(() => {
     setEqualizerBands((prev) => prev.map((band) => ({ ...band, gain: 0 })))
 
-    // Reset all filter nodes
-    filterNodes.forEach((filter) => {
-      filter.gain.value = 0
-    })
+    // Reset all Web Audio API filter nodes (not React state)
+    filterNodes.forEach((filter) => { filter.gain.value = 0 })
   }, [setEqualizerBands, filterNodes])
 
   return {

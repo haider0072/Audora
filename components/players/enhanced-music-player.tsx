@@ -296,7 +296,8 @@ export default function EnhancedMusicPlayer() {
     if (nextSong) selectSong(nextSong, true)
   }
 
-  // Keep skipToNextRef always pointing to the latest skipToNext (bug fix)
+  // Keep skipToNextRef always pointing to the latest skipToNext (bug fix for stale closures)
+  // eslint-disable-next-line react-hooks/refs -- intentional: ref updated during render to avoid stale closure in audio ended callback
   skipToNextRef.current = skipToNext
 
   const skipToPrevious = () => {

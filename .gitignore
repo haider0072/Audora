@@ -16,8 +16,12 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# env files
-.env*
+# env files (keep .env.example)
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
 
 # vercel
 .vercel
@@ -26,13 +30,25 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-# PWA files
+# PWA generated files
 /public/sw.js
-/public/workbox-*.js
-/public/worker-*.js
 /public/sw.js.map
+/public/workbox-*.js
 /public/workbox-*.js.map
+/public/worker-*.js
 /public/worker-*.js.map
-**/public/sw.js
-**/public/workbox-*.js
-**/public/worker-*.js
+/public/swe-worker-*.js
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Coverage
+/coverage

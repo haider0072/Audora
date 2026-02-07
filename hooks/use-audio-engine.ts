@@ -104,7 +104,7 @@ export function useAudioEngine(options: UseAudioEngineOptions): UseAudioEngineRe
       gainNodeRef.current!.connect(analyserRef.current!)
       analyserRef.current!.connect(audioContextRef.current.destination)
     }
-  }, [equalizerBands])
+  }, [equalizerBands, audioRef])
 
   /**
    * Play audio with proper promise handling
@@ -128,7 +128,7 @@ export function useAudioEngine(options: UseAudioEngineOptions): UseAudioEngineRe
       }
       setIsPlaying(false)
     }
-  }, [])
+  }, [audioRef, playPromiseRef])
 
   /**
    * Pause audio playback
@@ -138,7 +138,7 @@ export function useAudioEngine(options: UseAudioEngineOptions): UseAudioEngineRe
       audioRef.current.pause()
       setIsPlaying(false)
     }
-  }, [])
+  }, [audioRef])
 
   /**
    * Seek to a specific time in the audio
@@ -147,7 +147,7 @@ export function useAudioEngine(options: UseAudioEngineOptions): UseAudioEngineRe
     if (audioRef.current) {
       audioRef.current.currentTime = time
     }
-  }, [])
+  }, [audioRef])
 
   /**
    * Change volume and update audio nodes
@@ -160,7 +160,7 @@ export function useAudioEngine(options: UseAudioEngineOptions): UseAudioEngineRe
     if (gainNodeRef.current) {
       gainNodeRef.current.gain.value = value[0] / 100
     }
-  }, [])
+  }, [audioRef])
 
   /**
    * Adjust volume by a delta amount
@@ -174,11 +174,14 @@ export function useAudioEngine(options: UseAudioEngineOptions): UseAudioEngineRe
    * Toggle mute state
    */
   const toggleMute = useCallback(() => {
-    setIsMuted(!isMuted)
-    if (audioRef.current) {
-      audioRef.current.muted = !isMuted
-    }
-  }, [isMuted])
+    setIsMuted((prev) => {
+      const newMuted = !prev
+      if (audioRef.current) {
+        audioRef.current.muted = newMuted
+      }
+      return newMuted
+    })
+  }, [audioRef])
 
   /**
    * Setup audio event listeners for time updates, metadata, and end events
