@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useMemo, memo } from "react"
+import { useState, useMemo, memo, useRef, useEffect, useCallback } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -31,6 +31,7 @@ import {
 } from "@/components/ui/alert-dialog"
 import type { AudioMetadata } from "@/lib/metadata-extractor"
 import { AlbumArtDisplay } from "./album-art-display"
+import { AlphabetSidebar, getArtistLetter } from "./alphabet-sidebar"
 
 interface Song extends AudioMetadata {
   id: string
@@ -235,6 +236,8 @@ export function EnhancedPlaylist({
   sortedSongs,
 }: EnhancedPlaylistProps) {
   const [searchQuery, setSearchQuery] = useState("")
+  const [activeLetter, setActiveLetter] = useState("")
+  const scrollAreaRef = useRef<HTMLDivElement>(null)
 
   const formatTime = (time: number) => {
     const hours = Math.floor(time / 3600)
@@ -305,6 +308,80 @@ export function EnhancedPlaylist({
 
     return sortedGrouped
   }, [filteredSongs, viewMode])
+
+  const letterData = useMemo(() => {
+    const available = new Set<string>()
+    const boundaryIndices = new Map<number, string>()
+    const firstArtistOfLetter = new Set<string>()
+
+    if (viewMode === "list") {
+      let lastLetter = ""
+      filteredSongs.forEach((song, index) => {
+        const artist = song.artists?.[0] || song.artist || "Unknown Artist"
+        const letter = getArtistLetter(artist)
+        available.add(letter)
+        if (letter !== lastLetter) {
+          boundaryIndices.set(index, letter)
+          lastLetter = letter
+        }
+      })
+    } else {
+      let lastLetter = ""
+      Object.keys(groupedSongs).forEach((artist) => {
+        const letter = getArtistLetter(artist)
+        available.add(letter)
+        if (letter !== lastLetter) {
+          firstArtistOfLetter.add(artist)
+          lastLetter = letter
+        }
+      })
+    }
+
+    return { available, boundaryIndices, firstArtistOfLetter }
+  }, [filteredSongs, groupedSongs, viewMode])
+
+  const handleLetterClick = useCallback((letter: string) => {
+    const container = scrollAreaRef.current
+    if (!container) return
+    const marker = container.querySelector(`[data-letter-marker="${letter}"]`)
+    if (marker) {
+      marker.scrollIntoView({ behavior: "smooth", block: "start" })
+    }
+  }, [])
+
+  useEffect(() => {
+    const container = scrollAreaRef.current
+    if (!container) return
+
+    const viewport = container.querySelector(
+      "[data-radix-scroll-area-viewport]",
+    ) as HTMLElement | null
+    if (!viewport) return
+
+    const updateActiveLetter = () => {
+      const markers =
+        container.querySelectorAll<HTMLElement>("[data-letter-marker]")
+      if (markers.length === 0) return
+
+      const viewportTop = viewport.getBoundingClientRect().top
+      let current = markers[0].getAttribute("data-letter-marker") || ""
+
+      for (const marker of markers) {
+        if (marker.getBoundingClientRect().top <= viewportTop + 50) {
+          current = marker.getAttribute("data-letter-marker") || ""
+        } else {
+          break
+        }
+      }
+
+      if (current) setActiveLetter(current)
+    }
+
+    viewport.addEventListener("scroll", updateActiveLetter, { passive: true })
+    requestAnimationFrame(updateActiveLetter)
+
+    return () => viewport.removeEventListener("scroll", updateActiveLetter)
+  }, [filteredSongs, groupedSongs, viewMode])
 
   return (
     <Card className="h-full bg-transparent border-none shadow-none flex flex-col overflow-hidden">
@@ -431,9 +508,10 @@ export function EnhancedPlaylist({
           </div>
         )}
 
-        <div className="flex-1 min-h-0">
-          <ScrollArea className="h-full w-full">
-          <div className="space-y-2 pr-4 w-full ">
+        <div className="flex-1 min-h-0 flex">
+          <div className="flex-1 min-w-0">
+          <ScrollArea className="h-full w-full" ref={scrollAreaRef}>
+          <div className="space-y-2 pr-4 w-full">
             {songs.length === 0 ? (
               <div className="text-center text-muted-foreground py-8">
                 <Music className="w-12 h-12 mx-auto mb-4 opacity-50 " />
@@ -448,10 +526,16 @@ export function EnhancedPlaylist({
               </div>
             ) : viewMode === "list" ? (
               // List view - sorted by artist
-              <div className="space-y-1 w-full ">
+              <div className="space-y-1 w-full">
                 <div className="text-xs text-muted-foreground mb-2 px-3">Sorted by Artist</div>
-                {filteredSongs.map((song) => (
-                  <div key={song.id} className="w-full">
+                {filteredSongs.map((song, index) => (
+                  <div
+                    key={song.id}
+                    className="w-full"
+                    {...(letterData.boundaryIndices.has(index)
+                      ? { "data-letter-marker": letterData.boundaryIndices.get(index) }
+                      : {})}
+                  >
                     <SongItem
                       song={song}
                       isCurrentSong={currentSong?.id === song.id}
@@ -466,7 +550,13 @@ export function EnhancedPlaylist({
               // Grouped view
               <div className="w-full">
                 {Object.entries(groupedSongs).map(([artist, albums]) => (
-                  <div key={artist} className="space-y-3 mb-6 w-full">
+                  <div
+                    key={artist}
+                    className="space-y-3 mb-6 w-full"
+                    {...(letterData.firstArtistOfLetter.has(artist)
+                      ? { "data-letter-marker": getArtistLetter(artist) }
+                      : {})}
+                  >
                     <div className="sticky top-0 z-20 py-3 pl-4 -mx-4">
                       <div className="bg-background/80 backdrop-blur-md border border-border/50 rounded-lg px-4 py-2 shadow-sm">
                         <h3 className="font-semibold text-lg truncate text-foreground" title={artist}>
@@ -503,6 +593,16 @@ export function EnhancedPlaylist({
             )}
           </div>
         </ScrollArea>
+        </div>
+          {filteredSongs.length > 0 && letterData.available.size > 1 && (
+            <div className="flex items-center flex-shrink-0">
+              <AlphabetSidebar
+                availableLetters={letterData.available}
+                activeLetter={activeLetter}
+                onLetterClick={handleLetterClick}
+              />
+            </div>
+          )}
         </div>
       </CardContent>
     </Card>
