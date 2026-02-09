@@ -6,7 +6,8 @@ import { Separator } from "@/components/ui/separator"
 import { Button } from "@/components/ui/button"
 import { Music, Play, Trash2, Search } from "lucide-react"
 import { AlbumArtDisplay } from "./album-art-display"
-import { memo } from "react"
+import { AlphabetSidebar, getArtistLetter } from "./alphabet-sidebar"
+import { memo, useState, useMemo, useRef, useEffect, useCallback } from "react"
 
 interface Song {
   id: string
@@ -56,6 +57,83 @@ export function MobilePlaylist({
   isLoading = false,
   loadingProgress = { current: 0, total: 0 },
 }: MobilePlaylistProps) {
+  const [activeLetter, setActiveLetter] = useState("")
+  const scrollAreaRef = useRef<HTMLDivElement>(null)
+
+  const letterData = useMemo(() => {
+    const available = new Set<string>()
+    const boundaryIndices = new Map<number, string>()
+    const firstArtistOfLetter = new Set<string>()
+
+    if (viewMode === "list") {
+      let lastLetter = ""
+      filteredSongs.forEach((song, index) => {
+        const artist = song.artists?.[0] || song.artist || "Unknown Artist"
+        const letter = getArtistLetter(artist)
+        available.add(letter)
+        if (letter !== lastLetter) {
+          boundaryIndices.set(index, letter)
+          lastLetter = letter
+        }
+      })
+    } else {
+      let lastLetter = ""
+      Object.keys(groupedSongs).forEach((artist) => {
+        const letter = getArtistLetter(artist)
+        available.add(letter)
+        if (letter !== lastLetter) {
+          firstArtistOfLetter.add(artist)
+          lastLetter = letter
+        }
+      })
+    }
+
+    return { available, boundaryIndices, firstArtistOfLetter }
+  }, [filteredSongs, groupedSongs, viewMode])
+
+  const handleLetterClick = useCallback((letter: string) => {
+    const container = scrollAreaRef.current
+    if (!container) return
+    const marker = container.querySelector(`[data-letter-marker="${letter}"]`)
+    if (marker) {
+      marker.scrollIntoView({ behavior: "smooth", block: "start" })
+    }
+  }, [])
+
+  useEffect(() => {
+    const container = scrollAreaRef.current
+    if (!container) return
+
+    const viewport = container.querySelector(
+      "[data-radix-scroll-area-viewport]",
+    ) as HTMLElement | null
+    if (!viewport) return
+
+    const updateActiveLetter = () => {
+      const markers =
+        container.querySelectorAll<HTMLElement>("[data-letter-marker]")
+      if (markers.length === 0) return
+
+      const viewportTop = viewport.getBoundingClientRect().top
+      let current = markers[0].getAttribute("data-letter-marker") || ""
+
+      for (const marker of markers) {
+        if (marker.getBoundingClientRect().top <= viewportTop + 50) {
+          current = marker.getAttribute("data-letter-marker") || ""
+        } else {
+          break
+        }
+      }
+
+      if (current) setActiveLetter(current)
+    }
+
+    viewport.addEventListener("scroll", updateActiveLetter, { passive: true })
+    requestAnimationFrame(updateActiveLetter)
+
+    return () => viewport.removeEventListener("scroll", updateActiveLetter)
+  }, [filteredSongs, groupedSongs, viewMode])
+
   const formatTime = (time: number) => {
     const minutes = Math.floor(time / 60)
     const seconds = Math.floor(time % 60)
@@ -228,10 +306,10 @@ export function MobilePlaylist({
   SongItem.displayName = "SongItem"
 
   return (
-    <div className="flex-1 overflow-hidden">
+    <div className="flex-1 overflow-hidden flex flex-col">
       {/* Loading State */}
       {isLoading && (
-        <div className="p-4 bg-muted/50 rounded-lg mx-4 mb-4">
+        <div className="p-4 bg-muted/50 rounded-lg mx-4 mb-4 flex-shrink-0">
           <div className="flex items-center justify-between text-sm mb-2">
             <span className="font-medium">Loading songs...</span>
             <span>
@@ -250,65 +328,90 @@ export function MobilePlaylist({
         </div>
       )}
 
-      <ScrollArea className="h-full">
-        <div className="px-4 pb-32 space-y-2">
-          {songs.length === 0 ? (
-            <div className="text-center text-muted-foreground py-12">
-              <Music className="w-12 h-12 mx-auto mb-4 opacity-50" />
-              <p className="text-sm">No songs in playlist</p>
-              <p className="text-xs">Add some music files to get started</p>
-            </div>
-          ) : filteredSongs.length === 0 ? (
-            <div className="text-center text-muted-foreground py-12">
-              <Search className="w-12 h-12 mx-auto mb-4 opacity-50" />
-              <p className="text-sm">No songs found</p>
-              <p className="text-xs">Try adjusting your search terms</p>
-            </div>
-          ) : viewMode === "list" ? (
-            // List view - sorted by artist
-            <div className="space-y-1">
-              <div className="text-xs text-muted-foreground mb-2 px-3">Sorted by Artist</div>
-              {filteredSongs.map((song) => (
-                <SongItem
-                  key={song.id}
-                  song={song}
-                  isCurrentSong={currentSong?.id === song.id}
-                  showArtistAlbum={true}
-                  onSongSelect={onSongSelect}
-                  onSongRemove={onSongRemove}
-                />
-              ))}
-            </div>
-          ) : (
-            // Grouped view
-            Object.entries(groupedSongs).map(([artist, albums]) => (
-              <div key={artist} className="space-y-3">
-                <div className="sticky top-0 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 z-10 py-2">
-                  <h3 className="font-semibold text-base">{artist}</h3>
-                  <Separator className="mt-2" />
+      <div className="flex-1 min-h-0 flex">
+        <div className="flex-1 min-w-0">
+          <ScrollArea className="h-full" ref={scrollAreaRef}>
+            <div className="px-4 pb-32 space-y-2">
+              {songs.length === 0 ? (
+                <div className="text-center text-muted-foreground py-12">
+                  <Music className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                  <p className="text-sm">No songs in playlist</p>
+                  <p className="text-xs">Add some music files to get started</p>
                 </div>
-
-                {Object.entries(albums).map(([album, albumSongs]) => (
-                  <div key={`${artist}-${album}`} className="ml-2 space-y-2">
-                    <h4 className="font-medium text-muted-foreground text-sm uppercase tracking-wide">{album}</h4>
-                    <div className="space-y-1 ml-2">
-                      {albumSongs.map((song) => (
-                        <SongItem
-                          key={song.id}
-                          song={song}
-                          isCurrentSong={currentSong?.id === song.id}
-                          onSongSelect={onSongSelect}
-                          onSongRemove={onSongRemove}
-                        />
-                      ))}
+              ) : filteredSongs.length === 0 ? (
+                <div className="text-center text-muted-foreground py-12">
+                  <Search className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                  <p className="text-sm">No songs found</p>
+                  <p className="text-xs">Try adjusting your search terms</p>
+                </div>
+              ) : viewMode === "list" ? (
+                // List view - sorted by artist
+                <div className="space-y-1">
+                  <div className="text-xs text-muted-foreground mb-2 px-3">Sorted by Artist</div>
+                  {filteredSongs.map((song, index) => (
+                    <div
+                      key={song.id}
+                      {...(letterData.boundaryIndices.has(index)
+                        ? { "data-letter-marker": letterData.boundaryIndices.get(index) }
+                        : {})}
+                    >
+                      <SongItem
+                        song={song}
+                        isCurrentSong={currentSong?.id === song.id}
+                        showArtistAlbum={true}
+                        onSongSelect={onSongSelect}
+                        onSongRemove={onSongRemove}
+                      />
                     </div>
+                  ))}
+                </div>
+              ) : (
+                // Grouped view
+                Object.entries(groupedSongs).map(([artist, albums]) => (
+                  <div
+                    key={artist}
+                    className="space-y-3"
+                    {...(letterData.firstArtistOfLetter.has(artist)
+                      ? { "data-letter-marker": getArtistLetter(artist) }
+                      : {})}
+                  >
+                    <div className="sticky top-0 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 z-10 py-2">
+                      <h3 className="font-semibold text-base">{artist}</h3>
+                      <Separator className="mt-2" />
+                    </div>
+
+                    {Object.entries(albums).map(([album, albumSongs]) => (
+                      <div key={`${artist}-${album}`} className="ml-2 space-y-2">
+                        <h4 className="font-medium text-muted-foreground text-sm uppercase tracking-wide">{album}</h4>
+                        <div className="space-y-1 ml-2">
+                          {albumSongs.map((song) => (
+                            <SongItem
+                              key={song.id}
+                              song={song}
+                              isCurrentSong={currentSong?.id === song.id}
+                              onSongSelect={onSongSelect}
+                              onSongRemove={onSongRemove}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
-            ))
-          )}
+                ))
+              )}
+            </div>
+          </ScrollArea>
         </div>
-      </ScrollArea>
+        {filteredSongs.length > 0 && letterData.available.size > 1 && (
+          <div className="flex items-center flex-shrink-0 pr-1">
+            <AlphabetSidebar
+              availableLetters={letterData.available}
+              activeLetter={activeLetter}
+              onLetterClick={handleLetterClick}
+            />
+          </div>
+        )}
+      </div>
     </div>
   )
 }
