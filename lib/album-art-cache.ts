@@ -61,6 +61,23 @@ export class AlbumArtCache {
         existingCached.isLoading = true
       }
 
+      if (albumArtUrl.startsWith("blob:")) {
+        // Blob URLs are already local — fetch can fail due to service worker interference.
+        // Use the existing blob URL directly without re-fetching.
+        const cacheEntry: CachedAlbumArt = {
+          url: albumArtUrl,
+          blob: new Blob(),
+          lastAccessed: Date.now(),
+          songId,
+          size: 0,
+          refCount: 1,
+          isStable: true,
+          isLoading: false,
+        }
+        this.cache.set(songId, cacheEntry)
+        return albumArtUrl
+      }
+
       // Fetch and cache the album art
       const response = await fetch(albumArtUrl)
       if (!response.ok) {

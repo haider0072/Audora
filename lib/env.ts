@@ -13,6 +13,10 @@ const envSchema = z.object({
   // YouTube API Configuration
   YOUTUBE_API_KEY: z.string().min(1, 'YouTube API key is required').optional(),
 
+  // OpenRouter API Configuration (AI Song Insights)
+  OPENROUTER_API_KEY: z.string().min(1, 'OpenRouter API key is required').optional(),
+  OPENROUTER_MODEL: z.string().optional(),
+
   // Node Environment
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
 })
@@ -34,6 +38,8 @@ export interface EnvValidationResult {
 export function validateEnv(): EnvValidationResult {
   const env = {
     YOUTUBE_API_KEY: process.env.YOUTUBE_API_KEY,
+    OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY,
+    OPENROUTER_MODEL: process.env.OPENROUTER_MODEL,
     NODE_ENV: process.env.NODE_ENV as 'development' | 'production' | 'test' | undefined,
   }
 
@@ -43,6 +49,10 @@ export function validateEnv(): EnvValidationResult {
   // Check for optional but recommended variables
   if (!env.YOUTUBE_API_KEY) {
     warnings.push('YouTube API key not configured - video features will be disabled')
+  }
+
+  if (!env.OPENROUTER_API_KEY) {
+    warnings.push('OpenRouter API key not configured - AI insights will be disabled')
   }
 
   if (!result.success) {
@@ -82,7 +92,7 @@ export function getEnv(): Env {
 /**
  * Checks if a specific feature is configured
  */
-export function isFeatureEnabled(feature: 'youtube'): boolean {
+export function isFeatureEnabled(feature: 'youtube' | 'ai-insights'): boolean {
   const env = getEnv()
 
   switch (feature) {
@@ -90,6 +100,11 @@ export function isFeatureEnabled(feature: 'youtube'): boolean {
       return !!(
         env.YOUTUBE_API_KEY &&
         env.YOUTUBE_API_KEY.length > 0
+      )
+    case 'ai-insights':
+      return !!(
+        env.OPENROUTER_API_KEY &&
+        env.OPENROUTER_API_KEY.length > 0
       )
     default:
       return false
