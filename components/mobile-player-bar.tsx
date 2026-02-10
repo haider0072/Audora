@@ -4,7 +4,7 @@ import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Slider } from "@/components/ui/slider"
 import { Badge } from "@/components/ui/badge"
-import { Play, Pause, SkipBack, SkipForward, Settings, Mic, Share2, Music, Volume2, VolumeX, Youtube } from "lucide-react"
+import { Play, Pause, SkipBack, SkipForward, Settings, Mic, Share2, Music, Volume2, VolumeX, Youtube, Sparkles } from "lucide-react"
 import { formatTime } from "@/lib/utils"
 
 interface Song {
@@ -31,6 +31,7 @@ interface MobilePlayerBarProps {
   onLyricsClick: () => void
   onNetworkSharingClick?: () => void
   onVideoClick: () => void
+  onInsightsClick?: () => void
   isTransitioning?: boolean
 }
 
@@ -47,6 +48,7 @@ export function MobilePlayerBar({
   onLyricsClick,
   onNetworkSharingClick,
   onVideoClick,
+  onInsightsClick,
   isTransitioning = false,
 }: MobilePlayerBarProps) {
   const [showVolumeControl, setShowVolumeControl] = useState(false)
@@ -197,6 +199,12 @@ export function MobilePlayerBar({
             <Button variant="ghost" size="icon" className="w-8 h-8" onClick={onVideoClick} aria-label="Show video">
               <Youtube className="w-4 h-4" />
             </Button>
+
+            {onInsightsClick && (
+              <Button variant="ghost" size="icon" className="w-8 h-8" onClick={onInsightsClick} aria-label="Song insights">
+                <Sparkles className="w-4 h-4" />
+              </Button>
+            )}
           </div>
 
           {/* Center - Network Sharing */}

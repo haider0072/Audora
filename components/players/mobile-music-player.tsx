@@ -21,6 +21,7 @@ import { MobileEqualizerSheet } from "@/components/mobile-equalizer-sheet"
 import { MobileLyricsDisplay } from "@/components/mobile-lyrics-display"
 import { AlbumArtBackground } from "@/components/album-art-background"
 import { MobileYouTubeVideoPlayer } from "@/components/mobile-youtube-video-player"
+import { MobileSongInsights } from "@/components/mobile-song-insights"
 
 import type { EqualizerBand } from "@/components/refined-equalizer"
 import { formatTime, waitForCanPlay } from "@/lib/utils"
@@ -79,6 +80,7 @@ export default function MobileMusicPlayer() {
   const [showLyrics, setShowLyrics] = useState(false)
   const [forceRefreshTrigger, setForceRefreshTrigger] = useState(0)
   const [showVideo, setShowVideo] = useState(false)
+  const [showInsights, setShowInsights] = useState(false)
 
   // Use album art preloader hook
   const { preloadUpcomingSongs } = useAlbumArtPreloader(songs, currentSong?.id, 3)
@@ -417,6 +419,7 @@ export default function MobileMusicPlayer() {
           onSettingsClick={() => setShowEqualizer(true)}
           onLyricsClick={() => setShowLyrics(true)}
           onVideoClick={() => setShowVideo(true)}
+          onInsightsClick={() => setShowInsights(true)}
           isTransitioning={isTransitioning}
         />
 
@@ -453,6 +456,13 @@ export default function MobileMusicPlayer() {
           isOpen={showVideo}
           onOpenChange={setShowVideo}
           forceRefresh={forceRefreshTrigger}
+        />
+
+        {/* AI Song Insights Sheet */}
+        <MobileSongInsights
+          isOpen={showInsights}
+          onOpenChange={setShowInsights}
+          currentSong={currentSong}
         />
 
       </div>

@@ -10,7 +10,7 @@ import { toast } from "@/hooks/use-toast"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import {
   Play, Pause, SkipBack, SkipForward,
-  Volume2, VolumeX, Settings, Mic, Youtube,
+  Volume2, VolumeX, Settings, Mic, Youtube, Sparkles,
 } from "lucide-react"
 
 import { EnhancedPlaylist, type Song } from "@/components/enhanced-playlist"
@@ -36,11 +36,14 @@ const LyricsDisplay = lazy(() =>
 const YouTubeVideoPlayer = lazy(() =>
   import("@/components/youtube-video-player").then(mod => ({ default: mod.YouTubeVideoPlayer }))
 )
+const SongInsightsDisplay = lazy(() =>
+  import("@/components/song-insights-display").then(mod => ({ default: mod.SongInsightsDisplay }))
+)
 
 export default function EnhancedMusicPlayer() {
   const [currentBitrate, setCurrentBitrate] = useState<number | undefined>()
   const [isTransitioning, setIsTransitioning] = useState(false)
-  const [activeView, setActiveView] = useState<"player" | "lyrics" | "youtube">("player");
+  const [activeView, setActiveView] = useState<"player" | "lyrics" | "youtube" | "insights">("player");
   const videoPlayerRef = useRef<{ resetVideo: () => void }>(null);
   const [forceRefreshTrigger, setForceRefreshTrigger] = useState(0);
   const [videoReadyCalled, setVideoReadyCalled] = useState(false);
@@ -418,6 +421,14 @@ export default function EnhancedMusicPlayer() {
                   forceRefresh={forceRefreshTrigger}
                 />
               </Suspense>
+            ) : activeView === "insights" ? (
+              <Suspense fallback={null}>
+                <SongInsightsDisplay
+                  isVisible={true}
+                  onClose={() => setActiveView("player")}
+                  currentSong={currentSong}
+                />
+              </Suspense>
             ) : (
               <>
                 <Card className="bg-transparent border-none shadow-none">
@@ -540,6 +551,15 @@ export default function EnhancedMusicPlayer() {
                         aria-label="Show video"
                       >
                         <Youtube className="w-4 h-4" />
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        onClick={() => setActiveView("insights")}
+                        disabled={!currentSong}
+                        aria-label="Song insights"
+                      >
+                        <Sparkles className="w-4 h-4" />
                       </Button>
                     </div>
                     {/* Keyboard shortcuts info */}
