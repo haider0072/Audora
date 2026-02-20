@@ -14,6 +14,20 @@ export interface UseEqualizerManagerReturn {
   resetEqualizer: () => void
 }
 
+// Frequency-specific Q values: broader at bass, narrower at treble for natural sound
+export const DEFAULT_Q_VALUES: Record<number, number> = {
+  32: 0.6,
+  64: 0.7,
+  125: 0.8,
+  250: 1.0,
+  500: 1.2,
+  1000: 1.4,
+  2000: 1.6,
+  4000: 1.8,
+  8000: 2.0,
+  16000: 2.2,
+}
+
 export const DEFAULT_EQUALIZER_BANDS: EqualizerBand[] = [
   { frequency: 32, gain: 0, label: "32Hz" },
   { frequency: 64, gain: 0, label: "64Hz" },

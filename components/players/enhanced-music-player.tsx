@@ -43,18 +43,27 @@ const SongInsightsDisplay = lazy(() =>
 export default function EnhancedMusicPlayer() {
   const [currentBitrate, setCurrentBitrate] = useState<number | undefined>()
   const [isTransitioning, setIsTransitioning] = useState(false)
+  const [crossfadeDuration, setCrossfadeDuration] = useState(0)
   const [activeView, setActiveView] = useState<"player" | "lyrics" | "youtube" | "insights">("player");
   const videoPlayerRef = useRef<{ resetVideo: () => void }>(null);
   const [forceRefreshTrigger, setForceRefreshTrigger] = useState(0);
   const [videoReadyCalled, setVideoReadyCalled] = useState(false);
 
   const audioRef = useRef<HTMLAudioElement>(null)
+  const secondaryAudioRef = useRef<HTMLAudioElement>(null)
   const skipToNextRef = useRef<() => void>(() => {})
   const selectSongAbortRef = useRef<AbortController | null>(null)
+  const pendingPreloadRef = useRef<Song | null>(null)
 
   // Stable onEnded callback using ref — THIS FIXES THE STALE CLOSURE BUG
   const handleEnded = useCallback(() => {
     skipToNextRef.current()
+  }, [])
+
+  // Stable onNearEnd callback using ref (needs access to getNextSong)
+  const nearEndHandlerRef = useRef<() => void>(() => {})
+  const handleNearEnd = useCallback(() => {
+    nearEndHandlerRef.current()
   }, [])
 
   const [equalizerBands, setEqualizerBands] = useState<EqualizerBand[]>(DEFAULT_EQUALIZER_BANDS)
@@ -64,11 +73,15 @@ export default function EnhancedMusicPlayer() {
     duration, setDuration, volume, setVolume, isMuted,
     filterNodes, audioContextRef, playPromiseRef, gainNodeRef,
     initializeAudioContext, play, pause, seek,
-    changeVolume, toggleMute, adjustVolume,
+    changeVolume, toggleMute, adjustVolume, applyNormalization,
+    preloadNextSong, swapToPreloaded, isPreloaded,
   } = useAudioEngine({
     audioRef,
+    secondaryAudioRef,
     equalizerBands,
     onEnded: handleEnded,
+    onNearEnd: handleNearEnd,
+    crossfadeDuration,
   })
 
   const {
@@ -147,6 +160,7 @@ export default function EnhancedMusicPlayer() {
       if (settings.shuffleMode !== undefined) setShuffleMode(settings.shuffleMode)
       if (settings.viewMode) setViewMode(settings.viewMode)
       if (settings.showEqualizer !== undefined) setShowEqualizer(settings.showEqualizer)
+      if (settings.crossfadeDuration !== undefined) setCrossfadeDuration(settings.crossfadeDuration)
 
       if (restoredSongs.length > 0) {
         setSongs(restoredSongs)
@@ -166,8 +180,8 @@ export default function EnhancedMusicPlayer() {
   // Auto-save playlist data
   const persistenceData = useMemo(() => ({
     songs, currentSongId: currentSong?.id, equalizerBands,
-    volume: volume[0], shuffleMode, viewMode, showEqualizer,
-  }), [songs, currentSong?.id, equalizerBands, volume, shuffleMode, viewMode, showEqualizer])
+    volume: volume[0], shuffleMode, viewMode, showEqualizer, crossfadeDuration,
+  }), [songs, currentSong?.id, equalizerBands, volume, shuffleMode, viewMode, showEqualizer, crossfadeDuration])
 
   useAutoSave(persistenceData, isInitialized, isRestoringPlaylist, savePlaylist)
 
@@ -190,6 +204,24 @@ export default function EnhancedMusicPlayer() {
 
       if (abort.signal.aborted) return
 
+      // Gapless fast path: if this song was preloaded, do instant swap
+      if (isAutoAdvance && isPreloaded && pendingPreloadRef.current?.id === song.id) {
+        applyNormalization(song.gainCorrection ?? 0)
+        const swapped = swapToPreloaded()
+        if (swapped) {
+          if (currentSong?.url) URL.revokeObjectURL(currentSong.url)
+          setCurrentSong(song)
+          setCurrentBitrate(song.bitrate)
+          setIsPlaying(true)
+          notifySongSelected(song, isAutoAdvance)
+          preloadUpcomingSongs()
+          pendingPreloadRef.current = null
+          return
+        }
+      }
+
+      pendingPreloadRef.current = null
+
       setIsTransitioning(true)
       if (currentSong?.url) URL.revokeObjectURL(currentSong.url)
       preloadUpcomingSongs()
@@ -197,6 +229,7 @@ export default function EnhancedMusicPlayer() {
       setCurrentBitrate(song.bitrate)
       setIsPlaying(false)
       notifySongSelected(song, isAutoAdvance)
+      applyNormalization(song.gainCorrection ?? 0)
 
       if (audioRef.current) {
         audioRef.current.pause()
@@ -228,7 +261,7 @@ export default function EnhancedMusicPlayer() {
         }
       }
     },
-    [currentSong, notifySongSelected, initializeAudioContext, preloadUpcomingSongs],
+    [currentSong, notifySongSelected, initializeAudioContext, preloadUpcomingSongs, isPreloaded, swapToPreloaded, applyNormalization],
   )
   
   // Remove syncDelayActive and all related logic
@@ -299,6 +332,15 @@ export default function EnhancedMusicPlayer() {
   // eslint-disable-next-line react-hooks/refs -- intentional: ref updated during render to avoid stale closure in audio ended callback
   skipToNextRef.current = skipToNext
 
+  // Keep nearEndHandlerRef pointing to the latest handler (preloads next song for gapless)
+  nearEndHandlerRef.current = () => {
+    const nextSong = getNextSong()
+    if (nextSong) {
+      pendingPreloadRef.current = nextSong
+      preloadNextSong(nextSong.file)
+    }
+  }
+
   const skipToPrevious = () => {
     const prevSong = getPreviousSong()
     if (prevSong) selectSong(prevSong, false)
@@ -358,6 +400,7 @@ export default function EnhancedMusicPlayer() {
     <div className="min-h-screen max-h-screen overflow-hidden relative">
       <AlbumArtBackground albumArt={currentSong?.albumArt} songId={currentSong?.id} isTransitioning={isTransitioning} />
       <audio ref={audioRef} preload="metadata" className="hidden" />
+      <audio ref={secondaryAudioRef} preload="metadata" className="hidden" />
       {/* Screen reader announcements for song changes */}
       <div aria-live="polite" aria-atomic="true" className="sr-only">
         {currentSong && `Now playing: ${currentSong.title}${currentSong.artist ? ` by ${currentSong.artist}` : ""}`}
@@ -577,7 +620,9 @@ export default function EnhancedMusicPlayer() {
                     <RefinedEqualizer
                     bands={equalizerBands}
                     onBandChange={updateEqualizerBand}
-                    onReset={resetEqualizer}/>
+                    onReset={resetEqualizer}
+                    crossfadeDuration={crossfadeDuration}
+                    onCrossfadeDurationChange={setCrossfadeDuration}/>
                   </DialogContent>
                 </Dialog>
               </>

@@ -13,6 +13,8 @@ interface StorageData {
     albumArt?: string
     fileSize?: number
     format?: string
+    loudnessLUFS?: number
+    gainCorrection?: number
     fileName: string
     fileLastModified: number
     fileType: string
@@ -28,6 +30,7 @@ interface StorageData {
     viewMode: "grouped" | "list"
     showEqualizer: boolean
     showLyrics?: boolean
+    crossfadeDuration?: number
   }
   currentSongId?: string
 }
@@ -104,6 +107,7 @@ export class StorageManager {
         viewMode: "grouped",
         showEqualizer: false,
         showLyrics: false,
+        crossfadeDuration: 0,
       },
     }
   }
