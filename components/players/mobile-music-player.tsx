@@ -29,7 +29,6 @@ import { formatTime, waitForCanPlay } from "@/lib/utils"
 export default function MobileMusicPlayer() {
   const [searchQuery, setSearchQuery] = useState("")
   const [isTransitioning, setIsTransitioning] = useState(false)
-  const [crossfadeDuration, setCrossfadeDuration] = useState(0)
 
   const audioRef = useRef<HTMLAudioElement>(null)
   const secondaryAudioRef = useRef<HTMLAudioElement>(null)
@@ -56,14 +55,13 @@ export default function MobileMusicPlayer() {
     filterNodes, audioContextRef, playPromiseRef, gainNodeRef,
     initializeAudioContext, play, pause, seek,
     changeVolume, toggleMute, adjustVolume, applyNormalization,
-    preloadNextSong, swapToPreloaded, isPreloaded,
+    preloadNextSong, swapToPreloaded, resetGaplessState, isPreloaded,
   } = useAudioEngine({
     audioRef,
     secondaryAudioRef,
     equalizerBands,
     onEnded: handleEnded,
     onNearEnd: handleNearEnd,
-    crossfadeDuration,
   })
 
   const {
@@ -183,7 +181,6 @@ export default function MobileMusicPlayer() {
       if (settings.shuffleMode !== undefined) setShuffleMode(settings.shuffleMode)
       if (settings.viewMode) setViewMode(settings.viewMode)
       if (settings.showEqualizer !== undefined) setShowEqualizer(settings.showEqualizer)
-      if (settings.crossfadeDuration !== undefined) setCrossfadeDuration(settings.crossfadeDuration)
 
       if (restoredSongs.length > 0) {
         setSongs(restoredSongs)
@@ -203,8 +200,8 @@ export default function MobileMusicPlayer() {
   // Auto-save playlist data
   const persistenceData = useMemo(() => ({
     songs, currentSongId: currentSong?.id, equalizerBands,
-    volume: volume[0], shuffleMode, viewMode, showEqualizer, crossfadeDuration,
-  }), [songs, currentSong?.id, equalizerBands, volume, shuffleMode, viewMode, showEqualizer, crossfadeDuration])
+    volume: volume[0], shuffleMode, viewMode, showEqualizer, crossfadeDuration: 0,
+  }), [songs, currentSong?.id, equalizerBands, volume, shuffleMode, viewMode, showEqualizer])
 
   useAutoSave(persistenceData, isInitialized, isRestoringPlaylist, savePlaylist)
 
@@ -231,6 +228,9 @@ export default function MobileMusicPlayer() {
     }
 
     pendingPreloadRef.current = null
+
+    // Reset gapless state so we load into primary audio element
+    resetGaplessState()
 
     try {
       setIsTransitioning(true)
@@ -285,35 +285,29 @@ export default function MobileMusicPlayer() {
         toast({ title: "Error loading song", description: "Unable to load the selected audio file.", variant: "destructive" })
       }
     }
-  }, [currentSong, notifySongSelected, initializeAudioContext, preloadUpcomingSongs, setIsPlaying, setCurrentSong, isPreloaded, swapToPreloaded, applyNormalization])
+  }, [currentSong, notifySongSelected, initializeAudioContext, preloadUpcomingSongs, setIsPlaying, setCurrentSong, isPreloaded, swapToPreloaded, resetGaplessState, applyNormalization])
 
 
   const togglePlayPause = async () => {
-    if (!audioRef.current || !currentSong) return
+    if (!currentSong) return
 
-    if (audioContextRef.current?.state === "suspended") {
-      await audioContextRef.current.resume()
-    }
-
-    // Check if audio element is properly initialized
-    if (!audioRef.current.src && currentSong.file) {
+    // Check if audio element is properly initialized (e.g. after restore)
+    if (audioRef.current && !audioRef.current.src && currentSong.file) {
+      resetGaplessState() // ensure we're on primary
       const audioUrl = URL.createObjectURL(currentSong.file)
       const updatedSong = { ...currentSong, url: audioUrl }
       setCurrentSong(updatedSong)
       audioRef.current.src = audioUrl
       audioRef.current.load()
-
       await waitForCanPlay(audioRef.current)
     }
 
     if (isPlaying) {
-      audioRef.current.pause()
-      setIsPlaying(false)
+      pause()
     } else {
       initializeAudioContext()
       try {
-        await audioRef.current.play()
-        setIsPlaying(true)
+        await play()
       } catch (error) {
         console.error("Error playing audio:", error)
         setIsPlaying(false)
@@ -476,8 +470,6 @@ export default function MobileMusicPlayer() {
           onVolumeChange={changeVolume}
           isMuted={isMuted}
           onToggleMute={toggleMute}
-          crossfadeDuration={crossfadeDuration}
-          onCrossfadeDurationChange={setCrossfadeDuration}
         />
 
         {/* Lyrics Sheet */}

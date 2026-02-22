@@ -10,7 +10,6 @@ export interface UseAudioEngineOptions {
   onDurationChange?: (duration: number) => void
   onEnded?: () => void
   onNearEnd?: () => void
-  crossfadeDuration?: number // seconds, 0 = off (gapless only)
 }
 
 export interface UseAudioEngineReturn {
@@ -50,6 +49,7 @@ export interface UseAudioEngineReturn {
   // Gapless methods
   preloadNextSong: (file: File) => Promise<boolean>
   swapToPreloaded: () => boolean
+  resetGaplessState: () => void
   isPreloaded: boolean
 }
 
@@ -69,7 +69,6 @@ export function useAudioEngine(options: UseAudioEngineOptions): UseAudioEngineRe
   const {
     audioRef, secondaryAudioRef, equalizerBands,
     onTimeUpdate, onDurationChange, onEnded, onNearEnd,
-    crossfadeDuration = 0,
   } = options
 
   // Core audio refs
@@ -89,7 +88,6 @@ export function useAudioEngine(options: UseAudioEngineOptions): UseAudioEngineRe
   const preloadedRef = useRef(false)
   const preloadedUrlRef = useRef<string | null>(null)
   const nearEndFiredRef = useRef(false)
-  const crossfadeActiveRef = useRef(false)
 
   // State
   const [isPlaying, setIsPlaying] = useState(false)
@@ -100,8 +98,6 @@ export function useAudioEngine(options: UseAudioEngineOptions): UseAudioEngineRe
   const [filterNodes, setFilterNodes] = useState<BiquadFilterNode[]>([])
   const [isPreloaded, setIsPreloaded] = useState(false)
   const filterNodesRef = useRef<BiquadFilterNode[]>([])
-  const crossfadeDurationRef = useRef(crossfadeDuration)
-  crossfadeDurationRef.current = crossfadeDuration
 
   // Helper to get active/inactive audio elements
   const getActiveAudio = useCallback(() => {
@@ -162,7 +158,7 @@ export function useAudioEngine(options: UseAudioEngineOptions): UseAudioEngineRe
       primaryMixGainRef.current.gain.value = 1
       sourceNodeRef.current.connect(primaryMixGainRef.current)
 
-      // Secondary source + mix gain (for gapless/crossfade)
+      // Secondary source + mix gain (for gapless)
       if (secondaryAudioRef?.current) {
         secondarySourceNodeRef.current = ctx.createMediaElementSource(secondaryAudioRef.current)
         secondaryMixGainRef.current = ctx.createGain()
@@ -256,7 +252,7 @@ export function useAudioEngine(options: UseAudioEngineOptions): UseAudioEngineRe
   }, [getInactiveAudio])
 
   /**
-   * Swap to the preloaded song for gapless/crossfade transition.
+   * Swap to the preloaded song — instant gapless transition.
    * Returns true if swap succeeded.
    */
   const swapToPreloaded = useCallback((): boolean => {
@@ -266,59 +262,22 @@ export function useAudioEngine(options: UseAudioEngineOptions): UseAudioEngineRe
     const inactiveAudio = getInactiveAudio()
     const activeMixGain = getActiveMixGain()
     const inactiveMixGain = getInactiveMixGain()
-    const ctx = audioContextRef.current
 
-    if (!inactiveAudio || !activeMixGain || !inactiveMixGain || !ctx) return false
+    if (!inactiveAudio || !activeMixGain || !inactiveMixGain) return false
 
-    const cfDuration = crossfadeDurationRef.current
-    const now = ctx.currentTime
+    // Instant swap: mute old, unmute new
+    activeMixGain.gain.value = 0
+    inactiveMixGain.gain.value = 1
 
-    if (cfDuration > 0 && !crossfadeActiveRef.current) {
-      // Crossfade: overlap playback with volume ramps
-      crossfadeActiveRef.current = true
+    inactiveAudio.play().catch(() => {})
 
-      // Fade out active
-      activeMixGain.gain.cancelScheduledValues(now)
-      activeMixGain.gain.setValueAtTime(1, now)
-      activeMixGain.gain.exponentialRampToValueAtTime(0.001, now + cfDuration)
-
-      // Fade in inactive
-      inactiveMixGain.gain.cancelScheduledValues(now)
-      inactiveMixGain.gain.setValueAtTime(0.001, now + 0.001)
-      inactiveMixGain.gain.linearRampToValueAtTime(1, now + cfDuration)
-
-      // Start the preloaded song
-      inactiveAudio.play().catch(() => {})
-
-      // After crossfade completes, finalize the swap
-      setTimeout(() => {
-        if (activeAudio) {
-          activeAudio.pause()
-          activeAudio.currentTime = 0
-        }
-        activeMixGain.gain.cancelScheduledValues(0)
-        activeMixGain.gain.value = 0
-        inactiveMixGain.gain.value = 1
-
-        // Swap active tracking
-        activeElementRef.current = activeElementRef.current === "primary" ? "secondary" : "primary"
-        crossfadeActiveRef.current = false
-      }, cfDuration * 1000 + 50)
-    } else {
-      // Gapless: instant swap (no crossfade)
-      activeMixGain.gain.value = 0
-      inactiveMixGain.gain.value = 1
-
-      inactiveAudio.play().catch(() => {})
-
-      if (activeAudio) {
-        activeAudio.pause()
-        activeAudio.currentTime = 0
-      }
-
-      // Swap active tracking
-      activeElementRef.current = activeElementRef.current === "primary" ? "secondary" : "primary"
+    if (activeAudio) {
+      activeAudio.pause()
+      activeAudio.currentTime = 0
     }
+
+    // Swap active tracking
+    activeElementRef.current = activeElementRef.current === "primary" ? "secondary" : "primary"
 
     preloadedRef.current = false
     setIsPreloaded(false)
@@ -326,6 +285,37 @@ export function useAudioEngine(options: UseAudioEngineOptions): UseAudioEngineRe
 
     return true
   }, [getActiveAudio, getInactiveAudio, getActiveMixGain, getInactiveMixGain])
+
+  /**
+   * Reset gapless state back to primary element.
+   * Call this before the slow (non-gapless) selectSong path to ensure
+   * we load into the correct audio element.
+   */
+  const resetGaplessState = useCallback(() => {
+    // Stop secondary audio if playing
+    const secondaryAudio = secondaryAudioRef?.current
+    if (secondaryAudio) {
+      secondaryAudio.pause()
+      secondaryAudio.currentTime = 0
+    }
+
+    // Reset mix gains: primary=1, secondary=0
+    if (primaryMixGainRef.current) primaryMixGainRef.current.gain.value = 1
+    if (secondaryMixGainRef.current) secondaryMixGainRef.current.gain.value = 0
+
+    // Reset active tracking to primary
+    activeElementRef.current = "primary"
+
+    // Clear preload state
+    preloadedRef.current = false
+    setIsPreloaded(false)
+    nearEndFiredRef.current = false
+
+    if (preloadedUrlRef.current) {
+      URL.revokeObjectURL(preloadedUrlRef.current)
+      preloadedUrlRef.current = null
+    }
+  }, [secondaryAudioRef])
 
   /**
    * Play audio with proper promise handling
@@ -447,7 +437,6 @@ export function useAudioEngine(options: UseAudioEngineOptions): UseAudioEngineRe
         gainNodeRef.current = null
         analyserRef.current = null
       }
-      // Clean up preloaded URL
       if (preloadedUrlRef.current) {
         URL.revokeObjectURL(preloadedUrlRef.current)
         preloadedUrlRef.current = null
@@ -480,10 +469,7 @@ export function useAudioEngine(options: UseAudioEngineOptions): UseAudioEngineRe
 
       // Fire onNearEnd when approaching song end
       const remaining = audio.duration - time
-      const threshold = crossfadeDurationRef.current > 0
-        ? crossfadeDurationRef.current + 0.5
-        : PRELOAD_THRESHOLD_SECONDS
-      if (remaining <= threshold && remaining > 0 && !nearEndFiredRef.current && audio.duration > 0) {
+      if (remaining <= PRELOAD_THRESHOLD_SECONDS && remaining > 0 && !nearEndFiredRef.current && audio.duration > 0) {
         nearEndFiredRef.current = true
         onNearEnd?.()
       }
@@ -577,6 +563,7 @@ export function useAudioEngine(options: UseAudioEngineOptions): UseAudioEngineRe
     // Gapless methods
     preloadNextSong,
     swapToPreloaded,
+    resetGaplessState,
     isPreloaded,
   }
 }

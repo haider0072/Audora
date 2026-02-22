@@ -43,7 +43,6 @@ const SongInsightsDisplay = lazy(() =>
 export default function EnhancedMusicPlayer() {
   const [currentBitrate, setCurrentBitrate] = useState<number | undefined>()
   const [isTransitioning, setIsTransitioning] = useState(false)
-  const [crossfadeDuration, setCrossfadeDuration] = useState(0)
   const [activeView, setActiveView] = useState<"player" | "lyrics" | "youtube" | "insights">("player");
   const videoPlayerRef = useRef<{ resetVideo: () => void }>(null);
   const [forceRefreshTrigger, setForceRefreshTrigger] = useState(0);
@@ -74,14 +73,13 @@ export default function EnhancedMusicPlayer() {
     filterNodes, audioContextRef, playPromiseRef, gainNodeRef,
     initializeAudioContext, play, pause, seek,
     changeVolume, toggleMute, adjustVolume, applyNormalization,
-    preloadNextSong, swapToPreloaded, isPreloaded,
+    preloadNextSong, swapToPreloaded, resetGaplessState, isPreloaded,
   } = useAudioEngine({
     audioRef,
     secondaryAudioRef,
     equalizerBands,
     onEnded: handleEnded,
     onNearEnd: handleNearEnd,
-    crossfadeDuration,
   })
 
   const {
@@ -160,7 +158,6 @@ export default function EnhancedMusicPlayer() {
       if (settings.shuffleMode !== undefined) setShuffleMode(settings.shuffleMode)
       if (settings.viewMode) setViewMode(settings.viewMode)
       if (settings.showEqualizer !== undefined) setShowEqualizer(settings.showEqualizer)
-      if (settings.crossfadeDuration !== undefined) setCrossfadeDuration(settings.crossfadeDuration)
 
       if (restoredSongs.length > 0) {
         setSongs(restoredSongs)
@@ -180,8 +177,8 @@ export default function EnhancedMusicPlayer() {
   // Auto-save playlist data
   const persistenceData = useMemo(() => ({
     songs, currentSongId: currentSong?.id, equalizerBands,
-    volume: volume[0], shuffleMode, viewMode, showEqualizer, crossfadeDuration,
-  }), [songs, currentSong?.id, equalizerBands, volume, shuffleMode, viewMode, showEqualizer, crossfadeDuration])
+    volume: volume[0], shuffleMode, viewMode, showEqualizer, crossfadeDuration: 0,
+  }), [songs, currentSong?.id, equalizerBands, volume, shuffleMode, viewMode, showEqualizer])
 
   useAutoSave(persistenceData, isInitialized, isRestoringPlaylist, savePlaylist)
 
@@ -222,6 +219,9 @@ export default function EnhancedMusicPlayer() {
 
       pendingPreloadRef.current = null
 
+      // Reset gapless state so we load into primary audio element
+      resetGaplessState()
+
       setIsTransitioning(true)
       if (currentSong?.url) URL.revokeObjectURL(currentSong.url)
       preloadUpcomingSongs()
@@ -261,7 +261,7 @@ export default function EnhancedMusicPlayer() {
         }
       }
     },
-    [currentSong, notifySongSelected, initializeAudioContext, preloadUpcomingSongs, isPreloaded, swapToPreloaded, applyNormalization],
+    [currentSong, notifySongSelected, initializeAudioContext, preloadUpcomingSongs, isPreloaded, swapToPreloaded, resetGaplessState, applyNormalization],
   )
   
   // Remove syncDelayActive and all related logic
@@ -277,7 +277,7 @@ export default function EnhancedMusicPlayer() {
   }, []);
 
   const togglePlayPause = async () => {
-    if (!audioRef.current || !currentSong) return
+    if (!currentSong) return
 
     if (playPromiseRef.current) {
       try {
@@ -289,30 +289,23 @@ export default function EnhancedMusicPlayer() {
       }
     }
 
-    // Check if audio element is properly initialized
-    if (!audioRef.current.src && currentSong.file) {
-      // Audio element not initialized — set up current song
+    // Check if audio element is properly initialized (e.g. after restore)
+    if (audioRef.current && !audioRef.current.src && currentSong.file) {
+      resetGaplessState() // ensure we're on primary
       const audioUrl = URL.createObjectURL(currentSong.file)
       const updatedSong = { ...currentSong, url: audioUrl }
       setCurrentSong(updatedSong)
       audioRef.current.src = audioUrl
       audioRef.current.load()
-      
       await waitForCanPlay(audioRef.current)
     }
 
     if (isPlaying) {
-      audioRef.current.pause()
-      setIsPlaying(false)
+      pause()
     } else {
       try {
-        if (audioContextRef.current?.state === "suspended") {
-          await audioContextRef.current.resume()
-        }
-        playPromiseRef.current = audioRef.current.play();
-        await playPromiseRef.current
-        setIsPlaying(true)
-
+        initializeAudioContext()
+        await play()
       } catch (error) {
         if ((error as DOMException).name !== "AbortError") {
           console.error("Error playing audio:", error)
@@ -620,9 +613,7 @@ export default function EnhancedMusicPlayer() {
                     <RefinedEqualizer
                     bands={equalizerBands}
                     onBandChange={updateEqualizerBand}
-                    onReset={resetEqualizer}
-                    crossfadeDuration={crossfadeDuration}
-                    onCrossfadeDurationChange={setCrossfadeDuration}/>
+                    onReset={resetEqualizer}/>
                   </DialogContent>
                 </Dialog>
               </>

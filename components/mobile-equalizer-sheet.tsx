@@ -23,8 +23,6 @@ interface MobileEqualizerSheetProps {
   onVolumeChange: (value: number[]) => void
   isMuted: boolean
   onToggleMute: () => void
-  crossfadeDuration?: number
-  onCrossfadeDurationChange?: (value: number) => void
 }
 
 export function MobileEqualizerSheet({
@@ -37,8 +35,6 @@ export function MobileEqualizerSheet({
   onVolumeChange,
   isMuted,
   onToggleMute,
-  crossfadeDuration = 0,
-  onCrossfadeDurationChange,
 }: MobileEqualizerSheetProps) {
   return (
     <Sheet open={isOpen} onOpenChange={onOpenChange}>
@@ -121,28 +117,6 @@ export function MobileEqualizerSheet({
             </div>
           </div>
 
-          {/* Crossfade Control */}
-          {onCrossfadeDurationChange && (
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <Label className="text-sm font-medium">Crossfade</Label>
-                <span className="text-sm text-muted-foreground">
-                  {crossfadeDuration === 0 ? "Off" : `${crossfadeDuration}s`}
-                </span>
-              </div>
-              <Slider
-                value={[crossfadeDuration]}
-                min={0}
-                max={5}
-                step={0.5}
-                onValueChange={(v) => onCrossfadeDurationChange(v[0])}
-                aria-label="Crossfade duration"
-              />
-              <p className="text-xs text-muted-foreground">
-                {crossfadeDuration === 0 ? "Gapless playback (no overlap)" : "Songs overlap and fade during transitions"}
-              </p>
-            </div>
-          )}
         </div>
       </SheetContent>
     </Sheet>
