@@ -14,6 +14,7 @@ export interface PlaylistPersistenceData {
   shuffleMode: boolean
   viewMode: "grouped" | "list"
   showEqualizer: boolean
+  crossfadeDuration: number
 }
 
 export interface UsePlaylistPersistenceOptions {
@@ -70,6 +71,7 @@ export function usePlaylistPersistence(
         settings.shuffleMode = savedData.playerSettings.shuffleMode
         settings.viewMode = savedData.playerSettings.viewMode
         settings.showEqualizer = savedData.playerSettings.showEqualizer
+        settings.crossfadeDuration = savedData.playerSettings.crossfadeDuration ?? 0
       }
 
       // Load playlist metadata
@@ -153,7 +155,7 @@ export function usePlaylistPersistence(
    * Save playlist to storage
    */
   const savePlaylist = useCallback((data: PlaylistPersistenceData) => {
-    const { songs, currentSongId, equalizerBands, volume, shuffleMode, viewMode, showEqualizer } =
+    const { songs, currentSongId, equalizerBands, volume, shuffleMode, viewMode, showEqualizer, crossfadeDuration } =
       data
 
     // Serialize songs (exclude File objects)
@@ -172,6 +174,8 @@ export function usePlaylistPersistence(
       albumArt: song.albumArt,
       fileSize: song.fileSize,
       format: song.format,
+      loudnessLUFS: song.loudnessLUFS,
+      gainCorrection: song.gainCorrection,
       fileName: song.file ? song.file.name : "",
       fileLastModified: song.file ? song.file.lastModified : 0,
       fileType: song.file ? song.file.type : "",
@@ -184,7 +188,7 @@ export function usePlaylistPersistence(
     StorageManager.saveData({
       songs: serializableSongs,
       equalizerBands,
-      playerSettings: { volume, shuffleMode, viewMode, showEqualizer },
+      playerSettings: { volume, shuffleMode, viewMode, showEqualizer, crossfadeDuration },
       currentSongId,
     })
   }, [])

@@ -116,6 +116,7 @@ export function MobileEqualizerSheet({
               <p className="text-xs text-muted-foreground">Adjust frequency bands to customize your audio experience</p>
             </div>
           </div>
+
         </div>
       </SheetContent>
     </Sheet>

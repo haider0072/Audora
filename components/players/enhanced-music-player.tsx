@@ -49,12 +49,20 @@ export default function EnhancedMusicPlayer() {
   const [videoReadyCalled, setVideoReadyCalled] = useState(false);
 
   const audioRef = useRef<HTMLAudioElement>(null)
+  const secondaryAudioRef = useRef<HTMLAudioElement>(null)
   const skipToNextRef = useRef<() => void>(() => {})
   const selectSongAbortRef = useRef<AbortController | null>(null)
+  const pendingPreloadRef = useRef<Song | null>(null)
 
   // Stable onEnded callback using ref — THIS FIXES THE STALE CLOSURE BUG
   const handleEnded = useCallback(() => {
     skipToNextRef.current()
+  }, [])
+
+  // Stable onNearEnd callback using ref (needs access to getNextSong)
+  const nearEndHandlerRef = useRef<() => void>(() => {})
+  const handleNearEnd = useCallback(() => {
+    nearEndHandlerRef.current()
   }, [])
 
   const [equalizerBands, setEqualizerBands] = useState<EqualizerBand[]>(DEFAULT_EQUALIZER_BANDS)
@@ -64,11 +72,14 @@ export default function EnhancedMusicPlayer() {
     duration, setDuration, volume, setVolume, isMuted,
     filterNodes, audioContextRef, playPromiseRef, gainNodeRef,
     initializeAudioContext, play, pause, seek,
-    changeVolume, toggleMute, adjustVolume,
+    changeVolume, toggleMute, adjustVolume, applyNormalization,
+    preloadNextSong, swapToPreloaded, resetGaplessState, isPreloaded,
   } = useAudioEngine({
     audioRef,
+    secondaryAudioRef,
     equalizerBands,
     onEnded: handleEnded,
+    onNearEnd: handleNearEnd,
   })
 
   const {
@@ -166,7 +177,7 @@ export default function EnhancedMusicPlayer() {
   // Auto-save playlist data
   const persistenceData = useMemo(() => ({
     songs, currentSongId: currentSong?.id, equalizerBands,
-    volume: volume[0], shuffleMode, viewMode, showEqualizer,
+    volume: volume[0], shuffleMode, viewMode, showEqualizer, crossfadeDuration: 0,
   }), [songs, currentSong?.id, equalizerBands, volume, shuffleMode, viewMode, showEqualizer])
 
   useAutoSave(persistenceData, isInitialized, isRestoringPlaylist, savePlaylist)
@@ -190,6 +201,27 @@ export default function EnhancedMusicPlayer() {
 
       if (abort.signal.aborted) return
 
+      // Gapless fast path: if this song was preloaded, do instant swap
+      if (isAutoAdvance && isPreloaded && pendingPreloadRef.current?.id === song.id) {
+        applyNormalization(song.gainCorrection ?? 0)
+        const swapped = swapToPreloaded()
+        if (swapped) {
+          if (currentSong?.url) URL.revokeObjectURL(currentSong.url)
+          setCurrentSong(song)
+          setCurrentBitrate(song.bitrate)
+          setIsPlaying(true)
+          notifySongSelected(song, isAutoAdvance)
+          preloadUpcomingSongs()
+          pendingPreloadRef.current = null
+          return
+        }
+      }
+
+      pendingPreloadRef.current = null
+
+      // Reset gapless state so we load into primary audio element
+      resetGaplessState()
+
       setIsTransitioning(true)
       if (currentSong?.url) URL.revokeObjectURL(currentSong.url)
       preloadUpcomingSongs()
@@ -197,6 +229,7 @@ export default function EnhancedMusicPlayer() {
       setCurrentBitrate(song.bitrate)
       setIsPlaying(false)
       notifySongSelected(song, isAutoAdvance)
+      applyNormalization(song.gainCorrection ?? 0)
 
       if (audioRef.current) {
         audioRef.current.pause()
@@ -228,7 +261,7 @@ export default function EnhancedMusicPlayer() {
         }
       }
     },
-    [currentSong, notifySongSelected, initializeAudioContext, preloadUpcomingSongs],
+    [currentSong, notifySongSelected, initializeAudioContext, preloadUpcomingSongs, isPreloaded, swapToPreloaded, resetGaplessState, applyNormalization],
   )
   
   // Remove syncDelayActive and all related logic
@@ -244,7 +277,7 @@ export default function EnhancedMusicPlayer() {
   }, []);
 
   const togglePlayPause = async () => {
-    if (!audioRef.current || !currentSong) return
+    if (!currentSong) return
 
     if (playPromiseRef.current) {
       try {
@@ -256,30 +289,23 @@ export default function EnhancedMusicPlayer() {
       }
     }
 
-    // Check if audio element is properly initialized
-    if (!audioRef.current.src && currentSong.file) {
-      // Audio element not initialized — set up current song
+    // Check if audio element is properly initialized (e.g. after restore)
+    if (audioRef.current && !audioRef.current.src && currentSong.file) {
+      resetGaplessState() // ensure we're on primary
       const audioUrl = URL.createObjectURL(currentSong.file)
       const updatedSong = { ...currentSong, url: audioUrl }
       setCurrentSong(updatedSong)
       audioRef.current.src = audioUrl
       audioRef.current.load()
-      
       await waitForCanPlay(audioRef.current)
     }
 
     if (isPlaying) {
-      audioRef.current.pause()
-      setIsPlaying(false)
+      pause()
     } else {
       try {
-        if (audioContextRef.current?.state === "suspended") {
-          await audioContextRef.current.resume()
-        }
-        playPromiseRef.current = audioRef.current.play();
-        await playPromiseRef.current
-        setIsPlaying(true)
-
+        initializeAudioContext()
+        await play()
       } catch (error) {
         if ((error as DOMException).name !== "AbortError") {
           console.error("Error playing audio:", error)
@@ -298,6 +324,15 @@ export default function EnhancedMusicPlayer() {
   // Keep skipToNextRef always pointing to the latest skipToNext (bug fix for stale closures)
   // eslint-disable-next-line react-hooks/refs -- intentional: ref updated during render to avoid stale closure in audio ended callback
   skipToNextRef.current = skipToNext
+
+  // Keep nearEndHandlerRef pointing to the latest handler (preloads next song for gapless)
+  nearEndHandlerRef.current = () => {
+    const nextSong = getNextSong()
+    if (nextSong) {
+      pendingPreloadRef.current = nextSong
+      preloadNextSong(nextSong.file)
+    }
+  }
 
   const skipToPrevious = () => {
     const prevSong = getPreviousSong()
@@ -358,6 +393,7 @@ export default function EnhancedMusicPlayer() {
     <div className="min-h-screen max-h-screen overflow-hidden relative">
       <AlbumArtBackground albumArt={currentSong?.albumArt} songId={currentSong?.id} isTransitioning={isTransitioning} />
       <audio ref={audioRef} preload="metadata" className="hidden" />
+      <audio ref={secondaryAudioRef} preload="metadata" className="hidden" />
       {/* Screen reader announcements for song changes */}
       <div aria-live="polite" aria-atomic="true" className="sr-only">
         {currentSong && `Now playing: ${currentSong.title}${currentSong.artist ? ` by ${currentSong.artist}` : ""}`}

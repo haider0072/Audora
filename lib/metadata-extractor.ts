@@ -12,6 +12,8 @@ interface AudioMetadata {
   albumArt?: string
   fileSize?: number
   format?: string
+  loudnessLUFS?: number
+  gainCorrection?: number
 }
 
 export class MetadataExtractor {
