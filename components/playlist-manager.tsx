@@ -192,7 +192,7 @@ export function PlaylistManager({ songCount, songs, onPlaylistReset }: PlaylistM
       )}
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button variant="outline" size="sm" className="h-8 w-8 p-0 bg-transparent">
+          <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
             <EllipsisVertical className="w-4 h-4" />
           </Button>
         </DropdownMenuTrigger>

@@ -13,6 +13,7 @@ import {
   Volume2, VolumeX, Settings, Mic, Youtube, Sparkles, Shuffle,
 } from "lucide-react"
 
+import Image from "next/image"
 import { EnhancedPlaylist, type Song } from "@/components/enhanced-playlist"
 import { RefinedEqualizer, type EqualizerBand } from "@/components/refined-equalizer"
 import { AlbumArtBackground } from "@/components/album-art-background"
@@ -398,9 +399,10 @@ export default function EnhancedMusicPlayer() {
       <div aria-live="polite" aria-atomic="true" className="sr-only">
         {currentSong && `Now playing: ${currentSong.title}${currentSong.artist ? ` by ${currentSong.artist}` : ""}`}
       </div>
-      <div className="container mx-auto p-6 relative z-10">
-        <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center gap-2">
+      <div className="container mx-auto py-6 relative z-10">
+        <div className="flex items-center justify-between mb-6 px-6">
+          <div className="flex items-center gap-3">
+            <Image src="/icon-192x192.png" alt="Audora" width={32} height={32} className="rounded-lg" />
             {isRestoringPlaylist && (
               <Badge variant="secondary">
                 Restoring...
