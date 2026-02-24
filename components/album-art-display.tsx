@@ -10,6 +10,7 @@ interface AlbumArtDisplayProps {
   title?: string
   isTransitioning?: boolean
   className?: string
+  style?: React.CSSProperties
   size?: "small" | "medium" | "large"
   showFallback?: boolean
 }
@@ -20,6 +21,7 @@ export function AlbumArtDisplay({
   title = "Album Art",
   isTransitioning = false,
   className = "",
+  style,
   size = "large",
   showFallback = true,
 }: AlbumArtDisplayProps) {
@@ -176,7 +178,7 @@ export function AlbumArtDisplay({
   }
 
   return (
-    <div className={`relative ${sizeClasses[size]} ${className}`}>
+    <div className={`relative ${sizeClasses[size]} ${className}`} style={style}>
       {/* Background/Fallback */}
       <div
         className={`

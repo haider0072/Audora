@@ -10,7 +10,7 @@ import { toast } from "@/hooks/use-toast"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import {
   Play, Pause, SkipBack, SkipForward,
-  Volume2, VolumeX, Settings, Mic, Youtube, Sparkles, Shuffle,
+  Volume2, VolumeX, Settings, Mic, Youtube, Sparkles, Shuffle, Maximize2,
 } from "lucide-react"
 
 import Image from "next/image"
@@ -30,6 +30,7 @@ import { useMediaControls } from "@/hooks/use-media-controls"
 import { AlbumArtCache } from "@/lib/album-art-cache"
 import { formatTime, waitForCanPlay } from "@/lib/utils"
 import { AddMusicControls } from "@/components/add-music-control"
+import { FullscreenPlayer } from "@/components/fullscreen-player"
 
 const LyricsDisplay = lazy(() =>
   import("@/components/lyrics-display").then(mod => ({ default: mod.LyricsDisplay }))
@@ -48,6 +49,7 @@ export default function EnhancedMusicPlayer() {
   const videoPlayerRef = useRef<{ resetVideo: () => void }>(null);
   const [forceRefreshTrigger, setForceRefreshTrigger] = useState(0);
   const [videoReadyCalled, setVideoReadyCalled] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
   const audioRef = useRef<HTMLAudioElement>(null)
   const secondaryAudioRef = useRef<HTMLAudioElement>(null)
@@ -584,6 +586,9 @@ export default function EnhancedMusicPlayer() {
                         </Button>
                         <Slider value={volume} max={100} step={1} onValueChange={changeVolume} className="w-24 [&_[role=slider]]:h-3.5 [&_[role=slider]]:w-3.5 [&_[role=slider]]:opacity-0 [&_[role=slider]]:transition-all [&_[role=slider]]:duration-200 [&_[role=slider]]:ease-out hover:[&_[role=slider]]:opacity-100 [&>span:first-child]:h-1" aria-label="Volume" />
                       </div>
+                      <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={() => setIsFullscreen(true)} disabled={!currentSong} aria-label="Fullscreen">
+                        <Maximize2 className="w-3.5 h-3.5" />
+                      </Button>
                     </div>
                     {/* Keyboard shortcuts info */}
                     <div className="text-xs text-muted-foreground text-center space-y-1">
@@ -621,6 +626,35 @@ export default function EnhancedMusicPlayer() {
           </div>
         </div>
       </div>
+      <FullscreenPlayer
+        isOpen={isFullscreen}
+        onClose={() => setIsFullscreen(false)}
+        currentSong={currentSong}
+        isPlaying={isPlaying}
+        currentTime={currentTime}
+        duration={duration}
+        volume={volume}
+        isMuted={isMuted}
+        shuffleMode={shuffleMode}
+        isTransitioning={isTransitioning}
+        songs={songs}
+        sortedSongs={sortedSongs}
+        viewMode={viewMode}
+        onViewModeChange={setViewMode}
+        onPlayPause={togglePlayPause}
+        onSkipNext={skipToNext}
+        onSkipPrevious={skipToPrevious}
+        onSeek={handleSeek}
+        onVolumeChange={changeVolume}
+        onToggleMute={toggleMute}
+        onToggleShuffle={toggleShuffle}
+        onSongSelect={(song) => selectSong(song, false)}
+        onSongRemove={removeSong}
+        onShowEqualizer={() => setShowEqualizer(true)}
+        onShowLyrics={() => setActiveView("lyrics")}
+        onShowYoutube={() => setActiveView("youtube")}
+        onShowInsights={() => setActiveView("insights")}
+      />
     </div>
   )
 }
