@@ -167,7 +167,7 @@ export function FullscreenPlayer({
   const hasSourceRect = !!sourceRectRef.current
 
   return (
-    <div className="fixed inset-0 z-50">
+    <div className="fixed inset-0 z-50 bg-black">
       {/* Background - same as normal view, fades in/out */}
       <div className={`absolute inset-0 transition-opacity duration-500 ease-out ${visible ? "opacity-100" : "opacity-0"}`}>
         <AlbumArtBackground
