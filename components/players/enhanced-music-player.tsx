@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback, useMemo, lazy, Suspense } from "react"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent } from "@/components/ui/card"
 import { Slider } from "@/components/ui/slider"
 import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
@@ -468,10 +468,7 @@ export default function EnhancedMusicPlayer() {
             ) : (
               <>
                 <Card className="bg-transparent border-none shadow-none">
-                  <CardHeader>
-                    <CardTitle>Player Controls</CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-6">
+                  <CardContent className="space-y-6 pt-6">
                     
                     {currentSong && (
                       <div className="space-y-6">
