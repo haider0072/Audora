@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useMemo, memo, useRef, useEffect, useCallback } from "react"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
@@ -386,17 +386,6 @@ export function EnhancedPlaylist({
   return (
     <Card className="h-full bg-transparent border-none shadow-none flex flex-col overflow-hidden">
       <CardHeader className="flex-shrink-0 pb-4">
-        <CardTitle className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-2 min-w-0 flex-1">
-            <Music className="w-5 h-5 flex-shrink-0" />
-            <span className="truncate">Playlist ({songs.length} songs)</span>
-          </div>
-          <div className="flex items-center gap-2 text-sm text-muted-foreground flex-shrink-0">
-            <Clock className="w-4 h-4" />
-            <span className="whitespace-nowrap">{formatTime(getTotalDuration())}</span>
-          </div>
-        </CardTitle>
-
         {/* Search and Controls */}
         <div className="space-y-4">
           <div className="relative">
@@ -407,6 +396,15 @@ export function EnhancedPlaylist({
               onChange={(e) => setSearchQuery(e.target.value)}
               className="pl-10"
             />
+          </div>
+
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <span>{songs.length} song{songs.length !== 1 ? "s" : ""}</span>
+              <span>·</span>
+              <Clock className="w-3.5 h-3.5" />
+              <span>{formatTime(getTotalDuration())}</span>
+            </div>
           </div>
 
           <div className="flex items-center justify-between gap-4">

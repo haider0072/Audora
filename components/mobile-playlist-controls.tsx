@@ -53,20 +53,6 @@ export function MobilePlaylistControls({
   return (
     <div className="sticky top-14 z-40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-b">
       <div className="p-4 space-y-3">
-        {/* Header with song count and duration */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Music className="w-4 h-4" />
-            <span className="text-sm font-medium">
-              {songCount} song{songCount !== 1 ? "s" : ""}
-            </span>
-          </div>
-          <div className="flex items-center gap-1 text-xs text-muted-foreground">
-            <Clock className="w-3 h-3" />
-            {totalDuration}
-          </div>
-        </div>
-
         {/* Search Bar */}
         <div className="relative">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
@@ -100,6 +86,14 @@ export function MobilePlaylistControls({
               <List className="w-3 h-3 mr-1" />
               <span className="text-xs">List</span>
             </Button>
+          </div>
+
+          {/* Song count and duration */}
+          <div className="flex items-center gap-1 text-xs text-muted-foreground">
+            <span>{songCount} song{songCount !== 1 ? "s" : ""}</span>
+            <span>·</span>
+            <Clock className="w-3 h-3" />
+            <span>{totalDuration}</span>
           </div>
 
           {/* Right Controls */}
