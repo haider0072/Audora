@@ -147,25 +147,27 @@ export function PlaylistManager({ songCount, songs, onPlaylistReset }: PlaylistM
                   <AlertTriangle className="w-5 h-5 text-destructive" />
                   Reset Playlist
                 </AlertDialogTitle>
-                <AlertDialogDescription className="space-y-3">
-                  <div>
-                    This will permanently remove all songs from your playlist and clear all stored data. This action
-                    cannot be undone.
-                  </div>
-                  <div className="bg-muted p-3 rounded-lg space-y-2">
-                    <div className="font-medium text-sm">What will be cleared:</div>
-                    <ul className="text-sm space-y-1 text-muted-foreground">
-                      <li>• {songCount} songs from playlist</li>
-                      <li>• {formatBytes(storageInfo.used - storageInfo.albumArtSize)} of audio files</li>
-                      <li>
-                        • {storageInfo.albumArtCount} album art images ({formatBytes(storageInfo.albumArtSize)})
-                      </li>
-                      <li>• All song metadata and playback state</li>
-                    </ul>
-                  </div>
-                  <div className="flex items-center gap-2 text-sm text-amber-600 dark:text-amber-400">
-                    <AlertTriangle className="w-4 h-4" />
-                    <span>Your equalizer settings and preferences will be preserved.</span>
+                <AlertDialogDescription asChild>
+                  <div className="text-sm text-muted-foreground space-y-3">
+                    <div>
+                      This will permanently remove all songs from your playlist and clear all stored data. This action
+                      cannot be undone.
+                    </div>
+                    <div className="bg-muted p-3 rounded-lg space-y-2">
+                      <div className="font-medium text-sm">What will be cleared:</div>
+                      <ul className="text-sm space-y-1 text-muted-foreground">
+                        <li>• {songCount} songs from playlist</li>
+                        <li>• {formatBytes(storageInfo.used - storageInfo.albumArtSize)} of audio files</li>
+                        <li>
+                          • {storageInfo.albumArtCount} album art images ({formatBytes(storageInfo.albumArtSize)})
+                        </li>
+                        <li>• All song metadata and playback state</li>
+                      </ul>
+                    </div>
+                    <div className="flex items-center gap-2 text-sm text-amber-600 dark:text-amber-400">
+                      <AlertTriangle className="w-4 h-4" />
+                      <span>Your equalizer settings and preferences will be preserved.</span>
+                    </div>
                   </div>
                 </AlertDialogDescription>
               </AlertDialogHeader>

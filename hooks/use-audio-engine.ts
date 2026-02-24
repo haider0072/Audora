@@ -280,6 +280,11 @@ export function useAudioEngine(options: UseAudioEngineOptions): UseAudioEngineRe
     // Swap active tracking
     activeElementRef.current = activeElementRef.current === "primary" ? "secondary" : "primary"
 
+    // Update duration from the new active audio (loadedmetadata already fired during preload)
+    if (inactiveAudio.duration) {
+      setDuration(inactiveAudio.duration)
+    }
+
     preloadedRef.current = false
     setIsPreloaded(false)
     nearEndFiredRef.current = false
