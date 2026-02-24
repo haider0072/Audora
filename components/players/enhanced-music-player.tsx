@@ -10,7 +10,7 @@ import { toast } from "@/hooks/use-toast"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import {
   Play, Pause, SkipBack, SkipForward,
-  Volume2, VolumeX, Settings, Mic, Youtube, Sparkles,
+  Volume2, VolumeX, Settings, Mic, Youtube, Sparkles, Shuffle,
 } from "lucide-react"
 
 import { EnhancedPlaylist, type Song } from "@/components/enhanced-playlist"
@@ -551,6 +551,14 @@ export default function EnhancedMusicPlayer() {
                       <Button variant="outline" size="icon" onClick={skipToNext} disabled={songs.length === 0} aria-label="Next track">
                         <SkipForward className="w-4 h-4" />
                       </Button>
+                      <Button
+                        variant={shuffleMode ? "default" : "outline"}
+                        size="icon"
+                        onClick={toggleShuffle}
+                        aria-label={shuffleMode ? "Disable shuffle" : "Enable shuffle"}
+                      >
+                        <Shuffle className="w-4 h-4" />
+                      </Button>
                       <Separator orientation="vertical" className="h-8" />
                       <div className="flex items-center gap-2">
                         <Button variant="ghost" size="icon" onClick={toggleMute} aria-label={isMuted ? "Unmute" : "Mute"}>
@@ -622,9 +630,6 @@ export default function EnhancedMusicPlayer() {
               currentSong={currentSong}
               onSongSelect={(song) => selectSong(song, false)}
               onSongRemove={removeSong}
-              onPlaylistReset={resetPlaylist}
-              shuffleMode={shuffleMode}
-              onShuffleToggle={toggleShuffle}
               isLoading={isLoadingSongs || isRestoringPlaylist}
               loadingProgress={loadingProgress}
               viewMode={viewMode}
