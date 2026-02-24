@@ -12,23 +12,8 @@ import {
   Trash2,
   Clock,
   Search,
-  Shuffle,
-  ShuffleIcon as ShuffleOff,
   List,
-  RotateCcw,
-  AlertTriangle,
 } from "lucide-react"
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "@/components/ui/alert-dialog"
 import type { AudioMetadata } from "@/lib/metadata-extractor"
 import { AlbumArtDisplay } from "./album-art-display"
 import { AlphabetSidebar, getArtistLetter } from "./alphabet-sidebar"
@@ -44,9 +29,6 @@ interface EnhancedPlaylistProps {
   currentSong: Song | null
   onSongSelect: (song: Song) => void
   onSongRemove: (songId: string) => void
-  onPlaylistReset: () => void
-  shuffleMode: boolean
-  onShuffleToggle: () => void
   isLoading?: boolean
   loadingProgress?: { current: number; total: number }
   viewMode: "grouped" | "list"
@@ -226,9 +208,6 @@ export function EnhancedPlaylist({
   currentSong,
   onSongSelect,
   onSongRemove,
-  onPlaylistReset,
-  shuffleMode,
-  onShuffleToggle,
   isLoading = false,
   loadingProgress = { current: 0, total: 0 },
   viewMode,
@@ -389,99 +368,44 @@ export function EnhancedPlaylist({
     <Card className="h-full bg-transparent border-none shadow-none flex flex-col overflow-hidden">
       <CardHeader className="flex-shrink-0 pb-4">
         {/* Search and Controls */}
-        <div className="space-y-4">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-            <Input
-              placeholder="Search songs, artists, albums..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10"
-            />
-          </div>
-
-          <div className="flex items-center justify-between gap-4">
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <span>{songs.length} song{songs.length !== 1 ? "s" : ""}</span>
-              <span>·</span>
-              <Clock className="w-3.5 h-3.5" />
-              <span>{formatTime(getTotalDuration())}</span>
+        <div className="space-y-3">
+          <div className="flex items-center gap-2">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <Input
+                placeholder="Search songs, artists, albums..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-10"
+              />
             </div>
-          </div>
-
-          <div className="flex items-center justify-between gap-4">
-            <div className="flex items-center gap-2 flex-wrap">
+            <div className="flex items-center border rounded-md overflow-hidden flex-shrink-0">
               <Button
-                variant={viewMode === "grouped" ? "default" : "outline"}
-                size="sm"
+                variant={viewMode === "grouped" ? "default" : "ghost"}
+                size="icon"
                 onClick={() => onViewModeChange("grouped")}
-                className="whitespace-nowrap"
+                className="h-9 w-9 rounded-none"
+                title="Grouped view"
               >
-                <Music className="w-4 h-4 mr-2" />
-                Grouped
+                <Music className="w-4 h-4" />
               </Button>
               <Button
-                variant={viewMode === "list" ? "default" : "outline"}
-                size="sm"
+                variant={viewMode === "list" ? "default" : "ghost"}
+                size="icon"
                 onClick={() => onViewModeChange("list")}
-                className="whitespace-nowrap"
+                className="h-9 w-9 rounded-none"
+                title="List view (by Artist)"
               >
-                <List className="w-4 h-4 mr-2" />
-                List {viewMode === "list" && <span className="text-xs ml-1 hidden sm:inline">(by Artist)</span>}
+                <List className="w-4 h-4" />
               </Button>
             </div>
+          </div>
 
-            <div className="flex items-center gap-2 flex-wrap">
-              <Button
-                variant={shuffleMode ? "default" : "outline"}
-                size="sm"
-                onClick={onShuffleToggle}
-                className="whitespace-nowrap"
-              >
-                {shuffleMode ? <Shuffle className="w-4 h-4 mr-2" /> : <ShuffleOff className="w-4 h-4 mr-2" />}
-                Shuffle
-              </Button>
-
-              {/* Reset Playlist Button */}
-              {songs.length > 0 && (
-                <AlertDialog>
-                  <AlertDialogTrigger asChild>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="text-destructive hover:text-destructive bg-transparent whitespace-nowrap"
-                    >
-                      <RotateCcw className="w-4 h-4 mr-2" />
-                      Reset
-                    </Button>
-                  </AlertDialogTrigger>
-                  <AlertDialogContent>
-                    <AlertDialogHeader>
-                      <AlertDialogTitle className="flex items-center gap-2">
-                        <AlertTriangle className="w-5 h-5 text-destructive" />
-                        Reset Playlist
-                      </AlertDialogTitle>
-                      <AlertDialogDescription>
-                        This will remove all songs from your playlist and clear the saved playlist data. This action
-                        cannot be undone.
-                        <br />
-                        <br />
-                        <strong>Current playlist:</strong> {songs.length} song{songs.length !== 1 ? "s" : ""}
-                      </AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                      <AlertDialogCancel>Cancel</AlertDialogCancel>
-                      <AlertDialogAction
-                        onClick={onPlaylistReset}
-                        className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                      >
-                        Reset Playlist
-                      </AlertDialogAction>
-                    </AlertDialogFooter>
-                  </AlertDialogContent>
-                </AlertDialog>
-              )}
-            </div>
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <span>{songs.length} song{songs.length !== 1 ? "s" : ""}</span>
+            <span>·</span>
+            <Clock className="w-3.5 h-3.5" />
+            <span>{formatTime(getTotalDuration())}</span>
           </div>
         </div>
       </CardHeader>
