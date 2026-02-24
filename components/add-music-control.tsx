@@ -28,91 +28,57 @@ export function AddMusicControls({
 }
 ) {
     return(
-        <div className="space-y-4">
-                      <div className="flex flex-wrap items-center gap-4">
-                        {/* Add functionality */}
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="outline" className="gap-2" disabled={isLoadingSongs || isRestoringPlaylist}>
-                              <Plus className="w-4 h-4"/>
-                              Add
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="start" className="w-48">
-                            <DropdownMenuItem onClick={()=> fileInputRef.current?.click()} className="gap-2">
-                              <Music className="w-4 h-4"/>
-                              Add Songs
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onClick={()=> folderInputRef.current?.click()} className="gap-2">
-                              <Folder className="w-4 h-4"/>
-                              Add Folder
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                        {/* Sync Folder Button */}
-                        {handleFolderSync && (
-                          <Button
-                            variant="outline"
-                            className="gap-2"
-                            disabled={isLoadingSongs || isRestoringPlaylist || isSyncing}
-                            onClick={() => syncInputRef?.current?.click()}
-                          >
-                            <RefreshCw className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`}/>
-                            {isSyncing ? 'Syncing...' : 'Sync Folder'}
+        <div>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="outline" size="sm" className="h-8 w-8 p-0" disabled={isLoadingSongs || isRestoringPlaylist || isSyncing}>
+                            <Plus className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`}/>
                           </Button>
-                        )}
-                        {/* Uploading File/Folder Functionaility */}
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="w-48">
+                          <DropdownMenuItem onClick={()=> fileInputRef.current?.click()} className="gap-2">
+                            <Music className="w-4 h-4"/>
+                            Add Songs
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={()=> folderInputRef.current?.click()} className="gap-2">
+                            <Folder className="w-4 h-4"/>
+                            Add Folder
+                          </DropdownMenuItem>
+                          {handleFolderSync && (
+                            <DropdownMenuItem onClick={() => syncInputRef?.current?.click()} disabled={isSyncing} className="gap-2">
+                              <RefreshCw className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`}/>
+                              {isSyncing ? 'Syncing...' : 'Sync Folder'}
+                            </DropdownMenuItem>
+                          )}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                      {/* Hidden file inputs */}
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        accept=".flac,.mp3,.wav,.m4a,.aac"
+                        multiple
+                        onChange={handleFileUpload}
+                        className="hidden"
+                      />
+                      <input
+                        ref={folderInputRef}
+                        type="file"
+                        multiple
+                        onChange={handleFolderUpload}
+                        className="hidden"
+                        {...({ webkitdirectory: "" } as any)}
+                      />
+                      {handleFolderSync && (
                         <input
-                          ref={fileInputRef}
-                          type="file"
-                          accept=".flac,.mp3,.wav,.m4a,.aac"
-                          multiple
-                          onChange={handleFileUpload}
-                          className="hidden"
-                        />
-                        <input
-                          ref={folderInputRef}
+                          ref={syncInputRef}
                           type="file"
                           multiple
-                          onChange={handleFolderUpload}
+                          onChange={handleFolderSync}
                           className="hidden"
                           {...({ webkitdirectory: "" } as any)}
                         />
-                        {/* Sync Folder Input */}
-                        {handleFolderSync && (
-                          <input
-                            ref={syncInputRef}
-                            type="file"
-                            multiple
-                            onChange={handleFolderSync}
-                            className="hidden"
-                            {...({ webkitdirectory: "" } as any)}
-                          />
-                        )}
-                      </div>
-                      {/* Upload Progress Handeling */}
-                      {/* {(isLoadingSongs || isRestoringPlaylist) && (
-                        <div className="space-y-2">
-                          <div className="flex items-center justify-between text-sm">
-                            <span>{isRestoringPlaylist ? "Restoring playlist..." : "Processing songs..."}</span>
-                            {!isRestoringPlaylist && (
-                              <span>
-                                {loadingProgress.current} / {loadingProgress.total}
-                              </span>
-                            )}
-                          </div>
-                          <div className="w-full bg-muted rounded-full h-2">
-                            <div
-                              className={`bg-primary h-2 rounded-full transition-all duration-300 ${isRestoringPlaylist ? "animate-pulse" : ""}`}
-                              style={{
-                                width: isRestoringPlaylist
-                                  ? "100%"
-                                  : `${(loadingProgress.current / loadingProgress.total) * 100}%`,
-                              }}
-                            />
-                          </div>
-                        </div>
-                      )} */}
+                      )}
                     </div>
     )
 }
