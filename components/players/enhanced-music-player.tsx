@@ -50,7 +50,9 @@ export default function EnhancedMusicPlayer() {
   const [forceRefreshTrigger, setForceRefreshTrigger] = useState(0);
   const [videoReadyCalled, setVideoReadyCalled] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [albumArtSourceRect, setAlbumArtSourceRect] = useState<DOMRect | null>(null);
 
+  const albumArtRef = useRef<HTMLDivElement>(null)
   const audioRef = useRef<HTMLAudioElement>(null)
   const secondaryAudioRef = useRef<HTMLAudioElement>(null)
   const skipToNextRef = useRef<() => void>(() => {})
@@ -392,6 +394,13 @@ export default function EnhancedMusicPlayer() {
     }
   }, [activeView]);
 
+  const handleOpenFullscreen = useCallback(() => {
+    if (albumArtRef.current) {
+      setAlbumArtSourceRect(albumArtRef.current.getBoundingClientRect())
+    }
+    setIsFullscreen(true)
+  }, [])
+
   return (
     <div className="min-h-screen max-h-screen overflow-hidden relative">
       <AlbumArtBackground albumArt={currentSong?.albumArt} songId={currentSong?.id} isTransitioning={isTransitioning} />
@@ -477,13 +486,15 @@ export default function EnhancedMusicPlayer() {
                     {currentSong && (
                       <div className="space-y-6">
                         <div className="flex gap-6">
-                          <AlbumArtDisplay
-                            songId={currentSong.id}
-                            albumArt={currentSong.albumArt}
-                            title={`${currentSong.title} album art`}
-                            isTransitioning={isTransitioning}
-                            className="shadow-2xl shadow-black/30 flex-shrink-0 w-64 h-64"
-                          />
+                          <div ref={albumArtRef} className="flex-shrink-0">
+                            <AlbumArtDisplay
+                              songId={currentSong.id}
+                              albumArt={currentSong.albumArt}
+                              title={`${currentSong.title} album art`}
+                              isTransitioning={isTransitioning}
+                              className="shadow-2xl shadow-black/30 w-64 h-64"
+                            />
+                          </div>
                           <div
                             className={`flex-1 space-y-3 transition-all duration-500 ease-out ${isTransitioning ? "translate-x-4 opacity-70" : "translate-x-0 opacity-100"}`}
                           >
@@ -586,7 +597,7 @@ export default function EnhancedMusicPlayer() {
                         </Button>
                         <Slider value={volume} max={100} step={1} onValueChange={changeVolume} className="w-24 [&_[role=slider]]:h-3.5 [&_[role=slider]]:w-3.5 [&_[role=slider]]:opacity-0 [&_[role=slider]]:transition-all [&_[role=slider]]:duration-200 [&_[role=slider]]:ease-out hover:[&_[role=slider]]:opacity-100 [&>span:first-child]:h-1" aria-label="Volume" />
                       </div>
-                      <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={() => setIsFullscreen(true)} disabled={!currentSong} aria-label="Fullscreen">
+                      <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={handleOpenFullscreen} disabled={!currentSong} aria-label="Fullscreen">
                         <Maximize2 className="w-3.5 h-3.5" />
                       </Button>
                     </div>
@@ -654,6 +665,7 @@ export default function EnhancedMusicPlayer() {
         onShowLyrics={() => setActiveView("lyrics")}
         onShowYoutube={() => setActiveView("youtube")}
         onShowInsights={() => setActiveView("insights")}
+        albumArtSourceRect={albumArtSourceRect}
       />
     </div>
   )

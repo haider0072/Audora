@@ -8,9 +8,10 @@ interface AlbumArtBackgroundProps {
   albumArt?: string
   songId?: string
   isTransitioning?: boolean
+  positioning?: "fixed" | "absolute"
 }
 
-export function AlbumArtBackground({ albumArt, songId, isTransitioning = false }: AlbumArtBackgroundProps) {
+export function AlbumArtBackground({ albumArt, songId, isTransitioning = false, positioning = "fixed" }: AlbumArtBackgroundProps) {
   const [backgroundImage, setBackgroundImage] = useState<string | null>(null)
   const [dominantColor, setDominantColor] = useState<string>("#1a1a1a")
   const [isMounted, setIsMounted] = useState(false)
@@ -65,19 +66,24 @@ export function AlbumArtBackground({ albumArt, songId, isTransitioning = false }
     veryDarkColor: ColorExtractor.darkenColor(dominantColor, 60),
   }), [dominantColor])
 
+  const pos = positioning
+  const z = positioning === "fixed"
+    ? { bg: "-z-30", color: "-z-20", texture: "-z-10", dark: "-z-10", fallback: "-z-20" }
+    : { bg: "", color: "", texture: "", dark: "", fallback: "" }
+
   if (!isMounted) {
-    return <div className="fixed inset-0 bg-gradient-to-br from-gray-900 via-gray-900/95 to-black -z-20" />
+    return <div className={`${pos} inset-0 bg-gradient-to-br from-gray-900 via-gray-900/95 to-black ${z.fallback}`} />
   }
 
   if (!backgroundImage) {
-    return <div className="fixed inset-0 bg-gradient-to-br from-gray-900 via-gray-900/95 to-black -z-20" />
+    return <div className={`${pos} inset-0 bg-gradient-to-br from-gray-900 via-gray-900/95 to-black ${z.fallback}`} />
   }
 
   return (
     <>
       {/* Background Image with Blur */}
       <div
-        className={`fixed inset-0 -z-30 transition-all duration-1000 ease-out ${
+        className={`${pos} inset-0 ${z.bg} transition-all duration-1000 ease-out ${
           isTransitioning ? "scale-105 opacity-20" : "scale-100 opacity-30"
         }`}
         style={{
@@ -91,18 +97,18 @@ export function AlbumArtBackground({ albumArt, songId, isTransitioning = false }
 
       {/* Color Tinted Overlay */}
       <div
-        className={`fixed inset-0 -z-20 transition-all duration-1000 ease-out ${
+        className={`${pos} inset-0 ${z.color} transition-all duration-1000 ease-out ${
           isTransitioning ? "opacity-70" : "opacity-85"
         }`}
         style={{
           background: `
             radial-gradient(circle at 30% 20%, ${lightColor}15 0%, transparent 50%),
             radial-gradient(circle at 70% 80%, ${dominantColor}20 0%, transparent 50%),
-            linear-gradient(135deg, 
-              ${veryDarkColor}90 0%, 
-              ${darkColor}85 25%, 
-              ${dominantColor}25 50%, 
-              ${darkColor}90 75%, 
+            linear-gradient(135deg,
+              ${veryDarkColor}90 0%,
+              ${darkColor}85 25%,
+              ${dominantColor}25 50%,
+              ${darkColor}90 75%,
               ${veryDarkColor}95 100%
             )
           `,
@@ -111,7 +117,7 @@ export function AlbumArtBackground({ albumArt, songId, isTransitioning = false }
 
       {/* Additional subtle texture overlay */}
       <div
-        className="fixed inset-0 -z-10 opacity-40"
+        className={`${pos} inset-0 ${z.texture} opacity-40`}
         style={{
           background: `
             radial-gradient(circle at 20% 50%, ${dominantColor}10 0%, transparent 30%),
@@ -122,7 +128,7 @@ export function AlbumArtBackground({ albumArt, songId, isTransitioning = false }
       />
 
       {/* Final dark overlay for text readability */}
-      <div className="fixed inset-0 bg-black/20 -z-10" />
+      <div className={`${pos} inset-0 bg-black/20 ${z.dark}`} />
     </>
   )
 }

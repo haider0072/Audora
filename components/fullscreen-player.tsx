@@ -2,16 +2,16 @@
 
 import { Button } from "@/components/ui/button"
 import { Slider } from "@/components/ui/slider"
-import { ScrollArea } from "@/components/ui/scroll-area"
 import {
   Play, Pause, SkipBack, SkipForward,
   Volume2, VolumeX, Settings, Mic, Youtube, Sparkles,
   Shuffle, Minimize2, ListMusic, X,
 } from "lucide-react"
 import { AlbumArtDisplay } from "./album-art-display"
+import { AlbumArtBackground } from "./album-art-background"
 import { EnhancedPlaylist, type Song } from "./enhanced-playlist"
 import { formatTime } from "@/lib/utils"
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useLayoutEffect, useCallback, useRef } from "react"
 
 interface FullscreenPlayerProps {
   isOpen: boolean
@@ -41,6 +41,7 @@ interface FullscreenPlayerProps {
   onShowLyrics: () => void
   onShowYoutube: () => void
   onShowInsights: () => void
+  albumArtSourceRect?: DOMRect | null
 }
 
 export function FullscreenPlayer({
@@ -71,10 +72,21 @@ export function FullscreenPlayer({
   onShowLyrics,
   onShowYoutube,
   onShowInsights,
+  albumArtSourceRect,
 }: FullscreenPlayerProps) {
   const [mounted, setMounted] = useState(false)
   const [visible, setVisible] = useState(false)
   const [showPlaylist, setShowPlaylist] = useState(false)
+
+  // FLIP animation refs
+  const albumArtAnimRef = useRef<HTMLDivElement>(null)
+  const hasAnimatedInRef = useRef(false)
+  const sourceRectRef = useRef<DOMRect | null>(null)
+
+  // Keep source rect ref updated
+  if (albumArtSourceRect) {
+    sourceRectRef.current = albumArtSourceRect
+  }
 
   // Handle mount/unmount animations
   useEffect(() => {
@@ -88,10 +100,53 @@ export function FullscreenPlayer({
       const timer = setTimeout(() => {
         setMounted(false)
         setShowPlaylist(false)
+        hasAnimatedInRef.current = false
       }, 500)
       return () => clearTimeout(timer)
     }
   }, [isOpen])
+
+  // FLIP: Position album art at source rect before first paint
+  useLayoutEffect(() => {
+    if (!mounted || hasAnimatedInRef.current) return
+    const el = albumArtAnimRef.current
+    const srcRect = sourceRectRef.current
+    if (!el || !srcRect) return
+
+    const targetRect = el.getBoundingClientRect()
+    const dx = (srcRect.left + srcRect.width / 2) - (targetRect.left + targetRect.width / 2)
+    const dy = (srcRect.top + srcRect.height / 2) - (targetRect.top + targetRect.height / 2)
+    const scale = srcRect.width / targetRect.width
+
+    el.style.transition = "none"
+    el.style.transform = `translate(${dx}px, ${dy}px) scale(${scale})`
+  }, [mounted])
+
+  // FLIP: Animate album art in when visible, out when closing
+  useEffect(() => {
+    if (!mounted) return
+    const el = albumArtAnimRef.current
+    const srcRect = sourceRectRef.current
+    if (!el || !srcRect) return
+
+    if (visible && !hasAnimatedInRef.current) {
+      // Animate IN: from source position to center
+      hasAnimatedInRef.current = true
+      requestAnimationFrame(() => {
+        el.style.transition = "transform 600ms cubic-bezier(0.25, 0.1, 0.25, 1)"
+        el.style.transform = "none"
+      })
+    } else if (!visible && hasAnimatedInRef.current) {
+      // Animate OUT: from center back to source position
+      const targetRect = el.getBoundingClientRect()
+      const dx = (srcRect.left + srcRect.width / 2) - (targetRect.left + targetRect.width / 2)
+      const dy = (srcRect.top + srcRect.height / 2) - (targetRect.top + targetRect.height / 2)
+      const scale = srcRect.width / targetRect.width
+
+      el.style.transition = "transform 500ms cubic-bezier(0.25, 0.1, 0.25, 1)"
+      el.style.transform = `translate(${dx}px, ${dy}px) scale(${scale})`
+    }
+  }, [mounted, visible])
 
   // Escape key to close
   useEffect(() => {
@@ -109,18 +164,24 @@ export function FullscreenPlayer({
 
   if (!mounted) return null
 
+  const hasSourceRect = !!sourceRectRef.current
+
   return (
-    <div
-      className={`
-        fixed inset-0 z-50 bg-black/95 backdrop-blur-xl
-        transition-opacity duration-500 ease-out
-        ${visible ? "opacity-100" : "opacity-0"}
-      `}
-    >
+    <div className="fixed inset-0 z-50">
+      {/* Background - same as normal view, fades in/out */}
+      <div className={`absolute inset-0 transition-opacity duration-500 ease-out ${visible ? "opacity-100" : "opacity-0"}`}>
+        <AlbumArtBackground
+          albumArt={currentSong?.albumArt}
+          songId={currentSong?.id}
+          isTransitioning={isTransitioning}
+          positioning="absolute"
+        />
+      </div>
+
       {/* Header */}
       <div
         className={`
-          absolute top-0 left-0 right-0 h-14 flex items-center justify-between px-6 z-10
+          absolute top-0 left-0 right-0 h-14 flex items-center justify-between px-6 z-20
           transition-all duration-500 ease-out delay-100
           ${visible ? "translate-y-0 opacity-100" : "-translate-y-full opacity-0"}
         `}
@@ -136,46 +197,70 @@ export function FullscreenPlayer({
       {/* Main content - centered album art */}
       <div
         className={`
-          absolute inset-0 flex items-center justify-center pb-20 pt-14
+          absolute inset-0 flex items-center justify-center pb-20 pt-14 z-10
           transition-all duration-500 ease-out
           ${showPlaylist ? "pr-[380px]" : "pr-0"}
         `}
       >
-        <div
-          className={`
-            transition-all duration-700 ease-out
-            ${visible ? "scale-100 opacity-100" : "scale-75 opacity-0"}
-          `}
-        >
-          {currentSong ? (
-            <div className="flex flex-col items-center gap-6">
-              <AlbumArtDisplay
-                songId={currentSong.id}
-                albumArt={currentSong.albumArt}
-                title={`${currentSong.title} album art`}
-                isTransitioning={isTransitioning}
-                className="w-80 h-80 lg:w-96 lg:h-96"
-                style={{
-                  boxShadow: "0 52px 52px -20px rgba(0,0,0,0.3), 0 4px 20px rgba(0,0,0,0.1)",
-                }}
-              />
-              <div className="text-center space-y-1">
-                <h2 className="text-2xl font-bold text-white truncate max-w-md">{currentSong.title}</h2>
-                {currentSong.album && (
-                  <p className="text-sm text-white/50">{currentSong.album}</p>
-                )}
+        {currentSong ? (
+          <div className="flex flex-col items-center gap-6">
+            {/* Album art - FLIP shared element transition or fallback scale */}
+            {hasSourceRect ? (
+              <div ref={albumArtAnimRef} style={{ willChange: "transform" }}>
+                <AlbumArtDisplay
+                  songId={currentSong.id}
+                  albumArt={currentSong.albumArt}
+                  title={`${currentSong.title} album art`}
+                  isTransitioning={isTransitioning}
+                  className="w-80 h-80 lg:w-96 lg:h-96"
+                  style={{
+                    boxShadow: "0 52px 52px -20px rgba(0,0,0,0.3), 0 4px 20px rgba(0,0,0,0.1)",
+                  }}
+                />
               </div>
+            ) : (
+              <div
+                className={`
+                  transition-all duration-700 ease-out
+                  ${visible ? "scale-100 opacity-100" : "scale-75 opacity-0"}
+                `}
+              >
+                <AlbumArtDisplay
+                  songId={currentSong.id}
+                  albumArt={currentSong.albumArt}
+                  title={`${currentSong.title} album art`}
+                  isTransitioning={isTransitioning}
+                  className="w-80 h-80 lg:w-96 lg:h-96"
+                  style={{
+                    boxShadow: "0 52px 52px -20px rgba(0,0,0,0.3), 0 4px 20px rgba(0,0,0,0.1)",
+                  }}
+                />
+              </div>
+            )}
+            {/* Title and album - fade in with delay */}
+            <div
+              className={`
+                text-center space-y-1 transition-all duration-500 ease-out delay-200
+                ${visible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"}
+              `}
+            >
+              <h2 className="text-2xl font-bold text-white truncate max-w-md">{currentSong.title}</h2>
+              {currentSong.album && (
+                <p className="text-sm text-white/50">{currentSong.album}</p>
+              )}
             </div>
-          ) : (
-            <div className="text-white/30 text-lg">No song playing</div>
-          )}
-        </div>
+          </div>
+        ) : (
+          <div className={`text-white/30 text-lg transition-opacity duration-500 ${visible ? "opacity-100" : "opacity-0"}`}>
+            No song playing
+          </div>
+        )}
       </div>
 
       {/* Playlist sidebar */}
       <div
         className={`
-          absolute top-0 right-0 bottom-[72px] w-[380px] bg-black/60 backdrop-blur-md border-l border-white/10
+          absolute top-0 right-0 bottom-[72px] w-[380px] bg-black/60 backdrop-blur-md border-l border-white/10 z-20
           transition-transform duration-400 ease-out
           ${showPlaylist ? "translate-x-0" : "translate-x-full"}
         `}
@@ -203,7 +288,7 @@ export function FullscreenPlayer({
       <div
         className={`
           absolute bottom-0 left-0 right-0 h-[72px] bg-black/80 backdrop-blur-md border-t border-white/10
-          flex items-center px-4 gap-4
+          flex items-center px-4 gap-4 z-20
           transition-all duration-500 ease-out delay-150
           ${visible ? "translate-y-0 opacity-100" : "translate-y-full opacity-0"}
         `}
