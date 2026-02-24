@@ -95,6 +95,7 @@ export function useAudioEngine(options: UseAudioEngineOptions): UseAudioEngineRe
   const [duration, setDuration] = useState(0)
   const [volume, setVolume] = useState([80])
   const [isMuted, setIsMuted] = useState(false)
+  const volumeBeforeMuteRef = useRef(80)
   const [filterNodes, setFilterNodes] = useState<BiquadFilterNode[]>([])
   const [isPreloaded, setIsPreloaded] = useState(false)
   const filterNodesRef = useRef<BiquadFilterNode[]>([])
@@ -367,15 +368,21 @@ export function useAudioEngine(options: UseAudioEngineOptions): UseAudioEngineRe
    */
   const changeVolume = useCallback((value: number[]) => {
     setVolume(value)
-    // Set volume on both audio elements
+    const vol = value[0]
     if (audioRef.current) {
-      audioRef.current.volume = value[0] / 100
+      audioRef.current.volume = vol / 100
+      audioRef.current.muted = vol === 0
     }
     if (secondaryAudioRef?.current) {
-      secondaryAudioRef.current.volume = value[0] / 100
+      secondaryAudioRef.current.volume = vol / 100
+      secondaryAudioRef.current.muted = vol === 0
     }
     if (gainNodeRef.current) {
-      gainNodeRef.current.gain.value = value[0] / 100
+      gainNodeRef.current.gain.value = vol / 100
+    }
+    setIsMuted(vol === 0)
+    if (vol > 0) {
+      volumeBeforeMuteRef.current = vol
     }
   }, [audioRef, secondaryAudioRef])
 
@@ -401,13 +408,14 @@ export function useAudioEngine(options: UseAudioEngineOptions): UseAudioEngineRe
    * Toggle mute state
    */
   const toggleMute = useCallback(() => {
-    setIsMuted((prev) => {
-      const newMuted = !prev
-      if (audioRef.current) audioRef.current.muted = newMuted
-      if (secondaryAudioRef?.current) secondaryAudioRef.current.muted = newMuted
-      return newMuted
-    })
-  }, [audioRef, secondaryAudioRef])
+    if (isMuted) {
+      const restoreVol = volumeBeforeMuteRef.current || 80
+      changeVolume([restoreVol])
+    } else {
+      volumeBeforeMuteRef.current = volume[0] || 80
+      changeVolume([0])
+    }
+  }, [isMuted, volume, changeVolume])
 
   /**
    * Cleanup AudioContext and audio nodes on unmount only.

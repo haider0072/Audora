@@ -536,72 +536,52 @@ export default function EnhancedMusicPlayer() {
                       </div>
                     )}
                     <div className="flex items-center justify-center gap-4">
-                      <Button variant="outline" size="icon" onClick={skipToPrevious} disabled={songs.length === 0} aria-label="Previous track">
-                        <SkipBack className="w-4 h-4" />
+                      <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={skipToPrevious} disabled={songs.length === 0} aria-label="Previous track">
+                        <SkipBack className="w-3.5 h-3.5" />
                       </Button>
                       <Button
                         onClick={togglePlayPause}
                         size="icon"
-                        className="w-14 h-14 shadow-lg"
+                        className="w-11 h-11 shadow-lg"
                         disabled={!currentSong}
                         aria-label={isPlaying ? "Pause" : "Play"}
                       >
-                        {isPlaying ? <Pause className="w-7 h-7" /> : <Play className="w-7 h-7" />}
+                        {isPlaying ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5" />}
                       </Button>
-                      <Button variant="outline" size="icon" onClick={skipToNext} disabled={songs.length === 0} aria-label="Next track">
-                        <SkipForward className="w-4 h-4" />
+                      <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={skipToNext} disabled={songs.length === 0} aria-label="Next track">
+                        <SkipForward className="w-3.5 h-3.5" />
                       </Button>
                       <Button
-                        variant={shuffleMode ? "default" : "outline"}
-                        size="icon"
+                        variant={shuffleMode ? "default" : "ghost"}
+                        size="sm"
+                        className="h-8 w-8 p-0"
                         onClick={toggleShuffle}
                         aria-label={shuffleMode ? "Disable shuffle" : "Enable shuffle"}
                       >
-                        <Shuffle className="w-4 h-4" />
+                        <Shuffle className="w-3.5 h-3.5" />
                       </Button>
-                      <Separator orientation="vertical" className="h-8" />
-                      <div className="flex items-center gap-2">
-                        <Button variant="ghost" size="icon" onClick={toggleMute} aria-label={isMuted ? "Unmute" : "Mute"}>
-                          {isMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
+                      <div className="flex-1" />
+                      <div className="flex items-center gap-1">
+                        <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={() => setShowEqualizer(true)} aria-label="Equalizer settings">
+                          <Settings className="w-3.5 h-3.5" />
                         </Button>
-                        <Slider value={volume} max={100} step={1} onValueChange={changeVolume} className="w-24" aria-label="Volume" />
+                        <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={() => setActiveView("lyrics")} disabled={!currentSong} aria-label="Show lyrics">
+                          <Mic className="w-3.5 h-3.5" />
+                        </Button>
+                        <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={() => setActiveView("youtube")} disabled={!currentSong} aria-label="Show video">
+                          <Youtube className="w-3.5 h-3.5" />
+                        </Button>
+                        <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={() => setActiveView("insights")} disabled={!currentSong} aria-label="Song insights">
+                          <Sparkles className="w-3.5 h-3.5" />
+                        </Button>
                       </div>
-                      <Separator orientation="vertical" className="h-8" />
-                      <Button
-                        variant={showEqualizer ? "default" : "outline"}
-                        size="icon"
-                        onClick={() => setShowEqualizer(true)}
-                        aria-label="Equalizer settings"
-                      >
-                        <Settings className="w-4 h-4" />
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="icon"
-                        onClick={() => setActiveView("lyrics")}
-                        disabled={!currentSong}
-                        aria-label="Show lyrics"
-                      >
-                        <Mic className="w-4 h-4" />
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="icon"
-                        onClick={() => setActiveView("youtube")}
-                        disabled={!currentSong}
-                        aria-label="Show video"
-                      >
-                        <Youtube className="w-4 h-4" />
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="icon"
-                        onClick={() => setActiveView("insights")}
-                        disabled={!currentSong}
-                        aria-label="Song insights"
-                      >
-                        <Sparkles className="w-4 h-4" />
-                      </Button>
+                      <Separator orientation="vertical" className="h-6" />
+                      <div className="flex items-center gap-2">
+                        <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={toggleMute} aria-label={isMuted ? "Unmute" : "Mute"}>
+                          {isMuted ? <VolumeX className="w-3.5 h-3.5" /> : <Volume2 className="w-3.5 h-3.5" />}
+                        </Button>
+                        <Slider value={volume} max={100} step={1} onValueChange={changeVolume} className="w-24 [&_[role=slider]]:h-3.5 [&_[role=slider]]:w-3.5 [&_[role=slider]]:opacity-0 [&_[role=slider]]:transition-all [&_[role=slider]]:duration-200 [&_[role=slider]]:ease-out hover:[&_[role=slider]]:opacity-100 [&>span:first-child]:h-1" aria-label="Volume" />
+                      </div>
                     </div>
                     {/* Keyboard shortcuts info */}
                     <div className="text-xs text-muted-foreground text-center space-y-1">
