@@ -238,7 +238,7 @@ export class MetadataExtractor {
 
       const frameSize = view.getUint32(offset + 4, false)
       const frameData = new Uint8Array(view.buffer, view.byteOffset + offset + 10, frameSize)
-      const textContent = new TextDecoder("utf-8").decode(frameData.slice(1)) // Skip encoding byte
+      const textContent = this.decodeId3Text(frameData)
 
       switch (frameId) {
         case "TIT2":
@@ -266,6 +266,34 @@ export class MetadataExtractor {
     
   }
   
+
+  private static decodeId3Text(frameData: Uint8Array): string {
+    const encoding = frameData[0]
+    const data = frameData.slice(1)
+
+    switch (encoding) {
+      case 0x01: { // UTF-16 with BOM
+        // Detect byte order from BOM (0xFFFE = LE, 0xFEFF = BE)
+        const isLE = data[0] === 0xFF && data[1] === 0xFE
+        const textData = data.slice(2) // Skip BOM
+        const decoded = new TextDecoder(isLE ? "utf-16le" : "utf-16be").decode(textData)
+        // Remove null terminators
+        return decoded.replace(/\0+$/, "")
+      }
+      case 0x02: { // UTF-16BE without BOM
+        const decoded = new TextDecoder("utf-16be").decode(data)
+        return decoded.replace(/\0+$/, "")
+      }
+      case 0x03: { // UTF-8
+        const decoded = new TextDecoder("utf-8").decode(data)
+        return decoded.replace(/\0+$/, "")
+      }
+      default: { // 0x00 = ISO-8859-1
+        const decoded = new TextDecoder("iso-8859-1").decode(data)
+        return decoded.replace(/\0+$/, "")
+      }
+    }
+  }
 
   private static parseVorbisComment(view: DataView, offset: number, blockSize: number): Partial<AudioMetadata> {
     const metadata: Partial<AudioMetadata> = {}
