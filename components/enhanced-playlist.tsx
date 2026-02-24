@@ -343,9 +343,11 @@ export function EnhancedPlaylist({
   const handleLetterClick = useCallback((letter: string) => {
     const container = scrollAreaRef.current
     if (!container) return
-    const marker = container.querySelector(`[data-letter-marker="${letter}"]`)
+    const viewport = container.querySelector("[data-radix-scroll-area-viewport]") as HTMLElement | null
+    if (!viewport) return
+    const marker = container.querySelector(`[data-letter-marker="${letter}"]`) as HTMLElement | null
     if (marker) {
-      marker.scrollIntoView({ behavior: "smooth", block: "start" })
+      viewport.scrollTo({ top: marker.offsetTop, behavior: "smooth" })
     }
   }, [])
 
@@ -484,7 +486,7 @@ export function EnhancedPlaylist({
         </div>
       </CardHeader>
 
-      <CardContent className="flex-1 overflow-hidden p-0 px-6 pb-6 flex flex-col">
+      <CardContent className="flex-1 overflow-hidden p-0 px-6 flex flex-col">
         {/* Loading State */}
         {isLoading && (
           <div className="mb-4 p-4 bg-muted/50 rounded-lg flex-shrink-0">
@@ -509,7 +511,7 @@ export function EnhancedPlaylist({
         <div className="flex-1 min-h-0 flex">
           <div className="flex-1 min-w-0">
           <ScrollArea className="h-full w-full" ref={scrollAreaRef}>
-          <div className="space-y-2 pr-4 w-full">
+          <div className="space-y-2 pr-4 pb-10 w-full">
             {songs.length === 0 ? (
               <div className="text-center text-muted-foreground py-8">
                 <Music className="w-12 h-12 mx-auto mb-4 opacity-50 " />
