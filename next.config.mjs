@@ -45,7 +45,7 @@ const nextConfig = {
             "style-src 'self' 'unsafe-inline'",
             "img-src 'self' blob: data: https://i.ytimg.com https://*.googleapis.com",
             "font-src 'self'",
-            "connect-src 'self' https://lrclib.net https://www.googleapis.com",
+            "connect-src 'self' blob: https://lrclib.net https://www.googleapis.com",
             "frame-src https://www.youtube.com",
             "media-src 'self' blob:",
             "worker-src 'self' blob:",
