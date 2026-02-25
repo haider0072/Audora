@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useMemo } from "react"
+import { useState, useEffect, useLayoutEffect, useMemo } from "react"
 import { AlbumArtCache } from "@/lib/album-art-cache"
 import { ColorExtractor } from "@/lib/color-extractor"
 
@@ -16,9 +16,21 @@ export function AlbumArtBackground({ albumArt, songId, isTransitioning = false, 
   const [dominantColor, setDominantColor] = useState<string>("#1a1a1a")
   const [isMounted, setIsMounted] = useState(false)
 
-  useEffect(() => {
-    setIsMounted(true) // eslint-disable-line react-hooks/set-state-in-effect -- mount detection pattern
-  }, [])
+  // useLayoutEffect ensures cached image + color are set before browser paint,
+  // eliminating the black/fallback flash when opening fullscreen
+  useLayoutEffect(() => {
+    setIsMounted(true)
+    if (songId && albumArt) {
+      const cachedUrl = AlbumArtCache.getCachedAlbumArt(songId)
+      if (cachedUrl) {
+        setBackgroundImage(cachedUrl)
+        const cachedColor = ColorExtractor.getCachedColor(cachedUrl)
+        if (cachedColor) {
+          setDominantColor(cachedColor)
+        }
+      }
+    }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps -- mount-only init
 
   useEffect(() => {
     if (!isMounted || !songId || !albumArt) {

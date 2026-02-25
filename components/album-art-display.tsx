@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useRef, useCallback } from "react"
+import { useState, useEffect, useLayoutEffect, useRef, useCallback } from "react"
 import { Music } from "lucide-react"
 import { AlbumArtCache } from "@/lib/album-art-cache"
 
@@ -41,10 +41,19 @@ export function AlbumArtDisplay({
     large: "w-48 h-48",
   }
 
-  // Handle client-side mounting
-  useEffect(() => {
+  // Handle client-side mounting — useLayoutEffect ensures state updates
+  // commit before browser paint, so cached images appear instantly (no placeholder flash)
+  useLayoutEffect(() => {
     setIsMounted(true)
-  }, [])
+    if (songId && albumArt) {
+      const cachedUrl = AlbumArtCache.getCachedAlbumArt(songId)
+      if (cachedUrl) {
+        setCurrentImageUrl(cachedUrl)
+        currentSongIdRef.current = songId
+        AlbumArtCache.markAsStable(songId)
+      }
+    }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps -- mount-only init
 
   // Cleanup function to release album art reference
   const cleanupCurrentImage = useCallback(() => {

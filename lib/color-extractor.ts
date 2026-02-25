@@ -1,6 +1,7 @@
 export class ColorExtractor {
   private static canvas: HTMLCanvasElement | null = null
   private static ctx: CanvasRenderingContext2D | null = null
+  private static colorCache = new Map<string, string>()
 
   private static initCanvas() {
     if (!this.canvas && typeof window !== "undefined") {
@@ -9,8 +10,15 @@ export class ColorExtractor {
     }
   }
 
+  static getCachedColor(imageUrl: string): string | null {
+    return this.colorCache.get(imageUrl) ?? null
+  }
+
   static async extractDominantColor(imageUrl: string): Promise<string> {
     if (typeof window === "undefined") return "#1a1a1a" // Default dark color for SSR
+
+    const cached = this.colorCache.get(imageUrl)
+    if (cached) return cached
 
     this.initCanvas()
     if (!this.canvas || !this.ctx) return "#1a1a1a"
@@ -83,6 +91,7 @@ export class ColorExtractor {
 
           // Convert to hex
           const hex = `#${finalR.toString(16).padStart(2, "0")}${finalG.toString(16).padStart(2, "0")}${finalB.toString(16).padStart(2, "0")}`
+          this.colorCache.set(imageUrl, hex)
           resolve(hex)
         } catch (error) {
           console.error("Error extracting color:", error)
