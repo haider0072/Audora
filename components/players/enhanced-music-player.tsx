@@ -10,7 +10,7 @@ import { toast } from "@/hooks/use-toast"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import {
   Play, Pause, SkipBack, SkipForward,
-  Volume2, VolumeX, Settings, Mic, Youtube, Sparkles, Shuffle, Maximize2,
+  Volume2, VolumeX, Settings, Mic, Youtube, Sparkles, Shuffle, Maximize2, User,
 } from "lucide-react"
 
 import Image from "next/image"
@@ -41,11 +41,14 @@ const YouTubeVideoPlayer = lazy(() =>
 const SongInsightsDisplay = lazy(() =>
   import("@/components/song-insights-display").then(mod => ({ default: mod.SongInsightsDisplay }))
 )
+const ArtistInfoDisplay = lazy(() =>
+  import("@/components/artist-info-display").then(mod => ({ default: mod.ArtistInfoDisplay }))
+)
 
 export default function EnhancedMusicPlayer() {
   const [currentBitrate, setCurrentBitrate] = useState<number | undefined>()
   const [isTransitioning, setIsTransitioning] = useState(false)
-  const [activeView, setActiveView] = useState<"player" | "lyrics" | "youtube" | "insights">("player");
+  const [activeView, setActiveView] = useState<"player" | "lyrics" | "youtube" | "insights" | "artist">("player");
   const videoPlayerRef = useRef<{ resetVideo: () => void }>(null);
   const [forceRefreshTrigger, setForceRefreshTrigger] = useState(0);
   const [videoReadyCalled, setVideoReadyCalled] = useState(false);
@@ -478,6 +481,14 @@ export default function EnhancedMusicPlayer() {
                   currentSong={currentSong}
                 />
               </Suspense>
+            ) : activeView === "artist" ? (
+              <Suspense fallback={null}>
+                <ArtistInfoDisplay
+                  isVisible={true}
+                  onClose={() => setActiveView("player")}
+                  currentSong={currentSong}
+                />
+              </Suspense>
             ) : (
               <>
                 <Card className="bg-transparent border-none shadow-none">
@@ -589,6 +600,9 @@ export default function EnhancedMusicPlayer() {
                         <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={() => setActiveView("insights")} disabled={!currentSong} aria-label="Song insights">
                           <Sparkles className="w-3.5 h-3.5" />
                         </Button>
+                        <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={() => setActiveView("artist")} disabled={!currentSong} aria-label="Artist info">
+                          <User className="w-3.5 h-3.5" />
+                        </Button>
                       </div>
                       <Separator orientation="vertical" className="h-6" />
                       <div className="flex items-center gap-2">
@@ -665,6 +679,7 @@ export default function EnhancedMusicPlayer() {
         onShowLyrics={() => setActiveView("lyrics")}
         onShowYoutube={() => setActiveView("youtube")}
         onShowInsights={() => setActiveView("insights")}
+        onShowArtist={() => setActiveView("artist")}
         albumArtSourceRect={albumArtSourceRect}
       />
     </div>

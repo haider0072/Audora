@@ -1,10 +1,20 @@
 interface AudioMetadata {
   title?: string
   artist?: string
-  artists?: string[] // <-- Add this line
+  artists?: string[]
+  albumArtist?: string
   album?: string
   year?: string
   genre?: string
+  composer?: string
+  lyricist?: string
+  trackNumber?: string
+  discNumber?: string
+  copyright?: string
+  label?: string
+  isrc?: string
+  encoder?: string
+  comment?: string
   bitrate?: number
   sampleRate?: number
   duration?: number
@@ -248,6 +258,9 @@ export class MetadataExtractor {
           metadata.artist = textContent
           metadata.artists = textContent.split(/;|,|\//).map(a => a.trim()).filter(Boolean)
           break
+        case "TPE2":
+          metadata.albumArtist = textContent
+          break
         case "TALB":
           metadata.album = textContent
           break
@@ -257,6 +270,30 @@ export class MetadataExtractor {
           break
         case "TCON":
           metadata.genre = textContent
+          break
+        case "TCOM":
+          metadata.composer = textContent
+          break
+        case "TEXT":
+          metadata.lyricist = textContent
+          break
+        case "TRCK":
+          metadata.trackNumber = textContent
+          break
+        case "TPOS":
+          metadata.discNumber = textContent
+          break
+        case "TCOP":
+          metadata.copyright = textContent
+          break
+        case "TPUB":
+          metadata.label = textContent
+          break
+        case "TSRC":
+          metadata.isrc = textContent
+          break
+        case "TENC":
+          metadata.encoder = textContent
           break
       }
 
@@ -327,6 +364,10 @@ export class MetadataExtractor {
             if (!metadata.artists) metadata.artists = [];
             metadata.artists.push(...value.split(/;|,|\//).map(a => a.trim()).filter(Boolean))
             break
+          case "ALBUMARTIST":
+          case "ALBUM ARTIST":
+            metadata.albumArtist = value
+            break
           case "ALBUM":
             metadata.album = value
             break
@@ -335,6 +376,36 @@ export class MetadataExtractor {
             break
           case "GENRE":
             metadata.genre = value
+            break
+          case "COMPOSER":
+            metadata.composer = value
+            break
+          case "LYRICIST":
+          case "WRITER":
+            metadata.lyricist = value
+            break
+          case "TRACKNUMBER":
+            metadata.trackNumber = value
+            break
+          case "DISCNUMBER":
+            metadata.discNumber = value
+            break
+          case "COPYRIGHT":
+            metadata.copyright = value
+            break
+          case "LABEL":
+          case "ORGANIZATION":
+            metadata.label = value
+            break
+          case "ISRC":
+            metadata.isrc = value
+            break
+          case "ENCODER":
+            metadata.encoder = value
+            break
+          case "COMMENT":
+          case "DESCRIPTION":
+            metadata.comment = value
             break
         }
 

@@ -5,7 +5,7 @@ import { Slider } from "@/components/ui/slider"
 import {
   Play, Pause, SkipBack, SkipForward,
   Volume2, VolumeX, Settings, Mic, Youtube, Sparkles,
-  Shuffle, Minimize2, ListMusic, X,
+  Shuffle, Minimize2, ListMusic, X, User,
 } from "lucide-react"
 import { AlbumArtDisplay } from "./album-art-display"
 import { AlbumArtBackground } from "./album-art-background"
@@ -41,6 +41,7 @@ interface FullscreenPlayerProps {
   onShowLyrics: () => void
   onShowYoutube: () => void
   onShowInsights: () => void
+  onShowArtist: () => void
   albumArtSourceRect?: DOMRect | null
 }
 
@@ -72,6 +73,7 @@ export function FullscreenPlayer({
   onShowLyrics,
   onShowYoutube,
   onShowInsights,
+  onShowArtist,
   albumArtSourceRect,
 }: FullscreenPlayerProps) {
   const [mounted, setMounted] = useState(false)
@@ -360,6 +362,9 @@ export function FullscreenPlayer({
           </Button>
           <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-white/50 hover:text-white" onClick={() => { onClose(); onShowInsights(); }}>
             <Sparkles className="w-3.5 h-3.5" />
+          </Button>
+          <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-white/50 hover:text-white" onClick={() => { onClose(); onShowArtist(); }}>
+            <User className="w-3.5 h-3.5" />
           </Button>
           <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-white/50 hover:text-white" onClick={() => { onClose(); onShowEqualizer(); }}>
             <Settings className="w-3.5 h-3.5" />
