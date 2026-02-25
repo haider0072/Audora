@@ -168,8 +168,8 @@ export function FullscreenPlayer({
 
   return (
     <div className="fixed inset-0 z-50 bg-black">
-      {/* Background - same as normal view, fades in/out */}
-      <div className={`absolute inset-0 transition-opacity duration-500 ease-out ${visible ? "opacity-100" : "opacity-0"}`}>
+      {/* Background - instant on open, fades out on close */}
+      <div className={`absolute inset-0 ${!isOpen && mounted ? "transition-opacity duration-500 ease-out opacity-0" : ""}`}>
         <AlbumArtBackground
           albumArt={currentSong?.albumArt}
           songId={currentSong?.id}
