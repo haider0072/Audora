@@ -35,36 +35,9 @@ export class MetadataExtractor {
     }
 
     try {
-      // Create audio element to get basic metadata
-      const audio = new Audio()
-      const url = URL.createObjectURL(file)
-      audio.src = url
-
-      await new Promise<void>((resolve, reject) => {
-        audio.addEventListener("loadedmetadata", () => resolve())
-        audio.addEventListener("error", () => reject(new Error("Failed to load audio")))
-      })
-
-      metadata.duration = audio.duration
-      metadata.sampleRate = 44100 // Default, will be updated with Web Audio API
-
-      // Estimate bitrate from file size and duration
-      if (metadata.duration && metadata.fileSize) {
-        const estimatedBitrate = (metadata.fileSize * 8) / (metadata.duration * 1000) // kbps
-        metadata.bitrate = Math.round(estimatedBitrate)
-
-        // Determine if Hi-Res based on bitrate and file format
-        metadata.isHiRes =
-          estimatedBitrate > 1000 ||
-          file.name.toLowerCase().includes("24bit") ||
-          file.name.toLowerCase().includes("96khz") ||
-          file.name.toLowerCase().includes("192khz") ||
-          (file.name.toLowerCase().includes("flac") && estimatedBitrate > 800)
-      }
-
-      URL.revokeObjectURL(url)
-
       // Read only the metadata portion of the file instead of the entire file.
+      // Duration is extracted from binary headers (FLAC streaminfo, MP3 frame, WAV RIFF)
+      // instead of using new Audio() which gets throttled in background tabs.
       // MP3: ID3v2 tag size is in the header (bytes 6-9).
       // FLAC: scan block headers (4 bytes each) to compute exact metadata section end.
       let metadataSize: number
@@ -100,6 +73,23 @@ export class MetadataExtractor {
 
       // Merge metadata, keeping filename fallbacks for missing values
       const finalMetadata = { ...metadata, ...additionalMetadata }
+
+      // Extract duration from binary headers (no Audio element needed)
+      if (!finalMetadata.duration) {
+        finalMetadata.duration = await this.extractDurationFromBinary(file, headerView)
+      }
+
+      // Compute bitrate and Hi-Res from duration
+      if (finalMetadata.duration && finalMetadata.fileSize) {
+        const estimatedBitrate = (finalMetadata.fileSize * 8) / (finalMetadata.duration * 1000)
+        finalMetadata.bitrate = Math.round(estimatedBitrate)
+        finalMetadata.isHiRes =
+          estimatedBitrate > 1000 ||
+          file.name.toLowerCase().includes("24bit") ||
+          file.name.toLowerCase().includes("96khz") ||
+          file.name.toLowerCase().includes("192khz") ||
+          (file.name.toLowerCase().includes("flac") && estimatedBitrate > 800)
+      }
 
       // Ensure we have title and artist, use filename as fallback
       if (!finalMetadata.title || finalMetadata.title.trim() === "") {
@@ -496,6 +486,157 @@ export class MetadataExtractor {
     }
     
     return undefined
+  }
+
+  /**
+   * Extract duration from binary file headers without using Audio element.
+   * Works in background tabs without throttling.
+   */
+  private static async extractDurationFromBinary(file: File, headerView: DataView): Promise<number | undefined> {
+    try {
+      const ext = file.name.split(".").pop()?.toLowerCase() || ""
+
+      if (ext === "flac" || this.isFlacHeader(headerView)) {
+        return this.getFlacDuration(file)
+      } else if (ext === "wav") {
+        return this.getWavDuration(file)
+      } else if (ext === "mp3" || this.isMp3Header(headerView)) {
+        return this.getMp3Duration(file)
+      }
+    } catch (error) {
+      console.error("Binary duration extraction failed:", error)
+    }
+    return undefined
+  }
+
+  private static isFlacHeader(view: DataView): boolean {
+    return view.byteLength >= 4 &&
+      view.getUint8(0) === 0x66 && view.getUint8(1) === 0x4C &&
+      view.getUint8(2) === 0x61 && view.getUint8(3) === 0x43
+  }
+
+  private static isMp3Header(view: DataView): boolean {
+    return (view.getUint8(0) === 0x49 && view.getUint8(1) === 0x44 && view.getUint8(2) === 0x33) ||
+      (view.getUint8(0) === 0xff && (view.getUint8(1) & 0xe0) === 0xe0)
+  }
+
+  /**
+   * FLAC: Duration from STREAMINFO block (always first metadata block).
+   * Layout: 4 bytes "fLaC" + 4 byte block header + 34 byte STREAMINFO
+   *   Offset 18 (from file start): 20-bit sample rate, 3-bit channels, 5-bit bps, 36-bit total samples
+   */
+  private static async getFlacDuration(file: File): Promise<number | undefined> {
+    const buf = await file.slice(0, 42).arrayBuffer()
+    const view = new DataView(buf)
+
+    // Verify STREAMINFO block type (first block must be type 0)
+    const blockType = view.getUint8(4) & 0x7f
+    if (blockType !== 0) return undefined
+
+    // Sample rate: 20 bits starting at byte 18
+    const sampleRate =
+      (view.getUint8(18) << 12) |
+      (view.getUint8(19) << 4) |
+      (view.getUint8(20) >> 4)
+    if (sampleRate === 0) return undefined
+
+    // Total samples: 36 bits starting at bit 164 (byte 21 lower 4 bits + bytes 22-25)
+    const totalSamplesHigh = view.getUint8(21) & 0x0f
+    const totalSamplesLow = view.getUint32(22, false)
+    const totalSamples = totalSamplesHigh * 0x100000000 + totalSamplesLow
+    if (totalSamples === 0) return undefined
+
+    return totalSamples / sampleRate
+  }
+
+  /**
+   * WAV: Duration from RIFF header.
+   * data_size / (sample_rate * channels * bits_per_sample / 8)
+   */
+  private static async getWavDuration(file: File): Promise<number | undefined> {
+    const buf = await file.slice(0, 44).arrayBuffer()
+    const view = new DataView(buf)
+
+    // Verify RIFF header
+    const riff = String.fromCharCode(view.getUint8(0), view.getUint8(1), view.getUint8(2), view.getUint8(3))
+    if (riff !== "RIFF") return undefined
+
+    const channels = view.getUint16(22, true)
+    const sampleRate = view.getUint32(24, true)
+    const bitsPerSample = view.getUint16(34, true)
+    if (sampleRate === 0 || channels === 0 || bitsPerSample === 0) return undefined
+
+    const byteRate = sampleRate * channels * (bitsPerSample / 8)
+    // Data chunk size: search for "data" chunk
+    let offset = 36
+    const maxScan = Math.min(file.size, 1024)
+    const scanBuf = await file.slice(0, maxScan).arrayBuffer()
+    const scanView = new DataView(scanBuf)
+
+    while (offset < maxScan - 8) {
+      const chunkId = String.fromCharCode(
+        scanView.getUint8(offset), scanView.getUint8(offset + 1),
+        scanView.getUint8(offset + 2), scanView.getUint8(offset + 3)
+      )
+      const chunkSize = scanView.getUint32(offset + 4, true)
+      if (chunkId === "data") {
+        return chunkSize / byteRate
+      }
+      offset += 8 + chunkSize
+    }
+
+    // Fallback: estimate from file size minus header
+    return (file.size - 44) / byteRate
+  }
+
+  /**
+   * MP3: Estimate duration from file size and first frame bitrate.
+   * Parses first valid MPEG frame header after ID3v2 tag.
+   */
+  private static async getMp3Duration(file: File): Promise<number | undefined> {
+    // Find first frame after ID3v2 tag
+    let frameOffset = 0
+    const header = await file.slice(0, 10).arrayBuffer()
+    const hv = new DataView(header)
+
+    if (hv.getUint8(0) === 0x49 && hv.getUint8(1) === 0x44 && hv.getUint8(2) === 0x33) {
+      frameOffset = 10 + this.getId3Size(hv, 6)
+    }
+
+    // Read first frame header (4 bytes)
+    const frameBuf = await file.slice(frameOffset, frameOffset + 4).arrayBuffer()
+    const fv = new DataView(frameBuf)
+
+    // Verify frame sync (11 bits set)
+    if (fv.getUint8(0) !== 0xff || (fv.getUint8(1) & 0xe0) !== 0xe0) return undefined
+
+    const mpegVersion = (fv.getUint8(1) >> 3) & 0x03 // 0=2.5, 2=2, 3=1
+    const layer = (fv.getUint8(1) >> 1) & 0x03 // 1=III, 2=II, 3=I
+    const bitrateIndex = (fv.getUint8(2) >> 4) & 0x0f
+    const sampleRateIndex = (fv.getUint8(2) >> 2) & 0x03
+
+    // Bitrate lookup table (MPEG1 Layer III)
+    const bitrates: Record<string, number[]> = {
+      "3_1": [0, 32, 64, 96, 128, 160, 192, 224, 256, 288, 320, 352, 384, 416, 448, 0], // V1 L3
+      "3_2": [0, 32, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320, 384, 0],
+      "3_3": [0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320, 0],
+      "2_1": [0, 32, 48, 56, 64, 80, 96, 112, 128, 144, 160, 176, 192, 224, 256, 0],
+    }
+    const sampleRates: Record<number, number[]> = {
+      3: [44100, 48000, 32000],
+      2: [22050, 24000, 16000],
+      0: [11025, 12000, 8000],
+    }
+
+    const key = `${mpegVersion}_${layer}`
+    const bitrateTable = bitrates[key] || bitrates["3_1"]
+    const bitrate = bitrateTable[bitrateIndex]
+    const sampleRate = sampleRates[mpegVersion]?.[sampleRateIndex]
+
+    if (!bitrate || !sampleRate) return undefined
+
+    // Duration = file_size_bits / bitrate_bps
+    return (file.size * 8) / (bitrate * 1000)
   }
 }
 

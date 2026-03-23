@@ -4,6 +4,7 @@ import { useState, useRef, useEffect, useCallback, useMemo } from "react"
 import { toast } from "@/hooks/use-toast"
 
 import { AlbumArtCache } from "@/lib/album-art-cache"
+import { LoudnessAnalyzer } from "@/lib/loudness-analyzer"
 import { useAlbumArtPreloader } from "@/hooks/use-album-art-preloader"
 import { usePlaylistManager } from "@/hooks/use-playlist-manager"
 import { useAudioEngine } from "@/hooks/use-audio-engine"
@@ -233,6 +234,20 @@ export default function MobileMusicPlayer() {
     }
 
     pendingPreloadRef.current = null
+
+    // Lazy loudness analysis — runs in background on first play
+    if (song.loudnessLUFS == null && song.file) {
+      LoudnessAnalyzer.analyze(song.file).then((loudness) => {
+        setSongs((prev) =>
+          prev.map((s) =>
+            s.id === song.id
+              ? { ...s, loudnessLUFS: loudness.lufs, gainCorrection: loudness.gainCorrection }
+              : s
+          )
+        )
+        applyNormalization(loudness.gainCorrection)
+      }).catch(() => { /* non-critical */ })
+    }
 
     // Reset gapless state so we load into primary audio element
     resetGaplessState()

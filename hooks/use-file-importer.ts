@@ -1,7 +1,6 @@
 import { useState, useRef, useCallback } from "react"
 import { toast } from "@/hooks/use-toast"
 import { MetadataExtractor } from "@/lib/metadata-extractor"
-import { LoudnessAnalyzer } from "@/lib/loudness-analyzer"
 import { PlaylistStorage } from "@/lib/playlist-storage"
 import { AlbumArtCache } from "@/lib/album-art-cache"
 import type { Song } from "@/components/enhanced-playlist"
@@ -100,15 +99,10 @@ export function useFileImporter(options: UseFileImporterOptions): UseFileImporte
           }
 
           try {
-            // Extract metadata and analyze loudness
+            // Extract metadata (pure binary — no Audio element, works in background tabs)
             const metadata = await MetadataExtractor.extractMetadata(file)
-            try {
-              const loudness = await LoudnessAnalyzer.analyze(file)
-              metadata.loudnessLUFS = loudness.lufs
-              metadata.gainCorrection = loudness.gainCorrection
-            } catch {
-              // Loudness analysis is non-critical — continue without it
-            }
+            // Loudness analysis deferred to first playback (uses OfflineAudioContext
+            // which gets throttled in background tabs, blocking import)
             const song: Song = { ...metadata, id: songId, file, url: "" }
 
             // Store in IndexedDB
