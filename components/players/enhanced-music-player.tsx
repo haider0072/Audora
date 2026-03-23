@@ -27,6 +27,8 @@ import { useEqualizerManager, DEFAULT_EQUALIZER_BANDS } from "@/hooks/use-equali
 import { useFileImporter } from "@/hooks/use-file-importer"
 import { usePlaylistPersistence, useAutoSave } from "@/hooks/use-playlist-persistence"
 import { useMediaControls } from "@/hooks/use-media-controls"
+import { useDabSearch } from "@/hooks/use-dab-search"
+import { OnlineSearchSidebar } from "@/components/dab/online-search-sidebar"
 import { AlbumArtCache } from "@/lib/album-art-cache"
 import { formatTime, waitForCanPlay } from "@/lib/utils"
 import { AddMusicControls } from "@/components/add-music-control"
@@ -54,6 +56,7 @@ export default function EnhancedMusicPlayer() {
   const [videoReadyCalled, setVideoReadyCalled] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [albumArtSourceRect, setAlbumArtSourceRect] = useState<DOMRect | null>(null);
+  const [sidebarMode, setSidebarMode] = useState<"library" | "online">("library");
 
   const albumArtRef = useRef<HTMLDivElement>(null)
   const audioRef = useRef<HTMLAudioElement>(null)
@@ -381,6 +384,14 @@ export default function EnhancedMusicPlayer() {
     enableExtendedShortcuts: true,
   })
 
+  // DAB Music online search & download
+  const dabSearch = useDabSearch({
+    songs,
+    onSongDownloaded: (newSong) => {
+      setSongs((prev) => [...prev, newSong])
+    },
+  })
+
   // Cleanup Object URLs and caches on unmount
   useEffect(() => {
     return () => {
@@ -647,6 +658,10 @@ export default function EnhancedMusicPlayer() {
               viewMode={viewMode}
               onViewModeChange={setViewMode}
               sortedSongs={sortedSongs}
+              sidebarMode={sidebarMode}
+              onSidebarModeChange={setSidebarMode}
+              activeDownloadCount={dabSearch.activeDownloadCount}
+              onlineSearchContent={<OnlineSearchSidebar dab={dabSearch} />}
             />
           </div>
         </div>

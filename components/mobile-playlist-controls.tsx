@@ -15,6 +15,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
   Search,
   Shuffle,
@@ -25,6 +26,8 @@ import {
   RotateCcw,
   AlertTriangle,
   Clock,
+  Library,
+  Globe,
 } from "lucide-react"
 
 interface MobilePlaylistControlsProps {
@@ -37,6 +40,9 @@ interface MobilePlaylistControlsProps {
   onPlaylistReset: () => void
   songCount: number
   totalDuration: string
+  sidebarMode?: "library" | "online"
+  onSidebarModeChange?: (mode: "library" | "online") => void
+  activeDownloadCount?: number
 }
 
 export function MobilePlaylistControls({
@@ -49,10 +55,37 @@ export function MobilePlaylistControls({
   onPlaylistReset,
   songCount,
   totalDuration,
+  sidebarMode = "library",
+  onSidebarModeChange,
+  activeDownloadCount = 0,
 }: MobilePlaylistControlsProps) {
   return (
     <div className="sticky top-14 z-40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-b">
       <div className="p-4 space-y-3">
+        {/* Sidebar Mode Tabs */}
+        {onSidebarModeChange && (
+          <Tabs value={sidebarMode} onValueChange={(v) => onSidebarModeChange(v as "library" | "online")}>
+            <TabsList className="w-full h-9">
+              <TabsTrigger value="library" className="flex-1 gap-1.5 text-xs">
+                <Library className="h-3.5 w-3.5" />
+                My Library
+              </TabsTrigger>
+              <TabsTrigger value="online" className="flex-1 gap-1.5 text-xs relative">
+                <Globe className="h-3.5 w-3.5" />
+                Search Online
+                {activeDownloadCount > 0 && (
+                  <span className="absolute -top-1 -right-1 h-4 min-w-[16px] px-1 text-[10px] font-bold bg-blue-500 text-white rounded-full flex items-center justify-center">
+                    {activeDownloadCount}
+                  </span>
+                )}
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
+        )}
+
+        {/* Library mode controls */}
+        {sidebarMode === "library" && (
+        <>
         {/* Search Bar */}
         <div className="relative">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
@@ -162,6 +195,8 @@ export function MobilePlaylistControls({
               Shuffle Mode
             </Badge>
           </div>
+        )}
+        </>
         )}
       </div>
     </div>

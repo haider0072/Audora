@@ -17,6 +17,14 @@ const envSchema = z.object({
   OPENROUTER_API_KEY: z.string().min(1, 'OpenRouter API key is required').optional(),
   OPENROUTER_MODEL: z.string().optional(),
 
+  // Spotify API Configuration
+  SPOTIFY_CLIENT_ID: z.string().min(1, 'Spotify Client ID is required').optional(),
+  SPOTIFY_CLIENT_SECRET: z.string().min(1, 'Spotify Client Secret is required').optional(),
+
+  // DAB Music API Configuration (Online Search & Download)
+  DAB_EMAIL: z.string().email('DAB email must be valid').optional(),
+  DAB_PASSWORD: z.string().min(1, 'DAB password is required').optional(),
+
   // Node Environment
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
 })
@@ -40,6 +48,10 @@ export function validateEnv(): EnvValidationResult {
     YOUTUBE_API_KEY: process.env.YOUTUBE_API_KEY,
     OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY,
     OPENROUTER_MODEL: process.env.OPENROUTER_MODEL,
+    SPOTIFY_CLIENT_ID: process.env.SPOTIFY_CLIENT_ID,
+    SPOTIFY_CLIENT_SECRET: process.env.SPOTIFY_CLIENT_SECRET,
+    DAB_EMAIL: process.env.DAB_EMAIL,
+    DAB_PASSWORD: process.env.DAB_PASSWORD,
     NODE_ENV: process.env.NODE_ENV as 'development' | 'production' | 'test' | undefined,
   }
 
@@ -53,6 +65,10 @@ export function validateEnv(): EnvValidationResult {
 
   if (!env.OPENROUTER_API_KEY) {
     warnings.push('OpenRouter API key not configured - AI insights will be disabled')
+  }
+
+  if (!env.DAB_EMAIL || !env.DAB_PASSWORD) {
+    warnings.push('DAB Music credentials not configured - online search & download will require manual login')
   }
 
   if (!result.success) {
@@ -92,7 +108,7 @@ export function getEnv(): Env {
 /**
  * Checks if a specific feature is configured
  */
-export function isFeatureEnabled(feature: 'youtube' | 'ai-insights'): boolean {
+export function isFeatureEnabled(feature: 'youtube' | 'ai-insights' | 'dab-music'): boolean {
   const env = getEnv()
 
   switch (feature) {
@@ -105,6 +121,13 @@ export function isFeatureEnabled(feature: 'youtube' | 'ai-insights'): boolean {
       return !!(
         env.OPENROUTER_API_KEY &&
         env.OPENROUTER_API_KEY.length > 0
+      )
+    case 'dab-music':
+      return !!(
+        env.DAB_EMAIL &&
+        env.DAB_EMAIL.length > 0 &&
+        env.DAB_PASSWORD &&
+        env.DAB_PASSWORD.length > 0
       )
     default:
       return false

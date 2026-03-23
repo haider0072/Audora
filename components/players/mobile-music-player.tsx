@@ -11,6 +11,7 @@ import { useEqualizerManager, DEFAULT_EQUALIZER_BANDS } from "@/hooks/use-equali
 import { useFileImporter } from "@/hooks/use-file-importer"
 import { usePlaylistPersistence, useAutoSave } from "@/hooks/use-playlist-persistence"
 import { useMediaControls } from "@/hooks/use-media-controls"
+import { useDabSearch } from "@/hooks/use-dab-search"
 import type { Song } from "@/components/enhanced-playlist"
 
 import { MobileHeader } from "@/components/mobile-header"
@@ -23,6 +24,7 @@ import { AlbumArtBackground } from "@/components/album-art-background"
 import { MobileYouTubeVideoPlayer } from "@/components/mobile-youtube-video-player"
 import { MobileSongInsights } from "@/components/mobile-song-insights"
 import { MobileArtistInfo } from "@/components/mobile-artist-info"
+import { OnlineSearchSidebar } from "@/components/dab/online-search-sidebar"
 
 import type { EqualizerBand } from "@/components/refined-equalizer"
 import { formatTime, waitForCanPlay } from "@/lib/utils"
@@ -30,6 +32,7 @@ import { formatTime, waitForCanPlay } from "@/lib/utils"
 export default function MobileMusicPlayer() {
   const [searchQuery, setSearchQuery] = useState("")
   const [isTransitioning, setIsTransitioning] = useState(false)
+  const [sidebarMode, setSidebarMode] = useState<"library" | "online">("library")
 
   const audioRef = useRef<HTMLAudioElement>(null)
   const secondaryAudioRef = useRef<HTMLAudioElement>(null)
@@ -370,6 +373,14 @@ export default function MobileMusicPlayer() {
   })
 
 
+  // DAB Music online search & download
+  const dabSearch = useDabSearch({
+    songs,
+    onSongDownloaded: (newSong) => {
+      setSongs((prev) => [...prev, newSong])
+    },
+  })
+
   // Cleanup URLs on unmount
   useEffect(() => {
     return () => {
@@ -429,20 +440,29 @@ export default function MobileMusicPlayer() {
           onPlaylistReset={resetPlaylist}
           songCount={songs.length}
           totalDuration={formatTime(totalDuration)}
+          sidebarMode={sidebarMode}
+          onSidebarModeChange={setSidebarMode}
+          activeDownloadCount={dabSearch.activeDownloadCount}
         />
 
-        {/* Playlist */}
-        <MobilePlaylist
-          songs={songs}
-          filteredSongs={filteredSongs}
-          groupedSongs={groupedSongs}
-          currentSong={currentSong}
-          viewMode={viewMode}
-          onSongSelect={(song) => selectSong(song, false)}
-          onSongRemove={removeSong}
-          isLoading={isLoadingSongs || isRestoringPlaylist}
-          loadingProgress={loadingProgress}
-        />
+        {/* Playlist or Online Search */}
+        {sidebarMode === "online" ? (
+          <div className="flex-1 overflow-hidden px-4 py-2">
+            <OnlineSearchSidebar dab={dabSearch} />
+          </div>
+        ) : (
+          <MobilePlaylist
+            songs={songs}
+            filteredSongs={filteredSongs}
+            groupedSongs={groupedSongs}
+            currentSong={currentSong}
+            viewMode={viewMode}
+            onSongSelect={(song) => selectSong(song, false)}
+            onSongRemove={removeSong}
+            isLoading={isLoadingSongs || isRestoringPlaylist}
+            loadingProgress={loadingProgress}
+          />
+        )}
 
         {/* Player Bar */}
         <MobilePlayerBar
