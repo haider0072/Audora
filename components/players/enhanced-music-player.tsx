@@ -30,6 +30,7 @@ import { useMediaControls } from "@/hooks/use-media-controls"
 import { useDabSearch } from "@/hooks/use-dab-search"
 import { OnlineSearchSidebar } from "@/components/dab/online-search-sidebar"
 import { AlbumArtCache } from "@/lib/album-art-cache"
+import { LoudnessAnalyzer } from "@/lib/loudness-analyzer"
 import { formatTime, waitForCanPlay } from "@/lib/utils"
 import { AddMusicControls } from "@/components/add-music-control"
 import { FullscreenPlayer } from "@/components/fullscreen-player"
@@ -229,6 +230,21 @@ export default function EnhancedMusicPlayer() {
       }
 
       pendingPreloadRef.current = null
+
+      // Lazy loudness analysis — runs in background on first play (deferred from import
+      // to avoid OfflineAudioContext throttling when tab is in background)
+      if (song.loudnessLUFS == null && song.file) {
+        LoudnessAnalyzer.analyze(song.file).then((loudness) => {
+          setSongs((prev) =>
+            prev.map((s) =>
+              s.id === song.id
+                ? { ...s, loudnessLUFS: loudness.lufs, gainCorrection: loudness.gainCorrection }
+                : s
+            )
+          )
+          applyNormalization(loudness.gainCorrection)
+        }).catch(() => { /* non-critical */ })
+      }
 
       // Reset gapless state so we load into primary audio element
       resetGaplessState()

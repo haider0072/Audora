@@ -83,7 +83,7 @@ export async function GET(request: NextRequest) {
           { status: 200 }
         )
       }
-      res = await dabFetch(`/search?${params}`, session)
+      res = await dabFetch(`/search?${params}`)
     }
 
     if (!res.ok) {
