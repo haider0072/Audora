@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback } from "react"
+import { useCallback, useState } from "react"
 import { Search, WifiOff, Loader2 } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
@@ -17,6 +17,8 @@ interface OnlineSearchSidebarProps {
 }
 
 export function OnlineSearchSidebar({ dab }: OnlineSearchSidebarProps) {
+  const [showLoginDialog, setShowLoginDialog] = useState(false)
+
   const handleSearchSubmit = useCallback(
     (e: React.FormEvent) => {
       e.preventDefault()
@@ -49,30 +51,26 @@ export function OnlineSearchSidebar({ dab }: OnlineSearchSidebarProps) {
   // Auth gate
   if (dab.isAuthenticated === false) {
     return (
-      <>
-        <div className="flex flex-col items-center justify-center h-full py-12 text-muted-foreground">
-          <Search className="h-10 w-10 mb-3 opacity-40" />
-          <p className="text-sm font-medium">Sign in to search</p>
-          <p className="text-xs mt-1 text-center px-4">
-            Connect your DAB Music account to search and download songs
-          </p>
-          <Button
-            size="sm"
-            className="mt-4"
-            onClick={() => {
-              /* Dialog auto-opens when isAuthenticated is false */
-            }}
-          >
-            Sign In
-          </Button>
-        </div>
+      <div className="flex flex-col items-center justify-center h-full py-12 text-muted-foreground">
+        <Search className="h-10 w-10 mb-3 opacity-40" />
+        <p className="text-sm font-medium">Sign in to search</p>
+        <p className="text-xs mt-1 text-center px-4">
+          Connect your DAB Music account to search and download songs
+        </p>
         <DabLoginDialog
-          open={true}
-          onOpenChange={() => {}}
+          open={showLoginDialog}
+          onOpenChange={setShowLoginDialog}
           onLogin={dab.login}
           isLoading={dab.isAuthenticating}
         />
-      </>
+        <Button
+          size="sm"
+          className="mt-4"
+          onClick={() => setShowLoginDialog(true)}
+        >
+          Sign In
+        </Button>
+      </div>
     )
   }
 
