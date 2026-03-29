@@ -518,137 +518,117 @@ export default function EnhancedMusicPlayer() {
               </Suspense>
             ) : (
               <>
-                <Card className="bg-transparent border-none shadow-none">
-                  <CardContent className="space-y-6 pt-6">
-                    
-                    {currentSong && (
-                      <div className="space-y-6">
-                        <div className="flex gap-6">
-                          <div ref={albumArtRef} className="flex-shrink-0">
+                <div className="flex flex-col h-full px-6 pb-6 pt-2">
+
+                    {currentSong ? (
+                      <>
+                        {/* Album Art */}
+                        <div ref={albumArtRef} className="flex-1 min-h-0 flex items-center justify-center">
+                          <div className="h-full aspect-square max-w-full">
                             <AlbumArtDisplay
                               songId={currentSong.id}
                               albumArt={currentSong.albumArt}
                               title={`${currentSong.title} album art`}
                               isTransitioning={isTransitioning}
-                              className="shadow-2xl shadow-black/30 w-64 h-64"
+                              className="!w-full !h-full shadow-2xl shadow-black/30"
                             />
                           </div>
-                          <div
-                            className={`flex-1 space-y-3 transition-all duration-500 ease-out ${isTransitioning ? "translate-x-4 opacity-70" : "translate-x-0 opacity-100"}`}
-                          >
-                            <div className="space-y-2">
-                              <h2 className="text-2xl font-bold line-clamp-2 leading-tight">{currentSong.title}</h2>
-                              {currentSong.artist && (
-                                <p className="text-xl text-muted-foreground font-medium">{currentSong.artist}</p>
-                              )}
-                              {currentSong.album && (
-                                <p className="text-lg text-muted-foreground">{currentSong.album}</p>
-                              )}
-                            </div>
-                            <div className="flex flex-wrap gap-2">
-                              {currentSong.isHiRes && (
-                                <Badge
-                                  variant="secondary"
-                                  className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100 shadow-sm"
-                                >
-                                  Hi-Res Audio
-                                </Badge>
-                              )}
-                              <Badge variant="outline" className="shadow-sm">
-                                {currentSong.format}
-                              </Badge>
-                              {currentBitrate && (
-                                <Badge variant="outline" className="shadow-sm">
-                                  {formatBitrate(currentBitrate)}bps
-                                </Badge>
-                              )}
-                              {currentSong.sampleRate && (
-                                <Badge variant="outline" className="shadow-sm">
-                                  {(currentSong.sampleRate / 1000).toFixed(1)}kHz
-                                </Badge>
-                              )}
-                            </div>
+                        </div>
+
+                        {/* Song info — left aligned, flows into controls */}
+                        <div
+                          className={`flex-shrink-0 pt-3 pb-3 transition-all duration-500 ease-out ${isTransitioning ? "translate-x-2 opacity-70" : "translate-x-0 opacity-100"}`}
+                        >
+                          <h2 className="text-xl font-bold line-clamp-1 leading-tight">{currentSong.title}</h2>
+                          <p className="text-base text-muted-foreground font-medium mt-0.5 line-clamp-1">
+                            {currentSong.artist}{currentSong.album ? ` \u2014 ${currentSong.album}` : ""}
+                          </p>
+                        </div>
+                      </>
+                    ) : (
+                      <div className="flex-1" />
+                    )}
+
+                    {/* Controls — right after song info, not pushed to bottom */}
+                    <div className="flex-shrink-0 space-y-2">
+                      {/* Seek bar */}
+                      {duration > 0 && (
+                        <div className="space-y-1">
+                          <Slider
+                            value={[currentTime]}
+                            max={duration}
+                            step={1}
+                            onValueChange={handleSeek}
+                            className="w-full [&>span:first-child]:h-1.5 [&>span:first-child]:bg-white/10 [&>span:first-child]:backdrop-blur-md [&_[role=slider]]:h-3.5 [&_[role=slider]]:w-3.5"
+                            aria-label="Seek position"
+                          />
+                          <div className="flex justify-between text-xs text-muted-foreground">
+                            <span>{formatTime(currentTime)}</span>
+                            <span>{formatTime(duration)}</span>
                           </div>
                         </div>
+                      )}
+
+                      {/* Transport: shuffle, prev, play, next */}
+                      <div className="flex items-center justify-center gap-6">
+                        <Button
+                          variant={shuffleMode ? "default" : "ghost"}
+                          size="sm"
+                          className="h-8 w-8 p-0"
+                          onClick={toggleShuffle}
+                          aria-label={shuffleMode ? "Disable shuffle" : "Enable shuffle"}
+                        >
+                          <Shuffle className="w-3.5 h-3.5" />
+                        </Button>
+                        <Button variant="ghost" size="sm" className="h-9 w-9 p-0" onClick={skipToPrevious} disabled={songs.length === 0} aria-label="Previous track">
+                          <SkipBack className="w-5 h-5" />
+                        </Button>
+                        <Button
+                          onClick={togglePlayPause}
+                          size="icon"
+                          className="w-11 h-11 rounded-full shadow-lg"
+                          disabled={!currentSong}
+                          aria-label={isPlaying ? "Pause" : "Play"}
+                        >
+                          {isPlaying ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5 ml-0.5" />}
+                        </Button>
+                        <Button variant="ghost" size="sm" className="h-9 w-9 p-0" onClick={skipToNext} disabled={songs.length === 0} aria-label="Next track">
+                          <SkipForward className="w-5 h-5" />
+                        </Button>
+                        <div className="h-8 w-8" />
                       </div>
-                    )}
-                    {duration > 0 && (
-                      <div className="space-y-2">
-                        <Slider
-                          value={[currentTime]}
-                          max={duration}
-                          step={1}
-                          onValueChange={handleSeek}
-                          className="w-full"
-                          aria-label="Seek position"
-                        />
-                        <div className="flex justify-between text-sm text-muted-foreground">
-                          <span>{formatTime(currentTime)}</span>
-                          <span>{formatTime(duration)}</span>
+
+                      {/* Secondary controls */}
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-1">
+                          <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={() => setShowEqualizer(true)} aria-label="Equalizer settings">
+                            <Settings className="w-3.5 h-3.5" />
+                          </Button>
+                          <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={() => setActiveView("lyrics")} disabled={!currentSong} aria-label="Show lyrics">
+                            <Mic className="w-3.5 h-3.5" />
+                          </Button>
+                          <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={() => setActiveView("youtube")} disabled={!currentSong} aria-label="Show video">
+                            <Youtube className="w-3.5 h-3.5" />
+                          </Button>
+                          <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={() => setActiveView("insights")} disabled={!currentSong} aria-label="Song insights">
+                            <Sparkles className="w-3.5 h-3.5" />
+                          </Button>
+                          <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={() => setActiveView("artist")} disabled={!currentSong} aria-label="Artist info">
+                            <User className="w-3.5 h-3.5" />
+                          </Button>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={toggleMute} aria-label={isMuted ? "Unmute" : "Mute"}>
+                            {isMuted ? <VolumeX className="w-3.5 h-3.5" /> : <Volume2 className="w-3.5 h-3.5" />}
+                          </Button>
+                          <Slider value={volume} max={100} step={1} onValueChange={changeVolume} className="w-20 [&_[role=slider]]:h-3.5 [&_[role=slider]]:w-3.5 [&_[role=slider]]:opacity-0 [&_[role=slider]]:transition-all [&_[role=slider]]:duration-200 [&_[role=slider]]:ease-out hover:[&_[role=slider]]:opacity-100 [&>span:first-child]:h-1" aria-label="Volume" />
+                          <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={handleOpenFullscreen} disabled={!currentSong} aria-label="Fullscreen">
+                            <Maximize2 className="w-3.5 h-3.5" />
+                          </Button>
                         </div>
                       </div>
-                    )}
-                    <div className="flex items-center justify-center gap-4">
-                      <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={skipToPrevious} disabled={songs.length === 0} aria-label="Previous track">
-                        <SkipBack className="w-3.5 h-3.5" />
-                      </Button>
-                      <Button
-                        onClick={togglePlayPause}
-                        size="icon"
-                        className="w-11 h-11 shadow-lg"
-                        disabled={!currentSong}
-                        aria-label={isPlaying ? "Pause" : "Play"}
-                      >
-                        {isPlaying ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5" />}
-                      </Button>
-                      <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={skipToNext} disabled={songs.length === 0} aria-label="Next track">
-                        <SkipForward className="w-3.5 h-3.5" />
-                      </Button>
-                      <Button
-                        variant={shuffleMode ? "default" : "ghost"}
-                        size="sm"
-                        className="h-8 w-8 p-0"
-                        onClick={toggleShuffle}
-                        aria-label={shuffleMode ? "Disable shuffle" : "Enable shuffle"}
-                      >
-                        <Shuffle className="w-3.5 h-3.5" />
-                      </Button>
-                      <div className="flex-1" />
-                      <div className="flex items-center gap-1">
-                        <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={() => setShowEqualizer(true)} aria-label="Equalizer settings">
-                          <Settings className="w-3.5 h-3.5" />
-                        </Button>
-                        <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={() => setActiveView("lyrics")} disabled={!currentSong} aria-label="Show lyrics">
-                          <Mic className="w-3.5 h-3.5" />
-                        </Button>
-                        <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={() => setActiveView("youtube")} disabled={!currentSong} aria-label="Show video">
-                          <Youtube className="w-3.5 h-3.5" />
-                        </Button>
-                        <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={() => setActiveView("insights")} disabled={!currentSong} aria-label="Song insights">
-                          <Sparkles className="w-3.5 h-3.5" />
-                        </Button>
-                        <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={() => setActiveView("artist")} disabled={!currentSong} aria-label="Artist info">
-                          <User className="w-3.5 h-3.5" />
-                        </Button>
-                      </div>
-                      <Separator orientation="vertical" className="h-6" />
-                      <div className="flex items-center gap-2">
-                        <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={toggleMute} aria-label={isMuted ? "Unmute" : "Mute"}>
-                          {isMuted ? <VolumeX className="w-3.5 h-3.5" /> : <Volume2 className="w-3.5 h-3.5" />}
-                        </Button>
-                        <Slider value={volume} max={100} step={1} onValueChange={changeVolume} className="w-24 [&_[role=slider]]:h-3.5 [&_[role=slider]]:w-3.5 [&_[role=slider]]:opacity-0 [&_[role=slider]]:transition-all [&_[role=slider]]:duration-200 [&_[role=slider]]:ease-out hover:[&_[role=slider]]:opacity-100 [&>span:first-child]:h-1" aria-label="Volume" />
-                      </div>
-                      <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={handleOpenFullscreen} disabled={!currentSong} aria-label="Fullscreen">
-                        <Maximize2 className="w-3.5 h-3.5" />
-                      </Button>
                     </div>
-                    {/* Keyboard shortcuts info */}
-                    <div className="text-xs text-muted-foreground text-center space-y-1">
-                      <p>Media keys: Play/Pause • Next/Previous • Volume Up/Down • Mute</p>
-                      <p>Shortcuts: Space (play/pause) • F7-F12 (media controls) • Ctrl/Cmd + arrows</p>
-                    </div>
-                  </CardContent>
-                </Card>
+                </div>
                 <Dialog open={showEqualizer} onOpenChange={setShowEqualizer}>
                   <DialogContent>
                     <DialogHeader>
