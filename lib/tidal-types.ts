@@ -10,6 +10,10 @@ export interface TidalTrack {
   genre: string
   duration: number
   audioQuality: string
+  trackNumber?: number
+  discNumber?: number
+  copyright?: string
+  isrc?: string
 }
 
 export interface TidalAlbum {

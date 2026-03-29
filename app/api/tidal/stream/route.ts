@@ -15,7 +15,7 @@ function getApiBase(): string {
   return server
 }
 
-const FETCH_TIMEOUT = 15000
+const FETCH_TIMEOUT = 60000
 
 export async function GET(request: NextRequest) {
   const { searchParams } = request.nextUrl

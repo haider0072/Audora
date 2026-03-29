@@ -76,6 +76,10 @@ export async function GET(request: NextRequest) {
         genre: "",
         duration: track.duration || 0,
         audioQuality: track.audioQuality || "LOSSLESS",
+        trackNumber: track.trackNumber || undefined,
+        discNumber: track.volumeNumber || undefined,
+        copyright: track.copyright || albumData.copyright || undefined,
+        isrc: track.isrc || undefined,
       }
     })
     /* eslint-enable @typescript-eslint/no-explicit-any */

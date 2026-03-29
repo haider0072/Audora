@@ -7,7 +7,7 @@ import { MetadataExtractor } from "@/lib/metadata-extractor"
 import { LoudnessAnalyzer } from "@/lib/loudness-analyzer"
 import { PlaylistStorage } from "@/lib/playlist-storage"
 import { AlbumArtCache } from "@/lib/album-art-cache"
-import { embedAlbumArt } from "@/lib/flac-art-embedder"
+import { embedFlacMetadata } from "@/lib/flac-art-embedder"
 import type { Song } from "@/components/enhanced-playlist"
 import type {
   TidalTrack,
@@ -294,27 +294,47 @@ export function useTidalSearch(options: UseTidalSearchOptions) {
           url: "",
         }
 
-        // Handle album art — embed into FLAC and save for library
+        // Fetch album art and embed metadata + art into FLAC
         let finalBlob: Blob = blob
+        let artBlob: Blob | null = null
+
         if (track.albumCover) {
           try {
-            // Proxy through our API to avoid CORS
-            const artUrl = `/api/tidal/cover?url=${encodeURIComponent(track.albumCover)}`
-            const artRes = await fetch(artUrl)
+            const proxiedArtUrl = `/api/tidal/cover?url=${encodeURIComponent(track.albumCover)}`
+            const artRes = await fetch(proxiedArtUrl)
             if (artRes.ok) {
-              const artBlob = await artRes.blob()
-              const artUrl = URL.createObjectURL(artBlob)
-              song.albumArt = artUrl
-              await PlaylistStorage.storeAlbumArt(songId, artUrl)
-              await AlbumArtCache.preloadAlbumArt(songId, artUrl)
-
-              // Embed album art into FLAC file
-              if (isFlac) {
-                finalBlob = await embedAlbumArt(blob, artBlob)
-              }
+              artBlob = await artRes.blob()
+              const artObjUrl = URL.createObjectURL(artBlob)
+              song.albumArt = artObjUrl
+              await PlaylistStorage.storeAlbumArt(songId, artObjUrl)
+              await AlbumArtCache.preloadAlbumArt(songId, artObjUrl)
             }
           } catch {
-            // Use extracted album art if embed fails
+            // Continue without album art
+          }
+        }
+
+        // Embed full metadata + album art into FLAC
+        if (isFlac) {
+          try {
+            finalBlob = await embedFlacMetadata(
+              blob,
+              {
+                title: track.title,
+                artist: track.artist,
+                album: track.albumTitle,
+                albumArtist: track.artist,
+                date: track.releaseDate ? track.releaseDate.slice(0, 4) : undefined,
+                genre: track.genre || undefined,
+                trackNumber: track.trackNumber ? String(track.trackNumber) : undefined,
+                discNumber: track.discNumber ? String(track.discNumber) : undefined,
+                copyright: track.copyright || undefined,
+                isrc: track.isrc || undefined,
+              },
+              artBlob
+            )
+          } catch {
+            // Fall back to raw blob if embedding fails
           }
         }
 

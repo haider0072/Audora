@@ -61,6 +61,10 @@ function mapTrack(item: any) {
     genre: "",
     duration: item.duration || 0,
     audioQuality: item.audioQuality || "LOSSLESS",
+    trackNumber: item.trackNumber || undefined,
+    discNumber: item.volumeNumber || undefined,
+    copyright: item.copyright || undefined,
+    isrc: item.isrc || undefined,
   }
 }
 
