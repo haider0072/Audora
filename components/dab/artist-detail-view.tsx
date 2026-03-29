@@ -4,10 +4,10 @@ import { memo, useState } from "react"
 import { ArrowLeft, User, Disc, Calendar, Music } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import type { DabDiscographyResult, DabAlbum } from "@/lib/dab-types"
+import type { TidalDiscographyResult } from "@/lib/tidal-types"
 
 interface ArtistDetailViewProps {
-  data: DabDiscographyResult
+  data: TidalDiscographyResult
   onAlbumClick: (albumId: string) => void
   onBack: () => void
 }

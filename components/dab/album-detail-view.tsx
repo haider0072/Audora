@@ -5,15 +5,15 @@ import { ArrowLeft, Disc, Download, Calendar, Clock, Music } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { DownloadIndicator } from "./download-indicator"
-import type { DabAlbum, DabTrack, DownloadState } from "@/lib/dab-types"
+import type { TidalAlbum, TidalTrack, DownloadState } from "@/lib/tidal-types"
 
 interface AlbumDetailViewProps {
-  album: DabAlbum
+  album: TidalAlbum
   downloads: Map<string, DownloadState>
   isInLibrary: (trackId: string) => boolean
-  onTrackDownload: (track: DabTrack) => void
+  onTrackDownload: (track: TidalTrack) => void
   onCancelDownload: (trackId: string) => void
-  onDownloadAll: (album: DabAlbum) => void
+  onDownloadAll: (album: TidalAlbum) => void
   onBack: () => void
   onArtistClick?: (artistId: string) => void
 }

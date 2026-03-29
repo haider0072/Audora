@@ -27,7 +27,7 @@ import { useEqualizerManager, DEFAULT_EQUALIZER_BANDS } from "@/hooks/use-equali
 import { useFileImporter } from "@/hooks/use-file-importer"
 import { usePlaylistPersistence, useAutoSave } from "@/hooks/use-playlist-persistence"
 import { useMediaControls } from "@/hooks/use-media-controls"
-import { useDabSearch } from "@/hooks/use-dab-search"
+import { useTidalSearch } from "@/hooks/use-tidal-search"
 import { OnlineSearchSidebar } from "@/components/dab/online-search-sidebar"
 import { AlbumArtCache } from "@/lib/album-art-cache"
 import { LoudnessAnalyzer } from "@/lib/loudness-analyzer"
@@ -400,8 +400,8 @@ export default function EnhancedMusicPlayer() {
     enableExtendedShortcuts: true,
   })
 
-  // DAB Music online search & download
-  const dabSearch = useDabSearch({
+  // Tidal online search & download
+  const tidalSearch = useTidalSearch({
     songs,
     onSongDownloaded: (newSong) => {
       setSongs((prev) => [...prev, newSong])
@@ -676,8 +676,8 @@ export default function EnhancedMusicPlayer() {
               sortedSongs={sortedSongs}
               sidebarMode={sidebarMode}
               onSidebarModeChange={setSidebarMode}
-              activeDownloadCount={dabSearch.activeDownloadCount}
-              onlineSearchContent={<OnlineSearchSidebar dab={dabSearch} />}
+              activeDownloadCount={tidalSearch.activeDownloadCount}
+              onlineSearchContent={<OnlineSearchSidebar dab={tidalSearch} />}
             />
           </div>
         </div>

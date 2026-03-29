@@ -2,7 +2,7 @@
 
 import { memo } from "react"
 import { Download, Loader2 } from "lucide-react"
-import type { DownloadState } from "@/lib/dab-types"
+import type { DownloadState } from "@/lib/tidal-types"
 
 interface DownloadQueueBarProps {
   downloads: Map<string, DownloadState>

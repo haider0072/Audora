@@ -12,7 +12,7 @@ import { useEqualizerManager, DEFAULT_EQUALIZER_BANDS } from "@/hooks/use-equali
 import { useFileImporter } from "@/hooks/use-file-importer"
 import { usePlaylistPersistence, useAutoSave } from "@/hooks/use-playlist-persistence"
 import { useMediaControls } from "@/hooks/use-media-controls"
-import { useDabSearch } from "@/hooks/use-dab-search"
+import { useTidalSearch } from "@/hooks/use-tidal-search"
 import type { Song } from "@/components/enhanced-playlist"
 
 import { MobileHeader } from "@/components/mobile-header"
@@ -388,8 +388,8 @@ export default function MobileMusicPlayer() {
   })
 
 
-  // DAB Music online search & download
-  const dabSearch = useDabSearch({
+  // Tidal online search & download
+  const tidalSearch = useTidalSearch({
     songs,
     onSongDownloaded: (newSong) => {
       setSongs((prev) => [...prev, newSong])
@@ -457,13 +457,13 @@ export default function MobileMusicPlayer() {
           totalDuration={formatTime(totalDuration)}
           sidebarMode={sidebarMode}
           onSidebarModeChange={setSidebarMode}
-          activeDownloadCount={dabSearch.activeDownloadCount}
+          activeDownloadCount={tidalSearch.activeDownloadCount}
         />
 
         {/* Playlist or Online Search */}
         {sidebarMode === "online" ? (
           <div className="flex-1 overflow-hidden px-4 py-2">
-            <OnlineSearchSidebar dab={dabSearch} />
+            <OnlineSearchSidebar dab={tidalSearch} />
           </div>
         ) : (
           <MobilePlaylist
