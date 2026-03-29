@@ -3,7 +3,7 @@
 import { memo } from "react"
 import { Download, Check, RefreshCw, X, Clock, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import type { DownloadState } from "@/lib/dab-types"
+import type { DownloadState } from "@/lib/tidal-types"
 
 interface DownloadIndicatorProps {
   state?: DownloadState

@@ -10,10 +10,10 @@ import { AlbumDetailView } from "./album-detail-view"
 import { ArtistDetailView } from "./artist-detail-view"
 import { DabLoginDialog } from "./dab-login-dialog"
 import { DownloadQueueBar } from "./download-queue-bar"
-import type { UseDabSearchReturn } from "@/hooks/use-dab-search"
+import type { UseTidalSearchReturn } from "@/hooks/use-tidal-search"
 
 interface OnlineSearchSidebarProps {
-  dab: UseDabSearchReturn
+  dab: UseTidalSearchReturn
 }
 
 export function OnlineSearchSidebar({ dab }: OnlineSearchSidebarProps) {
@@ -55,7 +55,7 @@ export function OnlineSearchSidebar({ dab }: OnlineSearchSidebarProps) {
         <Search className="h-10 w-10 mb-3 opacity-40" />
         <p className="text-sm font-medium">Sign in to search</p>
         <p className="text-xs mt-1 text-center px-4">
-          Connect your DAB Music account to search and download songs
+          Connect to search and download songs
         </p>
         <DabLoginDialog
           open={showLoginDialog}

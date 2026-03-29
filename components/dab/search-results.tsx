@@ -4,13 +4,13 @@ import { memo } from "react"
 import { Music, Disc, User, Clock } from "lucide-react"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { DownloadIndicator } from "./download-indicator"
-import type { DabSearchResult, DabTrack, DabAlbum, DabArtist, DownloadState } from "@/lib/dab-types"
+import type { TidalSearchResult, TidalTrack, TidalAlbum, TidalArtist, DownloadState } from "@/lib/tidal-types"
 
 interface SearchResultsProps {
-  results: DabSearchResult
+  results: TidalSearchResult
   downloads: Map<string, DownloadState>
   isInLibrary: (trackId: string) => boolean
-  onTrackDownload: (track: DabTrack) => void
+  onTrackDownload: (track: TidalTrack) => void
   onCancelDownload: (trackId: string) => void
   onAlbumClick: (albumId: string) => void
   onArtistClick: (artistId: string) => void
@@ -29,7 +29,7 @@ const TrackItem = memo(function TrackItem({
   onDownload,
   onCancel,
 }: {
-  track: DabTrack
+  track: TidalTrack
   downloadState?: DownloadState
   inLibrary: boolean
   onDownload: () => void
@@ -80,7 +80,7 @@ const AlbumItem = memo(function AlbumItem({
   album,
   onClick,
 }: {
-  album: DabAlbum
+  album: TidalAlbum
   onClick: () => void
 }) {
   return (
@@ -113,7 +113,7 @@ const ArtistItem = memo(function ArtistItem({
   artist,
   onClick,
 }: {
-  artist: DabArtist
+  artist: TidalArtist
   onClick: () => void
 }) {
   return (
