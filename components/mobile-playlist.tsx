@@ -236,34 +236,6 @@ export function MobilePlaylist({
             )}
 
             <div className="flex items-center gap-1 flex-wrap">
-              <Badge
-                variant="outline"
-                className={`
-                text-xs h-5 px-1 transition-all duration-150 ease-out
-                ${
-                  isCurrentSong
-                    ? "border-primary/30 text-primary bg-primary/5"
-                    : "group-hover:border-border group-hover:bg-muted/50"
-                }
-              `}
-              >
-                {song.format}
-              </Badge>
-              {song.isHiRes && (
-                <Badge
-                  variant="secondary"
-                  className={`
-                  text-xs h-5 px-1 transition-all duration-150 ease-out
-                  ${
-                    isCurrentSong
-                      ? "bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-100 border-green-200 dark:border-green-800"
-                      : "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100 group-hover:bg-green-200 dark:group-hover:bg-green-800"
-                  }
-                `}
-                >
-                  Hi-Res
-                </Badge>
-              )}
               <span className="text-xs text-muted-foreground transition-colors duration-150 ease-out group-hover:text-muted-foreground/80">
                 {formatBitrate(song.bitrate)}
               </span>
