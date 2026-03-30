@@ -20,18 +20,26 @@ const MemoizedLyricLine = memo(
   ({
     line,
     isCurrent,
+    isAfterCurrent,
+    isBeforeCurrent,
     refProp,
   }: {
     line: LyricLine
     isCurrent: boolean
+    isAfterCurrent: boolean
+    isBeforeCurrent: boolean
     refProp: React.RefObject<HTMLParagraphElement> | null
   }) => (
     <p
       ref={refProp}
       className={`
-        transition-all duration-300 ease-in-out text-2xl font-semibold p-2 rounded-md
+        transition-all duration-300 ease-in-out text-2xl font-semibold px-2 py-1
         w-full max-w-full break-words text-center leading-relaxed
-        ${isCurrent ? "text-primary scale-105 bg-primary/10" : "text-muted-foreground opacity-70"}
+        ${isCurrent
+          ? "text-white scale-105 opacity-100"
+          : isAfterCurrent
+            ? "text-white/70 opacity-55 blur-[1.2px] scale-100"
+            : "text-white/70 opacity-35 scale-95"}
       `}
     >
       {line.text}
@@ -136,15 +144,22 @@ export function LyricsDisplay({ isVisible, onClose, currentSong, currentTimeMs, 
 
     if (lyricsData?.synced && lyricsData.synced.length > 0) {
       return (
-        <div className="text-center space-y-4 w-full max-w-full">
-          {lyricsData.synced.map((line, index) => (
-            <MemoizedLyricLine
-              key={`${line.time}-${index}`}
-              line={line}
-              isCurrent={index === currentLineIndex}
-              refProp={index === currentLineIndex ? activeLineRef : null}
-            />
-          ))}
+        <div className="text-center space-y-1 w-full max-w-full">
+          {lyricsData.synced.map((line, index) => {
+            const isCurrent = index === currentLineIndex
+            const isAfterCurrent = currentLineIndex !== -1 && index > currentLineIndex
+            const isBeforeCurrent = currentLineIndex !== -1 && index < currentLineIndex
+            return (
+              <MemoizedLyricLine
+                key={`${line.time}-${index}`}
+                line={line}
+                isCurrent={isCurrent}
+                isAfterCurrent={isAfterCurrent}
+                isBeforeCurrent={isBeforeCurrent}
+                refProp={isCurrent ? activeLineRef : null}
+              />
+            )
+          })}
         </div>
       )
     }
@@ -166,17 +181,22 @@ export function LyricsDisplay({ isVisible, onClose, currentSong, currentTimeMs, 
   }
 
   return (
-    <div className="h-[84vh] w-full flex flex-col bg-card/50 rounded-lg border overflow-hidden">
-      <div className="flex flex-row items-center justify-between p-4 border-b shrink-0 min-h-0">
-        <h2 className="text-xl font-bold flex items-center gap-2 truncate">
+    <div className="h-[84vh] w-full flex flex-col bg-transparent overflow-hidden">
+      <div className="flex flex-row items-center justify-between p-4 shrink-0 min-h-0">
+        <h2 className="text-xl font-bold flex items-center gap-2 truncate text-white/90">
           <Mic className="w-5 h-5 flex-shrink-0" />
-          <span className="truncate">Lyrics</span>
+          {/* Heading text removed (only mic icon remains) */}
         </h2>
-        <Button variant="ghost" size="icon" onClick={onClose} className="flex-shrink-0">
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={onClose}
+          className="flex-shrink-0 text-white/70 hover:text-white"
+        >
           <X className="w-4 h-4" />
         </Button>
       </div>
-      <div className="flex-1 overflow-y-auto overflow-x-hidden p-6 h-0 w-full">
+      <div className="flex-1 overflow-y-auto overflow-x-hidden p-4 h-0 w-full">
         <div className="flex flex-col items-center justify-center min-h-full w-full max-w-full">{renderContent()}</div>
       </div>
     </div>
