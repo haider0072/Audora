@@ -115,18 +115,27 @@ export function MobileLyricsDisplay({ isOpen, onOpenChange, currentSong, current
 
     if (lyricsData?.synced && lyricsData.synced.length > 0) {
       return (
-        <div className="text-center space-y-4">
-          {lyricsData.synced.map((line, index) => (
-            <p
-              key={`${line.time}-${index}`}
-              ref={index === currentLineIndex ? activeLineRef : null}
-              className={`transition-all duration-300 ease-in-out text-xl font-semibold p-2 rounded-md ${
-                index === currentLineIndex ? "text-primary scale-105 bg-primary/10" : "text-muted-foreground opacity-70"
-              }`}
-            >
-              {line.text}
-            </p>
-          ))}
+        <div className="text-center space-y-1">
+          {lyricsData.synced.map((line, index) => {
+            const isCurrent = index === currentLineIndex
+            const isAfterCurrent = currentLineIndex !== -1 && index > currentLineIndex
+            const isBeforeCurrent = currentLineIndex !== -1 && index < currentLineIndex
+            return (
+              <p
+                key={`${line.time}-${index}`}
+                ref={isCurrent ? activeLineRef : null}
+                className={`transition-all duration-300 ease-in-out text-xl font-semibold px-2 py-1 w-full max-w-full break-words text-center leading-relaxed ${
+                  isCurrent
+                    ? "text-white scale-105 opacity-100"
+                    : isAfterCurrent
+                      ? "text-white/70 opacity-55 blur-[1.2px] scale-100"
+                      : "text-white/70 opacity-35 scale-95"
+                }`}
+              >
+                {line.text}
+              </p>
+            )
+          })}
         </div>
       )
     }
@@ -149,7 +158,7 @@ export function MobileLyricsDisplay({ isOpen, onOpenChange, currentSong, current
         <SheetHeader>
           <SheetTitle className="flex items-center gap-2">
             <Mic className="w-5 h-5" />
-            Lyrics
+            {/* Heading text removed (only mic icon remains) */}
           </SheetTitle>
           <SheetDescription>
             {currentSong ? `${currentSong.title} - ${currentSong.artist}` : "No song selected"}
