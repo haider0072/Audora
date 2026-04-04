@@ -7,7 +7,6 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { Badge } from "@/components/ui/badge"
 import {
   Music,
-  Play,
   Trash2,
   Search,
 } from "lucide-react"
@@ -65,24 +64,11 @@ const SongItem = memo(
       return `${minutes}:${seconds.toString().padStart(2, "0")}`
     }
 
-    const formatBitrate = (bitrate?: number) => {
-      if (!bitrate) return "Unknown"
-      if (bitrate >= 1000) {
-        return `${(bitrate / 1000).toFixed(1)}M`
-      }
-      return `${Math.round(bitrate)}k`
-    }
-
     return (
       <div
         className={`
           group relative flex w-full items-center gap-3 p-3 rounded-lg transition-all duration-150 ease-out cursor-pointer
-          ${
-            isCurrentSong
-              ? "bg-primary/10 border border-primary/30 dark:bg-primary/15 dark:border-primary/40"
-              : "border border-transparent hover:border-border/50"
-          }
-          ${!isCurrentSong ? "hover:bg-muted/30 hover:shadow-sm" : ""}
+          ${isCurrentSong ? "bg-primary/10 dark:bg-primary/15" : "hover:bg-muted/30 hover:shadow-sm"}
         `}
         onClick={() => onSongSelect(song)}
       >
@@ -108,7 +94,7 @@ const SongItem = memo(
         </div>
 
         <div className="relative flex-1 min-w-0 z-10 overflow-hidden">
-          <div className="flex items-center gap-2 mb-1 w-full">
+          <div className="flex items-center gap-2 mb-0.5 w-full">
             <h4
               className={`
                 font-medium truncate transition-colors duration-150 ease-out flex-1 min-w-0
@@ -118,33 +104,22 @@ const SongItem = memo(
             >
               {song.title}
             </h4>
-            {isCurrentSong && (
-              <div className="flex-shrink-0">
-                <Play className="w-4 h-4 text-primary" />
-              </div>
+            {song.duration && (
+              <span className="text-xs text-muted-foreground flex-shrink-0">
+                {formatTime(song.duration)}
+              </span>
             )}
           </div>
 
           {showArtistAlbum && (
             <p
-              className="text-sm text-muted-foreground truncate transition-colors duration-150 ease-out group-hover:text-muted-foreground/80 mb-1 w-full"
+              className="text-sm text-muted-foreground truncate transition-colors duration-150 ease-out group-hover:text-muted-foreground/80 w-full"
               title={`${song.artists ? song.artists.join(", ") : (song.artist || "Unknown Artist")}${song.album ? ` • ${song.album}` : ""}`}
             >
               {song.artists ? song.artists.join(", ") : (song.artist || "Unknown Artist")}
               {song.album && ` • ${song.album}`}
             </p>
           )}
-
-          <div className="flex items-center gap-2 mt-1 flex-wrap w-full">
-            <span className="text-xs text-muted-foreground transition-colors duration-150 ease-out group-hover:text-muted-foreground/80 flex-shrink-0">
-              {formatBitrate(song.bitrate)}bps
-            </span>
-            {song.duration && (
-              <span className="text-xs text-muted-foreground transition-colors duration-150 ease-out group-hover:text-muted-foreground/80 flex-shrink-0">
-                {formatTime(song.duration)}
-              </span>
-            )}
-          </div>
         </div>
 
         <div className="relative z-10 flex-shrink-0">

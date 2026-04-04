@@ -5,7 +5,6 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "./ui/dropdown-menu";
 import { Progress } from "@/components/ui/progress"
-import { Badge } from "@/components/ui/badge"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -186,12 +185,6 @@ export function PlaylistManager({ songCount, songs, onPlaylistReset }: PlaylistM
         </span>
       )}
 
-      {/* Storage Status Badge */}
-      {songCount > 0 && (
-        <Badge variant={storageInfo.songs === songCount ? "default" : "secondary"} className="text-xs">
-          {storageInfo.songs === songCount ? "Synced" : "Partial"}
-        </Badge>
-      )}
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
