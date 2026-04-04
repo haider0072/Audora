@@ -55,6 +55,7 @@ export function LyricsDisplay({ isVisible, onClose, currentSong, currentTimeMs, 
   const [lastFetchedSongId, setLastFetchedSongId] = useState<string | null>(null)
 
   const activeLineRef = useRef<HTMLParagraphElement>(null)
+  const scrollContainerRef = useRef<HTMLDivElement>(null)
   const currentTimeInSeconds = currentTimeMs / 1000
 
   const fetchLyricsForSong = async (song: Song) => {
@@ -105,11 +106,13 @@ export function LyricsDisplay({ isVisible, onClose, currentSong, currentTimeMs, 
     }) ?? -1
 
   useEffect(() => {
-    if (activeLineRef.current) {
-      activeLineRef.current.scrollIntoView({
-        behavior: "smooth",
-        block: "center",
-      })
+    if (activeLineRef.current && scrollContainerRef.current) {
+      const container = scrollContainerRef.current
+      const lineTop = activeLineRef.current.offsetTop
+      const containerHeight = container.clientHeight
+      const lineHeight = activeLineRef.current.clientHeight
+      const scrollTop = lineTop - containerHeight / 2 + lineHeight / 2
+      container.scrollTo({ top: scrollTop, behavior: "smooth" })
     }
   }, [currentLineIndex])
 
@@ -196,7 +199,7 @@ export function LyricsDisplay({ isVisible, onClose, currentSong, currentTimeMs, 
           <X className="w-4 h-4" />
         </Button>
       </div>
-      <div className="flex-1 overflow-y-auto overflow-x-hidden p-4 h-0 w-full">
+      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto overflow-x-hidden p-4 h-0 w-full">
         <div className="flex flex-col items-center justify-center min-h-full w-full max-w-full">{renderContent()}</div>
       </div>
     </div>
