@@ -11,6 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import {
   Play, Pause, SkipBack, SkipForward,
   Volume2, VolumeX, Settings, Mic, Youtube, Sparkles, Shuffle, Maximize2, User,
+  Search, Music, List, Globe, Library,
 } from "lucide-react"
 
 import Image from "next/image"
@@ -58,6 +59,7 @@ export default function EnhancedMusicPlayer() {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [albumArtSourceRect, setAlbumArtSourceRect] = useState<DOMRect | null>(null);
   const [sidebarMode, setSidebarMode] = useState<"library" | "online">("library");
+  const [searchQuery, setSearchQuery] = useState("")
 
   const albumArtRef = useRef<HTMLDivElement>(null)
   const audioRef = useRef<HTMLAudioElement>(null)
@@ -441,15 +443,92 @@ export default function EnhancedMusicPlayer() {
         {currentSong && `Now playing: ${currentSong.title}${currentSong.artist ? ` by ${currentSong.artist}` : ""}`}
       </div>
       <div className="container mx-auto py-6 relative z-10">
-        <div className="flex items-center justify-between mb-6 px-6">
+        <div className="relative flex items-center justify-between mb-6 px-6">
+          {/* Left: Logo */}
           <div className="flex items-center gap-3">
             <Image src="/icon-192x192.png" alt="Audora" width={32} height={32} className="rounded-lg" />
-            {isRestoringPlaylist && (
-              <Badge variant="secondary">
-                Restoring...
-              </Badge>
-            )}
+            {isRestoringPlaylist && <Badge variant="secondary">Restoring...</Badge>}
           </div>
+
+          {/* Center: Search + Controls — truly centered via absolute */}
+          <div className="absolute left-1/2 -translate-x-1/2 flex items-center gap-2 w-[620px]">
+            {/* Expanded search pill */}
+            <div className="relative flex items-center h-12 bg-black/30 backdrop-blur-md border border-white/10 rounded-full overflow-hidden flex-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]">
+              <div className="flex-shrink-0 w-12 h-12 flex items-center justify-center">
+                <Search className="w-4 h-4 text-white/50" />
+              </div>
+              <input
+                value={sidebarMode === "online" ? tidalSearch.searchQuery : searchQuery}
+                onChange={(e) =>
+                  sidebarMode === "online"
+                    ? tidalSearch.setSearchQuery(e.target.value)
+                    : setSearchQuery(e.target.value)
+                }
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && sidebarMode === "online") {
+                    e.preventDefault()
+                    tidalSearch.search()
+                  }
+                }}
+                placeholder={sidebarMode === "library" ? "Search songs, artists..." : "Search online..."}
+                className="flex-1 bg-transparent outline-none text-sm text-white placeholder:text-white/35 min-w-0"
+              />
+              <div className="flex items-center gap-1 px-2 flex-shrink-0">
+                <button
+                  onClick={() => setSidebarMode("library")}
+                  className={`p-2 rounded-full transition-all duration-200 ${sidebarMode === "library" ? "text-white" : "text-white/40 hover:text-white/70"}`}
+                  title="My Library"
+                >
+                  <Library className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  onClick={() => setSidebarMode("online")}
+                  className={`relative p-2 rounded-full transition-all duration-200 ${sidebarMode === "online" ? "text-white" : "text-white/40 hover:text-white/70"}`}
+                  title="Search Online"
+                >
+                  <Globe className="w-3.5 h-3.5" />
+                  {tidalSearch.activeDownloadCount > 0 && (
+                    <span className="absolute -top-0.5 -right-0.5 h-3.5 min-w-[14px] px-0.5 text-[9px] font-bold bg-blue-500 text-white rounded-full flex items-center justify-center">
+                      {tidalSearch.activeDownloadCount}
+                    </span>
+                  )}
+                </button>
+              </div>
+            </div>
+
+            {/* View toggle — animated sliding pill */}
+            {(
+              <div className="relative flex items-center h-12 bg-black/30 backdrop-blur-md border border-white/10 rounded-full p-1 flex-shrink-0 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]">
+                {/* Sliding pill */}
+                <div
+                  className={`absolute top-1 w-10 h-10 bg-white/30 rounded-full transition-transform duration-300 ease-in-out shadow-sm ${
+                    viewMode === "list" ? "translate-x-10" : "translate-x-0"
+                  }`}
+                />
+                <button
+                  onClick={() => setViewMode("grouped")}
+                  className={`relative z-10 w-10 h-10 flex items-center justify-center rounded-full transition-colors duration-200 ${
+                    viewMode === "grouped" ? "text-white drop-shadow-sm" : "text-white/40 hover:text-white/65"
+                  }`}
+                  title="Grouped view"
+                >
+                  <Music className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() => setViewMode("list")}
+                  className={`relative z-10 w-10 h-10 flex items-center justify-center rounded-full transition-colors duration-200 ${
+                    viewMode === "list" ? "text-white drop-shadow-sm" : "text-white/40 hover:text-white/65"
+                  }`}
+                  title="List view"
+                >
+                  <List className="w-4 h-4" />
+                </button>
+              </div>
+            )}
+
+          </div>
+
+          {/* Right: Actions */}
           <div className="flex items-center gap-4">
             <PlaylistManager
               songCount={songs.length}
@@ -457,18 +536,17 @@ export default function EnhancedMusicPlayer() {
               onPlaylistReset={resetPlaylist}
             />
             <AddMusicControls
-            isLoadingSongs={isLoadingSongs}
-            isRestoringPlaylist={isRestoringPlaylist}
-            fileInputRef={fileInputRef}
-            folderInputRef={folderInputRef}
-            syncInputRef={syncInputRef}
-            handleFileUpload={handleFileUpload}
-            handleFolderUpload={handleFolderUpload}
-            handleFolderSync={handleFolderSync}
-            isSyncing={isSyncing}
-            loadingProgress={loadingProgress}
+              isLoadingSongs={isLoadingSongs}
+              isRestoringPlaylist={isRestoringPlaylist}
+              fileInputRef={fileInputRef}
+              folderInputRef={folderInputRef}
+              syncInputRef={syncInputRef}
+              handleFileUpload={handleFileUpload}
+              handleFolderUpload={handleFolderUpload}
+              handleFolderSync={handleFolderSync}
+              isSyncing={isSyncing}
+              loadingProgress={loadingProgress}
             />
-            
           </div>
         </div>
         <div className="grid lg:grid-cols-2 gap-6 h-[calc(100vh-70px)] overflow-hidden">
@@ -657,7 +735,8 @@ export default function EnhancedMusicPlayer() {
               sidebarMode={sidebarMode}
               onSidebarModeChange={setSidebarMode}
               activeDownloadCount={tidalSearch.activeDownloadCount}
-              onlineSearchContent={<OnlineSearchSidebar dab={tidalSearch} />}
+              onlineSearchContent={<OnlineSearchSidebar dab={tidalSearch} hideSearch />}
+              searchQuery={searchQuery}
             />
           </div>
         </div>

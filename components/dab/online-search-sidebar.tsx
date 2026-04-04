@@ -14,9 +14,10 @@ import type { UseTidalSearchReturn } from "@/hooks/use-tidal-search"
 
 interface OnlineSearchSidebarProps {
   dab: UseTidalSearchReturn
+  hideSearch?: boolean
 }
 
-export function OnlineSearchSidebar({ dab }: OnlineSearchSidebarProps) {
+export function OnlineSearchSidebar({ dab, hideSearch = false }: OnlineSearchSidebarProps) {
   const [showLoginDialog, setShowLoginDialog] = useState(false)
 
   const handleSearchSubmit = useCallback(
@@ -85,8 +86,8 @@ export function OnlineSearchSidebar({ dab }: OnlineSearchSidebarProps) {
 
   return (
     <div className="flex flex-col h-full">
-      {/* Search area (only in search view) */}
-      {dab.currentView === "search" && (
+      {/* Search area (only in search view, hidden when header has search) */}
+      {dab.currentView === "search" && !hideSearch && (
         <div className="flex-shrink-0 space-y-2 pb-3">
           <form onSubmit={handleSearchSubmit} className="flex gap-2">
             <Input
@@ -109,6 +110,12 @@ export function OnlineSearchSidebar({ dab }: OnlineSearchSidebarProps) {
               )}
             </Button>
           </form>
+          <SearchTypeTabs value={dab.searchType} onChange={dab.setSearchType} />
+        </div>
+      )}
+      {/* Search type tabs shown even when header has search */}
+      {dab.currentView === "search" && hideSearch && (
+        <div className="flex-shrink-0 pb-3">
           <SearchTypeTabs value={dab.searchType} onChange={dab.setSearchType} />
         </div>
       )}

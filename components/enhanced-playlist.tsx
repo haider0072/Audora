@@ -1,21 +1,15 @@
 "use client"
 
 import { useState, useMemo, memo, useRef, useEffect, useCallback } from "react"
-import { Card, CardContent, CardHeader } from "@/components/ui/card"
+import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Badge } from "@/components/ui/badge"
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
   Music,
   Play,
   Trash2,
-  Clock,
   Search,
-  List,
-  Globe,
-  Library,
 } from "lucide-react"
 import type { AudioMetadata } from "@/lib/metadata-extractor"
 import { AlbumArtDisplay } from "./album-art-display"
@@ -41,6 +35,7 @@ interface EnhancedPlaylistProps {
   onSidebarModeChange?: (mode: "library" | "online") => void
   onlineSearchContent?: React.ReactNode
   activeDownloadCount?: number
+  searchQuery?: string
 }
 
 interface GroupedSongs {
@@ -196,8 +191,8 @@ export function EnhancedPlaylist({
   onSidebarModeChange,
   onlineSearchContent,
   activeDownloadCount = 0,
+  searchQuery = "",
 }: EnhancedPlaylistProps) {
-  const [searchQuery, setSearchQuery] = useState("")
   const [activeLetter, setActiveLetter] = useState("")
   const scrollAreaRef = useRef<HTMLDivElement>(null)
 
@@ -210,10 +205,6 @@ export function EnhancedPlaylist({
       return `${hours} hour${hours > 1 ? 's' : ''} ${minutes} min${minutes !== 1 ? 's' : ''}`
     }
     return `${minutes}:${seconds.toString().padStart(2, "0")}`
-  }
-
-  const getTotalDuration = () => {
-    return songs.reduce((total, song) => total + (song.duration || 0), 0)
   }
 
   // Memoized filtered songs to prevent unnecessary recalculations
@@ -349,75 +340,6 @@ export function EnhancedPlaylist({
 
   return (
     <Card className="h-full bg-transparent border-none shadow-none flex flex-col overflow-hidden">
-      <CardHeader className="flex-shrink-0 pb-4">
-        <div className="space-y-3">
-          {/* Sidebar Mode Tabs */}
-          {onSidebarModeChange && (
-            <Tabs value={sidebarMode} onValueChange={(v) => onSidebarModeChange(v as "library" | "online")}>
-              <TabsList className="w-full h-9">
-                <TabsTrigger value="library" className="flex-1 gap-1.5 text-xs">
-                  <Library className="h-3.5 w-3.5" />
-                  My Library
-                </TabsTrigger>
-                <TabsTrigger value="online" className="flex-1 gap-1.5 text-xs relative">
-                  <Globe className="h-3.5 w-3.5" />
-                  Search Online
-                  {activeDownloadCount > 0 && (
-                    <span className="absolute -top-1 -right-1 h-4 min-w-[16px] px-1 text-[10px] font-bold bg-blue-500 text-white rounded-full flex items-center justify-center">
-                      {activeDownloadCount}
-                    </span>
-                  )}
-                </TabsTrigger>
-              </TabsList>
-            </Tabs>
-          )}
-
-          {/* Library mode: Search and Controls */}
-          {sidebarMode === "library" && (
-            <>
-              <div className="flex items-center gap-2">
-                <div className="relative flex-1">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                  <Input
-                    placeholder="Search songs, artists, albums..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="pl-10"
-                  />
-                </div>
-                <div className="flex items-center border rounded-md overflow-hidden flex-shrink-0">
-                  <Button
-                    variant={viewMode === "grouped" ? "default" : "ghost"}
-                    size="icon"
-                    onClick={() => onViewModeChange("grouped")}
-                    className="h-9 w-9 rounded-none"
-                    title="Grouped view"
-                  >
-                    <Music className="w-4 h-4" />
-                  </Button>
-                  <Button
-                    variant={viewMode === "list" ? "default" : "ghost"}
-                    size="icon"
-                    onClick={() => onViewModeChange("list")}
-                    className="h-9 w-9 rounded-none"
-                    title="List view (by Artist)"
-                  >
-                    <List className="w-4 h-4" />
-                  </Button>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <span>{songs.length} song{songs.length !== 1 ? "s" : ""}</span>
-                <span>·</span>
-                <Clock className="w-3.5 h-3.5" />
-                <span>{formatTime(getTotalDuration())}</span>
-              </div>
-            </>
-          )}
-        </div>
-      </CardHeader>
-
       <CardContent className="flex-1 overflow-hidden p-0 px-6 flex flex-col">
         {/* Online Search Mode */}
         {sidebarMode === "online" && onlineSearchContent ? (
