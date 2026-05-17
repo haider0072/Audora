@@ -350,16 +350,26 @@ export function MobilePlaylist({
                     <div className="sticky top-0 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 z-10 py-2">
                       <div className="flex items-center justify-between gap-3">
                         <h3 className="font-semibold text-base truncate">{artist}</h3>
-                        <span className="text-xs text-muted-foreground flex-shrink-0 tabular-nums">
-                          {Object.values(albums).reduce((sum, songs) => sum + songs.length, 0)} songs
-                        </span>
+                        {(() => {
+                          const count = Object.values(albums).reduce((sum, songs) => sum + songs.length, 0)
+                          return (
+                            <span className="text-xs text-muted-foreground flex-shrink-0 tabular-nums">
+                              {count} {count === 1 ? "song" : "songs"}
+                            </span>
+                          )
+                        })()}
                       </div>
                       <Separator className="mt-2" />
                     </div>
 
                     {Object.entries(albums).map(([album, albumSongs]) => (
                       <div key={`${artist}-${album}`} className="ml-2 space-y-2">
-                        <h4 className="font-medium text-muted-foreground text-sm uppercase tracking-wide">{album}</h4>
+                        <div className="flex items-center justify-between gap-3">
+                          <h4 className="font-medium text-muted-foreground text-sm uppercase tracking-wide truncate">{album}</h4>
+                          <span className="text-xs text-muted-foreground/70 flex-shrink-0 tabular-nums">
+                            {albumSongs.length} {albumSongs.length === 1 ? "song" : "songs"}
+                          </span>
+                        </div>
                         <div className="space-y-1 ml-2">
                           {albumSongs.map((song) => (
                             <SongItem

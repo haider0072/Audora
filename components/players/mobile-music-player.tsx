@@ -142,9 +142,21 @@ export default function MobileMusicPlayer() {
   const groupedSongs = useMemo(() => {
     if (viewMode === "list") return {}
 
+    const parseYear = (y?: string): number => {
+      if (!y) return Infinity
+      const match = y.match(/\d{4}/)
+      return match ? parseInt(match[0], 10) : Infinity
+    }
+    const parseTrack = (t?: string): number => {
+      if (!t) return Infinity
+      const n = parseInt(t, 10)
+      return Number.isNaN(n) ? Infinity : n
+    }
+
     const grouped: { [artist: string]: { [album: string]: Song[] } } = {}
     const artistKeyToDisplay = new Map<string, string>()
     const albumKeyToDisplay = new Map<string, string>()
+    const albumYearByDisplayKey = new Map<string, number>()
 
     filteredSongs.forEach((song) => {
       const artistRaw = (song.artist || "Unknown Artist").trim()
@@ -160,6 +172,13 @@ export default function MobileMusicPlayer() {
       }
       const artistDisplay = artistKeyToDisplay.get(artistKey)!
       const albumDisplay = albumKeyToDisplay.get(albumKey)!
+      const displayPairKey = `${artistDisplay}::${albumDisplay}`
+
+      const songYear = parseYear(song.year)
+      const existingYear = albumYearByDisplayKey.get(displayPairKey)
+      if (existingYear === undefined || (existingYear === Infinity && songYear !== Infinity)) {
+        albumYearByDisplayKey.set(displayPairKey, songYear)
+      }
 
       if (!grouped[artistDisplay]) {
         grouped[artistDisplay] = {}
@@ -170,16 +189,24 @@ export default function MobileMusicPlayer() {
       grouped[artistDisplay][albumDisplay].push(song)
     })
 
-    // Sort artists and albums alphabetically (case-insensitive)
+    // Sort artists alphabetically; albums by year (oldest first, missing last); songs by track number
     const sortedGrouped: { [artist: string]: { [album: string]: Song[] } } = {}
     Object.keys(grouped)
       .sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()))
       .forEach((artist) => {
         sortedGrouped[artist] = {}
         Object.keys(grouped[artist])
-          .sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()))
+          .sort((a, b) => {
+            const yA = albumYearByDisplayKey.get(`${artist}::${a}`) ?? Infinity
+            const yB = albumYearByDisplayKey.get(`${artist}::${b}`) ?? Infinity
+            if (yA !== yB) return yA - yB
+            return a.toLowerCase().localeCompare(b.toLowerCase())
+          })
           .forEach((album) => {
             sortedGrouped[artist][album] = grouped[artist][album].sort((a, b) => {
+              const tA = parseTrack(a.trackNumber)
+              const tB = parseTrack(b.trackNumber)
+              if (tA !== tB) return tA - tB
               return (a.title || "").localeCompare(b.title || "")
             })
           })

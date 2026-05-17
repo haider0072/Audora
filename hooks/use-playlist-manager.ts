@@ -66,25 +66,53 @@ export function usePlaylistManager(options: UsePlaylistManagerOptions = {}): Use
   const [playedSongs, setPlayedSongs] = useState<Set<string>>(new Set())
 
   /**
-   * Sort songs by artist -> album -> title
+   * Sort songs by artist (alpha) -> album year (oldest first, missing last) -> track number -> title
    */
   const sortedSongs = useMemo(() => {
+    // Pick first 4-digit run from a year string; Infinity if missing/invalid
+    const parseYear = (y?: string): number => {
+      if (!y) return Infinity
+      const match = y.match(/\d{4}/)
+      return match ? parseInt(match[0], 10) : Infinity
+    }
+    // Parse leading integer ("3" or "3/12"); Infinity if missing/invalid
+    const parseTrack = (t?: string): number => {
+      if (!t) return Infinity
+      const n = parseInt(t, 10)
+      return Number.isNaN(n) ? Infinity : n
+    }
+
+    // First pass: compute representative year per (artist, album) — first non-empty year wins
+    const albumYearMap = new Map<string, number>()
+    for (const s of songs) {
+      const artistKey = (s.artists?.[0] || s.artist || "Unknown Artist").trim().toLowerCase()
+      const albumKey = `${artistKey}::${(s.album || "Unknown Album").trim().toLowerCase()}`
+      if (!albumYearMap.has(albumKey)) {
+        albumYearMap.set(albumKey, parseYear(s.year))
+      } else if (albumYearMap.get(albumKey) === Infinity) {
+        // Upgrade if we now have a real year
+        const y = parseYear(s.year)
+        if (y !== Infinity) albumYearMap.set(albumKey, y)
+      }
+    }
+
     return [...songs].sort((a, b) => {
-      const artistA = (a.artists?.[0] || a.artist || "Unknown Artist").toLowerCase()
-      const artistB = (b.artists?.[0] || b.artist || "Unknown Artist").toLowerCase()
+      const artistA = (a.artists?.[0] || a.artist || "Unknown Artist").trim().toLowerCase()
+      const artistB = (b.artists?.[0] || b.artist || "Unknown Artist").trim().toLowerCase()
+      if (artistA !== artistB) return artistA.localeCompare(artistB)
 
-      if (artistA === artistB) {
-        const albumA = (a.album || "Unknown Album").toLowerCase()
-        const albumB = (b.album || "Unknown Album").toLowerCase()
-
-        if (albumA === albumB) {
-          return (a.title || "").localeCompare(b.title || "")
-        }
-
-        return albumA.localeCompare(albumB)
+      const albumKeyA = `${artistA}::${(a.album || "Unknown Album").trim().toLowerCase()}`
+      const albumKeyB = `${artistB}::${(b.album || "Unknown Album").trim().toLowerCase()}`
+      if (albumKeyA !== albumKeyB) {
+        const yearDiff = (albumYearMap.get(albumKeyA) ?? Infinity) - (albumYearMap.get(albumKeyB) ?? Infinity)
+        if (yearDiff !== 0) return yearDiff
+        return albumKeyA.localeCompare(albumKeyB)
       }
 
-      return artistA.localeCompare(artistB)
+      const tA = parseTrack(a.trackNumber)
+      const tB = parseTrack(b.trackNumber)
+      if (tA !== tB) return tA - tB
+      return (a.title || "").localeCompare(b.title || "")
     })
   }, [songs])
 

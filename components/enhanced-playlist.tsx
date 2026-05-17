@@ -202,9 +202,21 @@ export function EnhancedPlaylist({
   const groupedSongs = useMemo(() => {
     if (viewMode === "list") return {}
 
+    const parseYear = (y?: string): number => {
+      if (!y) return Infinity
+      const match = y.match(/\d{4}/)
+      return match ? parseInt(match[0], 10) : Infinity
+    }
+    const parseTrack = (t?: string): number => {
+      if (!t) return Infinity
+      const n = parseInt(t, 10)
+      return Number.isNaN(n) ? Infinity : n
+    }
+
     const grouped: GroupedSongs = {}
     const artistKeyToDisplay = new Map<string, string>()
     const albumKeyToDisplay = new Map<string, string>()
+    const albumYearByDisplayKey = new Map<string, number>()
 
     filteredSongs.forEach((song) => {
       const artistRaw = (song.artists?.[0] || song.artist || "Unknown Artist").trim()
@@ -220,6 +232,13 @@ export function EnhancedPlaylist({
       }
       const artistDisplay = artistKeyToDisplay.get(artistKey)!
       const albumDisplay = albumKeyToDisplay.get(albumKey)!
+      const displayPairKey = `${artistDisplay}::${albumDisplay}`
+
+      const songYear = parseYear(song.year)
+      const existingYear = albumYearByDisplayKey.get(displayPairKey)
+      if (existingYear === undefined || (existingYear === Infinity && songYear !== Infinity)) {
+        albumYearByDisplayKey.set(displayPairKey, songYear)
+      }
 
       if (!grouped[artistDisplay]) {
         grouped[artistDisplay] = {}
@@ -230,18 +249,24 @@ export function EnhancedPlaylist({
       grouped[artistDisplay][albumDisplay].push(song)
     })
 
-    // Sort artists alphabetically (case-insensitive)
+    // Sort artists alphabetically; albums by year (oldest first, missing last); songs by track number
     const sortedGrouped: GroupedSongs = {}
     Object.keys(grouped)
       .sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()))
       .forEach((artist) => {
         sortedGrouped[artist] = {}
-        // Sort albums alphabetically within each artist (case-insensitive)
         Object.keys(grouped[artist])
-          .sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()))
+          .sort((a, b) => {
+            const yA = albumYearByDisplayKey.get(`${artist}::${a}`) ?? Infinity
+            const yB = albumYearByDisplayKey.get(`${artist}::${b}`) ?? Infinity
+            if (yA !== yB) return yA - yB
+            return a.toLowerCase().localeCompare(b.toLowerCase())
+          })
           .forEach((album) => {
-            // Sort songs within each album by track number or title
             sortedGrouped[artist][album] = grouped[artist][album].sort((a, b) => {
+              const tA = parseTrack(a.trackNumber)
+              const tB = parseTrack(b.trackNumber)
+              if (tA !== tB) return tA - tB
               return (a.title || "").localeCompare(b.title || "")
             })
           })
@@ -409,20 +434,30 @@ export function EnhancedPlaylist({
                         <h3 className="font-semibold text-lg truncate text-foreground" title={artist}>
                           {artist}
                         </h3>
-                        <span className="text-xs text-muted-foreground flex-shrink-0 tabular-nums">
-                          {Object.values(albums).reduce((sum, songs) => sum + songs.length, 0)} songs
-                        </span>
+                        {(() => {
+                          const count = Object.values(albums).reduce((sum, songs) => sum + songs.length, 0)
+                          return (
+                            <span className="text-xs text-muted-foreground flex-shrink-0 tabular-nums">
+                              {count} {count === 1 ? "song" : "songs"}
+                            </span>
+                          )
+                        })()}
                       </div>
                     </div>
 
                     {Object.entries(albums).map(([album, albumSongs]) => (
                       <div key={`${artist}-${album}`} className="ml-4 space-y-2 w-full">
-                        <h4
-                          className="font-medium text-muted-foreground text-sm uppercase tracking-wide truncate pl-2"
-                          title={album}
-                        >
-                          {album}
-                        </h4>
+                        <div className="flex items-center justify-between gap-3 pl-2">
+                          <h4
+                            className="font-medium text-muted-foreground text-sm uppercase tracking-wide truncate"
+                            title={album}
+                          >
+                            {album}
+                          </h4>
+                          <span className="text-xs text-muted-foreground/70 flex-shrink-0 tabular-nums">
+                            {albumSongs.length} {albumSongs.length === 1 ? "song" : "songs"}
+                          </span>
+                        </div>
                         <div className="space-y-1 w-full">
                           {albumSongs.map((song) => (
                             <div key={song.id} className="w-full">
