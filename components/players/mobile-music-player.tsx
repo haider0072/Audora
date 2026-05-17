@@ -143,28 +143,41 @@ export default function MobileMusicPlayer() {
     if (viewMode === "list") return {}
 
     const grouped: { [artist: string]: { [album: string]: Song[] } } = {}
+    const artistKeyToDisplay = new Map<string, string>()
+    const albumKeyToDisplay = new Map<string, string>()
 
     filteredSongs.forEach((song) => {
-      const artist = song.artist || "Unknown Artist"
-      const album = song.album || "Unknown Album"
+      const artistRaw = (song.artist || "Unknown Artist").trim()
+      const albumRaw = (song.album || "Unknown Album").trim()
+      const artistKey = artistRaw.toLowerCase()
+      const albumKey = `${artistKey}::${albumRaw.toLowerCase()}`
 
-      if (!grouped[artist]) {
-        grouped[artist] = {}
+      if (!artistKeyToDisplay.has(artistKey)) {
+        artistKeyToDisplay.set(artistKey, artistRaw)
       }
-      if (!grouped[artist][album]) {
-        grouped[artist][album] = []
+      if (!albumKeyToDisplay.has(albumKey)) {
+        albumKeyToDisplay.set(albumKey, albumRaw)
       }
-      grouped[artist][album].push(song)
+      const artistDisplay = artistKeyToDisplay.get(artistKey)!
+      const albumDisplay = albumKeyToDisplay.get(albumKey)!
+
+      if (!grouped[artistDisplay]) {
+        grouped[artistDisplay] = {}
+      }
+      if (!grouped[artistDisplay][albumDisplay]) {
+        grouped[artistDisplay][albumDisplay] = []
+      }
+      grouped[artistDisplay][albumDisplay].push(song)
     })
 
-    // Sort artists and albums alphabetically
+    // Sort artists and albums alphabetically (case-insensitive)
     const sortedGrouped: { [artist: string]: { [album: string]: Song[] } } = {}
     Object.keys(grouped)
-      .sort()
+      .sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()))
       .forEach((artist) => {
         sortedGrouped[artist] = {}
         Object.keys(grouped[artist])
-          .sort()
+          .sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()))
           .forEach((album) => {
             sortedGrouped[artist][album] = grouped[artist][album].sort((a, b) => {
               return (a.title || "").localeCompare(b.title || "")

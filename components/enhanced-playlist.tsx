@@ -203,29 +203,42 @@ export function EnhancedPlaylist({
     if (viewMode === "list") return {}
 
     const grouped: GroupedSongs = {}
+    const artistKeyToDisplay = new Map<string, string>()
+    const albumKeyToDisplay = new Map<string, string>()
 
     filteredSongs.forEach((song) => {
-      const artist = song.artists?.[0] || song.artist || "Unknown Artist"
-      const album = song.album || "Unknown Album"
+      const artistRaw = (song.artists?.[0] || song.artist || "Unknown Artist").trim()
+      const albumRaw = (song.album || "Unknown Album").trim()
+      const artistKey = artistRaw.toLowerCase()
+      const albumKey = `${artistKey}::${albumRaw.toLowerCase()}`
 
-      if (!grouped[artist]) {
-        grouped[artist] = {}
+      if (!artistKeyToDisplay.has(artistKey)) {
+        artistKeyToDisplay.set(artistKey, artistRaw)
       }
-      if (!grouped[artist][album]) {
-        grouped[artist][album] = []
+      if (!albumKeyToDisplay.has(albumKey)) {
+        albumKeyToDisplay.set(albumKey, albumRaw)
       }
-      grouped[artist][album].push(song)
+      const artistDisplay = artistKeyToDisplay.get(artistKey)!
+      const albumDisplay = albumKeyToDisplay.get(albumKey)!
+
+      if (!grouped[artistDisplay]) {
+        grouped[artistDisplay] = {}
+      }
+      if (!grouped[artistDisplay][albumDisplay]) {
+        grouped[artistDisplay][albumDisplay] = []
+      }
+      grouped[artistDisplay][albumDisplay].push(song)
     })
 
-    // Sort artists alphabetically
+    // Sort artists alphabetically (case-insensitive)
     const sortedGrouped: GroupedSongs = {}
     Object.keys(grouped)
-      .sort()
+      .sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()))
       .forEach((artist) => {
         sortedGrouped[artist] = {}
-        // Sort albums alphabetically within each artist
+        // Sort albums alphabetically within each artist (case-insensitive)
         Object.keys(grouped[artist])
-          .sort()
+          .sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()))
           .forEach((album) => {
             // Sort songs within each album by track number or title
             sortedGrouped[artist][album] = grouped[artist][album].sort((a, b) => {
@@ -392,10 +405,13 @@ export function EnhancedPlaylist({
                       : {})}
                   >
                     <div className="sticky top-0 z-20 py-3 pl-4 -mx-4">
-                      <div className="bg-background/80 backdrop-blur-md border border-border/50 rounded-lg px-4 py-2 shadow-sm">
+                      <div className="bg-background/80 backdrop-blur-md border border-border/50 rounded-lg px-4 py-2 shadow-sm flex items-center justify-between gap-3">
                         <h3 className="font-semibold text-lg truncate text-foreground" title={artist}>
                           {artist}
                         </h3>
+                        <span className="text-xs text-muted-foreground flex-shrink-0 tabular-nums">
+                          {Object.values(albums).reduce((sum, songs) => sum + songs.length, 0)} songs
+                        </span>
                       </div>
                     </div>
 

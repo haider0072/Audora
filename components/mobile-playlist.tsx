@@ -348,7 +348,12 @@ export function MobilePlaylist({
                       : {})}
                   >
                     <div className="sticky top-0 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 z-10 py-2">
-                      <h3 className="font-semibold text-base">{artist}</h3>
+                      <div className="flex items-center justify-between gap-3">
+                        <h3 className="font-semibold text-base truncate">{artist}</h3>
+                        <span className="text-xs text-muted-foreground flex-shrink-0 tabular-nums">
+                          {Object.values(albums).reduce((sum, songs) => sum + songs.length, 0)} songs
+                        </span>
+                      </div>
                       <Separator className="mt-2" />
                     </div>
 
