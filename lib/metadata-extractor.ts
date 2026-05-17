@@ -362,6 +362,8 @@ export class MetadataExtractor {
             metadata.album = value
             break
           case "DATE":
+          case "YEAR":
+          case "ORIGINALDATE":
             metadata.year = value
             break
           case "GENRE":
@@ -375,9 +377,13 @@ export class MetadataExtractor {
             metadata.lyricist = value
             break
           case "TRACKNUMBER":
+          case "TRACK":
+          case "TRACKNUM":
             metadata.trackNumber = value
             break
           case "DISCNUMBER":
+          case "DISC":
+          case "DISCNUM":
             metadata.discNumber = value
             break
           case "COPYRIGHT":
