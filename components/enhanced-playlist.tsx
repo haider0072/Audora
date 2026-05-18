@@ -7,12 +7,20 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { Badge } from "@/components/ui/badge"
 import {
   Music,
-  Trash2,
+  MoreHorizontal,
   Search,
+  ListPlus,
+  Trash2,
 } from "lucide-react"
 import type { AudioMetadata } from "@/lib/metadata-extractor"
 import { AlbumArtDisplay } from "./album-art-display"
 import { AlphabetSidebar, getArtistLetter } from "./alphabet-sidebar"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 
 interface Song extends AudioMetadata {
   id: string
@@ -25,6 +33,7 @@ interface EnhancedPlaylistProps {
   currentSong: Song | null
   onSongSelect: (song: Song) => void
   onSongRemove: (songId: string) => void
+  onSongPlayNext: (song: Song) => void
   isLoading?: boolean
   loadingProgress?: { current: number; total: number }
   viewMode: "grouped" | "list"
@@ -51,12 +60,14 @@ const SongItem = memo(
     showArtistAlbum = false,
     onSongSelect,
     onSongRemove,
+    onSongPlayNext,
   }: {
     song: Song
     isCurrentSong: boolean
     showArtistAlbum?: boolean
     onSongSelect: (song: Song) => void
     onSongRemove: (songId: string) => void
+    onSongPlayNext: (song: Song) => void
   }) => {
     const formatTime = (time: number) => {
       const minutes = Math.floor(time / 60)
@@ -123,22 +134,42 @@ const SongItem = memo(
         </div>
 
         <div className="relative z-10 flex-shrink-0">
-          <Button
-            variant="ghost"
-            size="icon"
-            className={`
-              flex-shrink-0 transition-all duration-150 ease-out
-              opacity-0 group-hover:opacity-100 scale-90 group-hover:scale-100
-              hover:bg-destructive/10 hover:text-destructive
-              ${isCurrentSong ? "opacity-60 hover:opacity-100" : ""}
-            `}
-            onClick={(e) => {
-              e.stopPropagation()
-              onSongRemove(song.id)
-            }}
-          >
-            <Trash2 className="w-4 h-4" />
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label="Song options"
+                className={`
+                  flex-shrink-0 transition-all duration-150 ease-out
+                  opacity-0 group-hover:opacity-100 scale-90 group-hover:scale-100
+                  data-[state=open]:opacity-100 data-[state=open]:scale-100
+                  ${isCurrentSong ? "opacity-60" : ""}
+                `}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <MoreHorizontal className="w-4 h-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent
+              align="end"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <DropdownMenuItem
+                onSelect={() => onSongPlayNext(song)}
+              >
+                <ListPlus className="w-4 h-4 mr-2" />
+                Play next
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onSelect={() => onSongRemove(song.id)}
+                className="text-destructive focus:text-destructive"
+              >
+                <Trash2 className="w-4 h-4 mr-2" />
+                Remove
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
 
         {/* Subtle border highlight for current song */}
@@ -157,6 +188,7 @@ export function EnhancedPlaylist({
   currentSong,
   onSongSelect,
   onSongRemove,
+  onSongPlayNext,
   isLoading = false,
   loadingProgress = { current: 0, total: 0 },
   viewMode,
@@ -414,6 +446,7 @@ export function EnhancedPlaylist({
                       showArtistAlbum={true}
                       onSongSelect={onSongSelect}
                       onSongRemove={onSongRemove}
+                      onSongPlayNext={onSongPlayNext}
                     />
                   </div>
                 ))}
@@ -466,6 +499,7 @@ export function EnhancedPlaylist({
                                 isCurrentSong={currentSong?.id === song.id}
                                 onSongSelect={onSongSelect}
                                 onSongRemove={onSongRemove}
+                                onSongPlayNext={onSongPlayNext}
                               />
                             </div>
                           ))}

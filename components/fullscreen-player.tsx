@@ -37,6 +37,7 @@ interface FullscreenPlayerProps {
   onToggleShuffle: () => void
   onSongSelect: (song: Song) => void
   onSongRemove: (songId: string) => void
+  onSongPlayNext: (song: Song) => void
   onShowEqualizer: () => void
   onShowLyrics: () => void
   onShowYoutube: () => void
@@ -69,6 +70,7 @@ export function FullscreenPlayer({
   onToggleShuffle,
   onSongSelect,
   onSongRemove,
+  onSongPlayNext,
   onShowEqualizer,
   onShowLyrics,
   onShowYoutube,
@@ -279,6 +281,7 @@ export function FullscreenPlayer({
             currentSong={currentSong}
             onSongSelect={handleSongSelect}
             onSongRemove={onSongRemove}
+            onSongPlayNext={onSongPlayNext}
             viewMode={viewMode}
             onViewModeChange={onViewModeChange}
             sortedSongs={sortedSongs}

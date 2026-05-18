@@ -73,7 +73,7 @@ export default function MobileMusicPlayer() {
     songs, setSongs, currentSong, setCurrentSong,
     shuffleMode, setShuffleMode, viewMode, setViewMode,
     sortedSongs, getNextSong, getPreviousSong, notifySongSelected,
-    toggleShuffle, removeSong, resetPlaylist,
+    toggleShuffle, removeSong, resetPlaylist, playNext,
   } = usePlaylistManager({
     onCurrentSongRemoved: () => {
       pause()
@@ -514,6 +514,7 @@ export default function MobileMusicPlayer() {
             viewMode={viewMode}
             onSongSelect={(song) => selectSong(song, false)}
             onSongRemove={removeSong}
+            onSongPlayNext={playNext}
             isLoading={isLoadingSongs || isRestoringPlaylist}
             loadingProgress={loadingProgress}
           />

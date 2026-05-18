@@ -4,10 +4,16 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
 import { Button } from "@/components/ui/button"
-import { Music, Play, Trash2, Search } from "lucide-react"
+import { Music, Play, Trash2, Search, MoreHorizontal, ListPlus } from "lucide-react"
 import { AlbumArtDisplay } from "./album-art-display"
 import { AlphabetSidebar, getArtistLetter } from "./alphabet-sidebar"
 import { memo, useState, useMemo, useRef, useEffect, useCallback } from "react"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 
 interface Song {
   id: string
@@ -42,6 +48,7 @@ interface MobilePlaylistProps {
   viewMode: "grouped" | "list"
   onSongSelect: (song: Song) => void
   onSongRemove: (songId: string) => void
+  onSongPlayNext: (song: Song) => void
   isLoading?: boolean
   loadingProgress?: { current: number; total: number }
 }
@@ -54,6 +61,7 @@ export function MobilePlaylist({
   viewMode,
   onSongSelect,
   onSongRemove,
+  onSongPlayNext,
   isLoading = false,
   loadingProgress = { current: 0, total: 0 },
 }: MobilePlaylistProps) {
@@ -156,12 +164,14 @@ export function MobilePlaylist({
       showArtistAlbum = false,
       onSongSelect,
       onSongRemove,
+      onSongPlayNext,
     }: {
       song: Song
       isCurrentSong: boolean
       showArtistAlbum?: boolean
       onSongSelect: (song: Song) => void
       onSongRemove: (songId: string) => void
+      onSongPlayNext: (song: Song) => void
     }) => {
       const formatTime = (time: number) => {
         const minutes = Math.floor(time / 60)
@@ -248,22 +258,40 @@ export function MobilePlaylist({
           </div>
 
           <div className="relative z-10">
-            <Button
-              variant="ghost"
-              size="icon"
-              className={`
-              h-8 w-8 flex-shrink-0 transition-all duration-150 ease-out
-              opacity-0 group-hover:opacity-100 scale-90 group-hover:scale-100
-              hover:bg-destructive/10 hover:text-destructive
-              ${isCurrentSong ? "opacity-60 hover:opacity-100" : ""}
-            `}
-              onClick={(e) => {
-                e.stopPropagation()
-                onSongRemove(song.id)
-              }}
-            >
-              <Trash2 className="w-3 h-3" />
-            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  aria-label="Song options"
+                  className={`
+                    h-8 w-8 flex-shrink-0 transition-all duration-150 ease-out
+                    opacity-100 sm:opacity-0 sm:group-hover:opacity-100 scale-100 sm:scale-90 sm:group-hover:scale-100
+                    data-[state=open]:opacity-100 data-[state=open]:scale-100
+                    ${isCurrentSong ? "opacity-60" : ""}
+                  `}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <MoreHorizontal className="w-4 h-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent
+                align="end"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <DropdownMenuItem onSelect={() => onSongPlayNext(song)}>
+                  <ListPlus className="w-4 h-4 mr-2" />
+                  Play next
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onSelect={() => onSongRemove(song.id)}
+                  className="text-destructive focus:text-destructive"
+                >
+                  <Trash2 className="w-4 h-4 mr-2" />
+                  Remove
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
 
           {/* Subtle border highlight for current song */}
@@ -333,6 +361,7 @@ export function MobilePlaylist({
                         showArtistAlbum={true}
                         onSongSelect={onSongSelect}
                         onSongRemove={onSongRemove}
+                        onSongPlayNext={onSongPlayNext}
                       />
                     </div>
                   ))}
@@ -378,6 +407,7 @@ export function MobilePlaylist({
                               isCurrentSong={currentSong?.id === song.id}
                               onSongSelect={onSongSelect}
                               onSongRemove={onSongRemove}
+                              onSongPlayNext={onSongPlayNext}
                             />
                           ))}
                         </div>

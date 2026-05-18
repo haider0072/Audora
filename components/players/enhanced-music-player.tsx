@@ -100,7 +100,7 @@ export default function EnhancedMusicPlayer() {
     songs, setSongs, currentSong, setCurrentSong,
     shuffleMode, setShuffleMode, viewMode, setViewMode,
     sortedSongs, getNextSong, getPreviousSong, notifySongSelected,
-    toggleShuffle, removeSong, resetPlaylist,
+    toggleShuffle, removeSong, resetPlaylist, playNext,
   } = usePlaylistManager({
     onCurrentSongRemoved: () => {
       pause()
@@ -727,6 +727,7 @@ export default function EnhancedMusicPlayer() {
               currentSong={currentSong}
               onSongSelect={(song) => selectSong(song, false)}
               onSongRemove={removeSong}
+              onSongPlayNext={playNext}
               isLoading={isLoadingSongs || isRestoringPlaylist}
               loadingProgress={loadingProgress}
               viewMode={viewMode}
@@ -765,6 +766,7 @@ export default function EnhancedMusicPlayer() {
         onToggleShuffle={toggleShuffle}
         onSongSelect={(song) => selectSong(song, false)}
         onSongRemove={removeSong}
+        onSongPlayNext={playNext}
         onShowEqualizer={() => setShowEqualizer(true)}
         onShowLyrics={() => setActiveView("lyrics")}
         onShowYoutube={() => setActiveView("youtube")}
