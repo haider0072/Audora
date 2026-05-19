@@ -53,9 +53,7 @@ export default function EnhancedMusicPlayer() {
   const [currentBitrate, setCurrentBitrate] = useState<number | undefined>()
   const [isTransitioning, setIsTransitioning] = useState(false)
   const [activeView, setActiveView] = useState<"player" | "lyrics" | "youtube" | "insights" | "artist">("player");
-  const videoPlayerRef = useRef<{ resetVideo: () => void }>(null);
   const [forceRefreshTrigger, setForceRefreshTrigger] = useState(0);
-  const [videoReadyCalled, setVideoReadyCalled] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [albumArtSourceRect, setAlbumArtSourceRect] = useState<DOMRect | null>(null);
   const [sidebarMode, setSidebarMode] = useState<"library" | "online">("library");
@@ -118,16 +116,6 @@ export default function EnhancedMusicPlayer() {
     showEqualizer, setShowEqualizer,
     updateBand: updateEqualizerBand, resetEqualizer,
   } = useEqualizerManager({ equalizerBands, setEqualizerBands, filterNodes })
-
-  const handleSync = useCallback(() => {
-    setVideoReadyCalled(false);
-    videoPlayerRef.current?.resetVideo();
-    if (audioRef.current) {
-      audioRef.current.pause();
-      audioRef.current.currentTime = 0;
-    }
-    setIsPlaying(false);
-  }, [setIsPlaying])
 
   const { preloadUpcomingSongs } = useAlbumArtPreloader(songs, currentSong?.id, 3)
 
@@ -293,18 +281,6 @@ export default function EnhancedMusicPlayer() {
     [currentSong, notifySongSelected, initializeAudioContext, preloadUpcomingSongs, isPreloaded, swapToPreloaded, resetGaplessState, applyNormalization],
   )
   
-  // Remove syncDelayActive and all related logic
-  // In handleVideoReady, always play audio after a delay
-  const handleVideoReady = useCallback(() => {
-    if (audioRef.current) {
-      audioRef.current.currentTime = 0;
-      setTimeout(() => {
-        // Play audio after video is ready
-        audioRef.current?.play();
-      }, 1000); // 1 second delay after video is playing
-    }
-  }, []);
-
   const togglePlayPause = async () => {
     if (!currentSong) return
 
@@ -372,10 +348,6 @@ export default function EnhancedMusicPlayer() {
     seek(value[0])
   }
 
-  const handleVideoSeek = (time: number) => {
-    seek(time)
-  }
-
   const formatBitrate = (bitrate?: number) => {
     if (!bitrate) return "Unknown"
     return bitrate >= 1000 ? `${(bitrate / 1000).toFixed(1)}M` : `${Math.round(bitrate)}k`
@@ -421,10 +393,10 @@ export default function EnhancedMusicPlayer() {
   }, []) // eslint-disable-line react-hooks/exhaustive-deps -- intentional: cleanup only on unmount
 
   useEffect(() => {
-    if (activeView !== "youtube") {
-      setVideoReadyCalled(false);
+    if (activeView === "youtube" && isPlaying) {
+      pause();
     }
-  }, [activeView]);
+  }, [activeView, isPlaying, pause]);
 
   const handleOpenFullscreen = useCallback(() => {
     if (albumArtRef.current) {
@@ -564,17 +536,10 @@ export default function EnhancedMusicPlayer() {
             ) : activeView === "youtube" ? (
               <Suspense fallback={null}>
                 <YouTubeVideoPlayer
-                  ref={videoPlayerRef}
                   currentSong={currentSong}
-                  isPlaying={isPlaying}
-                  currentTime={currentTime}
-                  onPlayPause={togglePlayPause}
-                  onSeek={handleVideoSeek}
                   isVisible={true}
                   onClose={() => setActiveView("player")}
                   className="h-full"
-                  onSync={handleSync}
-                  onVideoReady={handleVideoReady}
                   forceRefresh={forceRefreshTrigger}
                 />
               </Suspense>

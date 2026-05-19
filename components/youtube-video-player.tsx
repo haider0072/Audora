@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState, useCallback, forwardRef, useImperativeHandle } from 'react'
+import { useEffect, useRef, useState, useCallback } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -16,15 +16,9 @@ interface YouTubeVideoPlayerProps {
     artist?: string
     duration?: number
   } | null
-  isPlaying: boolean
-  currentTime: number
-  onPlayPause?: () => void
-  onSeek?: (time: number) => void
   className?: string
   isVisible: boolean
   onClose: () => void
-  onVideoReady?: () => void // NEW PROP
-  onSync?: () => void // NEW PROP
   forceRefresh?: number
 }
 
@@ -35,22 +29,13 @@ declare global {
   }
 }
 
-export const YouTubeVideoPlayer = forwardRef<
-  unknown,
-  YouTubeVideoPlayerProps
->(function YouTubeVideoPlayer({
+export function YouTubeVideoPlayer({
   currentSong,
-  isPlaying,
-  currentTime,
-  onPlayPause,
-  onSeek,
   className = '',
   isVisible,
   onClose,
-  onVideoReady, // NEW PROP
-  onSync, // NEW PROP
   forceRefresh
-}, ref) {
+}: YouTubeVideoPlayerProps) {
   const [currentVideo, setCurrentVideo] = useState<YouTubeVideo | null>(null)
   const [videoOptions, setVideoOptions] = useState<YouTubeVideo[]>([])
   const [isLoading, setIsLoading] = useState(false)
@@ -58,16 +43,6 @@ export const YouTubeVideoPlayer = forwardRef<
   const playerRef = useRef<any>(null)
   const playerContainerId = 'youtube-player-container';
   const containerRef = useRef<HTMLDivElement>(null)
-
-  // Expose resetVideo to parent
-  useImperativeHandle(ref, () => ({
-    resetVideo: () => {
-      if (videoOptions.length > 0) {
-        setCurrentVideo(videoOptions[0]);
-        loadVideo(videoOptions[0]);
-      }
-    }
-  }));
 
   // Load YouTube IFrame API
   useEffect(() => {
@@ -118,24 +93,8 @@ export const YouTubeVideoPlayer = forwardRef<
           rel: 0,
           enablejsapi: 1,
           origin: window.location.origin,
-          mute: 1, // Mute video by default
         },
         events: {
-          onReady: (event: any) => {
-            try {
-              event.target.mute();
-              event.target.setVolume(0);
-            } catch (_) {}
-          },
-          onStateChange: (event: any) => {
-            if (event.data === window.YT.PlayerState.PLAYING && onVideoReady) {
-              onVideoReady();
-              try {
-                event.target.mute();
-                event.target.setVolume(0);
-              } catch (_) {}
-            }
-          },
           onError: (event: any) => {
             console.error('YouTube player error:', event.data);
             toast({
@@ -151,7 +110,7 @@ export const YouTubeVideoPlayer = forwardRef<
         },
       });
     }, 100);
-  }, [videoOptions, onVideoReady]);
+  }, [videoOptions]);
 
   useEffect(() => {
     if (currentSong?.title && currentSong?.artist && isVisible) {
@@ -292,15 +251,6 @@ export const YouTubeVideoPlayer = forwardRef<
               >
                 <X className="h-4 w-4" />
               </Button>
-              {/* SYNC BUTTON */}
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={onSync}
-                className="ml-2"
-              >
-                Sync
-              </Button>
             </div>
           </div>
         </CardHeader>
@@ -362,4 +312,4 @@ export const YouTubeVideoPlayer = forwardRef<
       )}
     </div>
   );
-}); 
+}

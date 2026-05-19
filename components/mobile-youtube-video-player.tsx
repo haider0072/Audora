@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState, useCallback, forwardRef, useImperativeHandle } from 'react'
+import { useEffect, useRef, useState, useCallback } from 'react'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet'
 import { Badge } from '@/components/ui/badge'
@@ -16,10 +16,6 @@ interface MobileYouTubeVideoPlayerProps {
     artist?: string
     duration?: number
   } | null
-  isPlaying: boolean
-  currentTime: number
-  onPlayPause?: () => void
-  onSeek?: (time: number) => void
   isOpen: boolean
   onOpenChange: (open: boolean) => void
   forceRefresh?: number
@@ -32,43 +28,18 @@ declare global {
   }
 }
 
-export const MobileYouTubeVideoPlayer = forwardRef<
-  unknown,
-  MobileYouTubeVideoPlayerProps
->(function MobileYouTubeVideoPlayer({
+export function MobileYouTubeVideoPlayer({
   currentSong,
-  isPlaying,
-  currentTime,
-  onPlayPause,
-  onSeek,
   isOpen,
   onOpenChange,
   forceRefresh
-}, ref) {
-  // Remove sync and custom controls state
-  // Remove: videoVolume, isVideoMuted, autoPlayVideos, syncMode, showSettings
-  // Remove: useEffect for sync, play/pause, volume, mute
-
-  // Only keep state for currentVideo, videoOptions, isLoading
+}: MobileYouTubeVideoPlayerProps) {
   const [currentVideo, setCurrentVideo] = useState<YouTubeVideo | null>(null)
   const [videoOptions, setVideoOptions] = useState<YouTubeVideo[]>([])
   const [isLoading, setIsLoading] = useState(false)
 
-  // Add a key to force iframe reload
-  const [videoKey, setVideoKey] = useState(0);
-
   const playerRef = useRef<any>(null)
   const iframeRef = useRef<HTMLIFrameElement>(null)
-
-  // Expose resetVideo to parent
-  useImperativeHandle(ref, () => ({
-    resetVideo: () => {
-      if (videoOptions.length > 0) {
-        setCurrentVideo(videoOptions[0]);
-        setVideoKey(prev => prev + 1); // force iframe reload
-      }
-    }
-  }));
 
   // Load YouTube IFrame API
   useEffect(() => {
@@ -229,10 +200,9 @@ export const MobileYouTubeVideoPlayer = forwardRef<
             </div>
           ) : currentVideo ? (
             <iframe
-              key={videoKey}
               ref={iframeRef}
               className="w-full h-full"
-              src={`https://www.youtube.com/embed/${currentVideo.id}?autoplay=1&controls=1&modestbranding=1&rel=0&mute=1`}
+              src={`https://www.youtube.com/embed/${currentVideo.id}?autoplay=1&controls=1&modestbranding=1&rel=0`}
               title={currentVideo.title}
               frameBorder="0"
               allow="autoplay; encrypted-media"
@@ -280,4 +250,4 @@ export const MobileYouTubeVideoPlayer = forwardRef<
       </SheetContent>
     </Sheet>
   );
-}); 
+}

@@ -99,6 +99,12 @@ export default function MobileMusicPlayer() {
   const [showInsights, setShowInsights] = useState(false)
   const [showArtist, setShowArtist] = useState(false)
 
+  useEffect(() => {
+    if (showVideo && isPlaying) {
+      pause();
+    }
+  }, [showVideo, isPlaying, pause]);
+
   // Use album art preloader hook
   const { preloadUpcomingSongs } = useAlbumArtPreloader(songs, currentSong?.id, 3)
 
@@ -403,10 +409,6 @@ export default function MobileMusicPlayer() {
     seek(value[0])
   }
 
-  const handleVideoSeek = (time: number) => {
-    seek(time)
-  }
-
 
 
   useMediaControls({
@@ -564,10 +566,6 @@ export default function MobileMusicPlayer() {
         {/* Video Player Sheet */}
         <MobileYouTubeVideoPlayer
           currentSong={currentSong}
-          isPlaying={isPlaying}
-          currentTime={currentTime}
-          onPlayPause={togglePlayPause}
-          onSeek={handleVideoSeek}
           isOpen={showVideo}
           onOpenChange={setShowVideo}
           forceRefresh={forceRefreshTrigger}
