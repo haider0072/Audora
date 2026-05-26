@@ -1,71 +1,84 @@
 import { NextRequest, NextResponse } from "next/server"
-import { getSession, clearSession, getCookieHeader } from "../auth/route"
+import { searchLucida, type LucidaService } from "@/lib/lucida-client"
+import { decodeId, encodeId } from "@/lib/lucida-ids"
+import type { DabAlbum, DabArtist } from "@/lib/dab-types"
 
-const DAB_API = "https://dab.yeet.su/api"
-const USER_AGENT =
-  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
-const FETCH_TIMEOUT = 30000
+// Lucida has no dedicated discography endpoint. We search by the artist name
+// (embedded in the encoded artistId) and group resulting albums by URL.
 
 export async function GET(request: NextRequest) {
   const { searchParams } = request.nextUrl
   const artistId = searchParams.get("artistId")
+  const service = (searchParams.get("service") || "qobuz") as LucidaService
+  const country = searchParams.get("country") || "US"
 
   if (!artistId) {
-    return NextResponse.json(
-      { error: "artistId is required" },
-      { status: 400 }
-    )
+    return NextResponse.json({ error: "artistId is required" }, { status: 400 })
   }
 
-  let session = await getSession()
-  if (!session) {
-    return NextResponse.json(
-      { artist: null, albums: null, authenticated: false },
-      { status: 200 }
-    )
+  const payload = decodeId(artistId)
+  if (!payload || (payload.k !== "ar" && payload.k !== "t" && payload.k !== "al")) {
+    return NextResponse.json({ error: "invalid artistId" }, { status: 400 })
   }
+  const artistUrl = payload.u
+  const artistName =
+    (payload.k === "ar" && payload.n) ||
+    (payload.k !== "ar" && (payload as { a?: string }).a) ||
+    ""
 
   try {
-    const params = new URLSearchParams({ artistId })
-    let res = await fetch(`${DAB_API}/discography?${params}`, {
-      headers: {
-        "User-Agent": USER_AGENT,
-        Cookie: getCookieHeader(),
-      },
-      signal: AbortSignal.timeout(FETCH_TIMEOUT),
-    })
+    const query = artistName || artistUrl
+    const results = await searchLucida(query, service, country)
 
-    if (res.status === 401) {
-      clearSession()
-      session = await getSession()
-      if (!session) {
-        return NextResponse.json(
-          { artist: null, albums: null, authenticated: false },
-          { status: 200 }
-        )
-      }
-      res = await fetch(`${DAB_API}/discography?${params}`, {
-        headers: {
-          "User-Agent": USER_AGENT,
-          Cookie: `session=${session}`,
-        },
+    const matchingArtist =
+      results.artists.find((a) => a.url === artistUrl) ??
+      results.artists.find((a) => artistName && a.name.toLowerCase() === artistName.toLowerCase()) ??
+      results.artists[0]
+
+    const resolvedName = matchingArtist?.name || artistName || "Unknown Artist"
+
+    const albumMap = new Map<string, DabAlbum>()
+    for (const album of results.albums) {
+      const matches = album.artists.some(
+        (a) =>
+          a.url === artistUrl ||
+          (artistName && a.name.toLowerCase() === artistName.toLowerCase())
+      )
+      if (!matches) continue
+      if (albumMap.has(album.url)) continue
+      const largestCover =
+        album.coverArtwork[album.coverArtwork.length - 1]?.url || ""
+      albumMap.set(album.url, {
+        id: encodeId({ k: "al", u: album.url, t: album.title, a: album.artists?.[0]?.name }),
+        title: album.title,
+        artist: album.artists.map((a) => a.name).join(", "),
+        artistId,
+        cover: largestCover,
+        releaseDate: album.releaseDate || "",
+        genre: (album.genre || []).join(", "),
+        tracks: [],
+        trackCount: 0,
+        totalDuration: 0,
+        label: album.label,
       })
     }
 
-    if (!res.ok) {
-      console.error("DAB discography error:", res.status)
-      return NextResponse.json(
-        { error: "Discography fetch failed" },
-        { status: 502 }
-      )
+    const artist: DabArtist = {
+      id: artistId,
+      name: resolvedName,
+      image: "",
+      albumCount: albumMap.size,
     }
 
-    const data = await res.json()
-    return NextResponse.json({ ...data, authenticated: true })
+    return NextResponse.json({
+      artist,
+      albums: Array.from(albumMap.values()),
+      authenticated: true,
+    })
   } catch (error) {
-    console.error("DAB discography route error:", error)
+    console.error("Lucida discography route error:", error)
     return NextResponse.json(
-      { error: "Discography request failed" },
+      { error: "Discography request failed", authenticated: true },
       { status: 500 }
     )
   }

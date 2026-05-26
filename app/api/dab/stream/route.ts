@@ -1,121 +1,83 @@
 import { NextRequest, NextResponse } from "next/server"
-import { getSession, clearSession, getCookieHeader } from "../auth/route"
+import {
+  initLucidaDownload,
+  waitForLucidaReady,
+  fetchLucidaAudio,
+} from "@/lib/lucida-client"
+import { decodeId } from "@/lib/lucida-ids"
 
-const DAB_API = "https://dab.yeet.su/api"
-const USER_AGENT =
-  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
-const FETCH_TIMEOUT = 10000 // 10s for stream URL fetch
+export const maxDuration = 300
+export const dynamic = "force-dynamic"
 
 export async function GET(request: NextRequest) {
   const { searchParams } = request.nextUrl
   const trackId = searchParams.get("trackId")
-  const quality = searchParams.get("quality") || "7" // Default: standard FLAC
+  const country = searchParams.get("country") || "auto"
 
   if (!trackId) {
-    return NextResponse.json(
-      { error: "trackId is required" },
-      { status: 400 }
-    )
+    return NextResponse.json({ error: "trackId is required" }, { status: 400 })
   }
 
-  let session = await getSession()
-  if (!session) {
-    return NextResponse.json(
-      { error: "Not authenticated" },
-      { status: 401 }
-    )
+  const payload = decodeId(trackId)
+  if (!payload || payload.k !== "t") {
+    return NextResponse.json({ error: "invalid trackId" }, { status: 400 })
   }
+  const trackUrl = payload.u
+  const fileSlug = sanitizeFilename(
+    [payload.a, payload.t].filter(Boolean).join(" - ") || trackUrl
+  )
 
   try {
-    // Step 1: Get stream URL from DAB
-    const params = new URLSearchParams({ trackId, quality })
-    let res = await fetch(`${DAB_API}/stream?${params}`, {
-      headers: {
-        "User-Agent": USER_AGENT,
-        Cookie: getCookieHeader(),
-      },
-      signal: AbortSignal.timeout(FETCH_TIMEOUT),
+    const { handoff, server } = await initLucidaDownload(trackUrl, { country })
+
+    await waitForLucidaReady(handoff, server, {
+      signal: request.signal,
+      maxAttempts: 80,
+      intervalMs: 1500,
     })
 
-    // Re-auth on 401
-    if (res.status === 401) {
-      clearSession()
-      session = await getSession()
-      if (!session) {
-        return NextResponse.json(
-          { error: "Not authenticated" },
-          { status: 401 }
-        )
-      }
-      res = await fetch(`${DAB_API}/stream?${params}`, {
-        headers: {
-          "User-Agent": USER_AGENT,
-          Cookie: getCookieHeader(),
-        },
-        signal: AbortSignal.timeout(FETCH_TIMEOUT),
-      })
-    }
-
-    if (!res.ok) {
-      console.error("DAB stream URL error:", res.status)
-      return NextResponse.json(
-        { error: "Failed to get stream URL" },
-        { status: 502 }
-      )
-    }
-
-    const data = await res.json()
-    const streamUrl = data.streamUrl || data.url
-    if (!streamUrl) {
-      return NextResponse.json(
-        { error: "No stream URL returned" },
-        { status: 502 }
-      )
-    }
-
-    // Step 2: Fetch the actual audio file and stream it back
-    const audioRes = await fetch(streamUrl, {
-      headers: {
-        "User-Agent": USER_AGENT,
-      },
-    })
+    const audioRes = await fetchLucidaAudio(handoff, server, request.signal)
 
     if (!audioRes.ok || !audioRes.body) {
-      console.error("DAB audio fetch error:", audioRes.status)
+      console.error("Lucida audio fetch failed:", audioRes.status)
       return NextResponse.json(
         { error: "Failed to fetch audio file" },
         { status: 502 }
       )
     }
 
-    // Stream the response back to the client
-    const contentLength = audioRes.headers.get("content-length")
     const contentType =
       audioRes.headers.get("content-type") || "audio/flac"
+    const contentLength = audioRes.headers.get("content-length")
 
     const headers: Record<string, string> = {
       "Content-Type": contentType,
-      "Content-Disposition": `attachment; filename="${trackId}.flac"`,
+      "Content-Disposition": `attachment; filename="${fileSlug}.${extFromMime(contentType)}"`,
     }
-    if (contentLength) {
-      headers["Content-Length"] = contentLength
-    }
+    if (contentLength) headers["Content-Length"] = contentLength
 
-    return new NextResponse(audioRes.body, {
-      status: 200,
-      headers,
-    })
+    return new NextResponse(audioRes.body, { status: 200, headers })
   } catch (error) {
-    if (error instanceof Error && error.name === "TimeoutError") {
-      return NextResponse.json(
-        { error: "Request timed out" },
-        { status: 504 }
-      )
+    if (error instanceof Error && error.name === "AbortError") {
+      return NextResponse.json({ error: "Cancelled" }, { status: 499 })
     }
-    console.error("DAB stream route error:", error)
+    console.error("Lucida stream route error:", error)
     return NextResponse.json(
-      { error: "Stream request failed" },
+      { error: error instanceof Error ? error.message : "Stream request failed" },
       { status: 500 }
     )
   }
+}
+
+function sanitizeFilename(input: string): string {
+  return input.replace(/[^a-zA-Z0-9-_ ]/g, "_").trim().slice(0, 80) || "track"
+}
+
+function extFromMime(mime: string): string {
+  if (mime.includes("flac")) return "flac"
+  if (mime.includes("mpeg") || mime.includes("mp3")) return "mp3"
+  if (mime.includes("aac") || mime.includes("mp4")) return "m4a"
+  if (mime.includes("ogg")) return "ogg"
+  if (mime.includes("opus")) return "opus"
+  return "audio"
 }

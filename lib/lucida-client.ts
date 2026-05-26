@@ -1,0 +1,213 @@
+// Server-side Lucida API client.
+// Talks directly to the katze.lucida.to worker which exposes JSON endpoints
+// without going through Cloudflare's challenge on the lucida.to frontend.
+
+const LUCIDA_WORKER = "https://katze.lucida.to"
+const UA =
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+
+const BROWSER_HEADERS: HeadersInit = {
+  "User-Agent": UA,
+  Accept: "application/json, text/plain, */*",
+  "Accept-Language": "en-US,en;q=0.9",
+  Origin: "https://lucida.to",
+  Referer: "https://lucida.to/",
+}
+
+export type LucidaService =
+  | "qobuz"
+  | "tidal"
+  | "deezer"
+  | "soundcloud"
+  | "amazon"
+  | "yandex"
+
+export interface LucidaCoverArtwork {
+  url: string
+  width: number
+  height: number
+}
+
+export interface LucidaArtist {
+  id: string
+  url: string
+  name: string
+}
+
+export interface LucidaAlbumStub {
+  title: string
+  id: string
+  url: string
+  coverArtwork: LucidaCoverArtwork[]
+  artists: LucidaArtist[]
+  upc?: string
+  releaseDate?: string
+  label?: string
+  genre?: string[]
+}
+
+export interface LucidaTrack {
+  title: string
+  id: string
+  url: string
+  artists: LucidaArtist[]
+  album?: LucidaAlbumStub
+  durationMs?: number
+  explicit?: boolean
+  isrc?: string
+  genres?: string[]
+  trackNumber?: number
+  discNumber?: number
+  copyright?: string
+}
+
+export interface LucidaSearchResult {
+  query: string
+  albums: LucidaAlbumStub[]
+  tracks: LucidaTrack[]
+  artists: LucidaArtist[]
+}
+
+export interface LucidaStreamInitResponse {
+  success: boolean
+  handoff?: string
+  name?: string // server name e.g. "katze"
+  error?: string
+}
+
+export interface LucidaRequestStatus {
+  status: string // "starting" | "downloading" | "transcoding" | "uploading" | "completed" | etc
+  message?: string
+}
+
+const DEFAULT_TIMEOUT = 20000
+
+async function lucidaFetch(path: string, init?: RequestInit): Promise<Response> {
+  return fetch(`${LUCIDA_WORKER}${path}`, {
+    ...init,
+    headers: { ...BROWSER_HEADERS, ...(init?.headers || {}) },
+    signal: init?.signal ?? AbortSignal.timeout(DEFAULT_TIMEOUT),
+  })
+}
+
+export async function searchLucida(
+  query: string,
+  service: LucidaService = "qobuz",
+  country = "US"
+): Promise<LucidaSearchResult> {
+  const params = new URLSearchParams({ service, query, country })
+  const res = await lucidaFetch(`/api/search?${params.toString()}`)
+
+  if (!res.ok) {
+    throw new Error(`Lucida search failed: ${res.status}`)
+  }
+
+  const data = (await res.json()) as { success: boolean; results?: LucidaSearchResult; error?: string }
+  if (!data.success || !data.results) {
+    throw new Error(data.error || "Lucida search returned no results")
+  }
+  return data.results
+}
+
+export async function initLucidaDownload(
+  url: string,
+  opts: { country?: string; metadata?: boolean; private?: boolean } = {}
+): Promise<{ handoff: string; server: string }> {
+  const body = {
+    account: { id: opts.country || "auto", type: "country" },
+    compat: false,
+    downscale: "original",
+    handoff: true,
+    metadata: opts.metadata ?? true,
+    private: opts.private ?? true,
+    token: { primary: "", secondary: null, expiry: 0 },
+    upload: { enabled: false },
+    url,
+  }
+
+  const res = await lucidaFetch("/api/fetch/stream/v2", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  })
+
+  if (!res.ok) {
+    throw new Error(`Lucida stream init failed: ${res.status}`)
+  }
+
+  const data = (await res.json()) as LucidaStreamInitResponse
+  if (!data.success || !data.handoff) {
+    throw new Error(data.error || "Lucida did not return a handoff token")
+  }
+
+  return { handoff: data.handoff, server: data.name || "katze" }
+}
+
+export async function pollLucidaStatus(
+  handoff: string,
+  server = "katze"
+): Promise<LucidaRequestStatus> {
+  const res = await fetch(
+    `https://${server}.lucida.to/api/fetch/request/${handoff}`,
+    {
+      headers: BROWSER_HEADERS,
+      signal: AbortSignal.timeout(DEFAULT_TIMEOUT),
+    }
+  )
+
+  if (!res.ok) {
+    throw new Error(`Lucida status poll failed: ${res.status}`)
+  }
+  return (await res.json()) as LucidaRequestStatus
+}
+
+export async function fetchLucidaAudio(
+  handoff: string,
+  server = "katze",
+  signal?: AbortSignal
+): Promise<Response> {
+  return fetch(
+    `https://${server}.lucida.to/api/fetch/request/${handoff}/download`,
+    {
+      headers: BROWSER_HEADERS,
+      signal,
+    }
+  )
+}
+
+// Wait for the request to reach a downloadable state. Returns when status is
+// "completed" (or the worker starts streaming), throws on terminal failure.
+export async function waitForLucidaReady(
+  handoff: string,
+  server = "katze",
+  opts: { maxAttempts?: number; intervalMs?: number; signal?: AbortSignal } = {}
+): Promise<void> {
+  const max = opts.maxAttempts ?? 60
+  const interval = opts.intervalMs ?? 1500
+
+  for (let i = 0; i < max; i++) {
+    if (opts.signal?.aborted) throw new Error("aborted")
+
+    let status: LucidaRequestStatus
+    try {
+      status = await pollLucidaStatus(handoff, server)
+    } catch (err) {
+      // Transient failure — retry a few times before giving up
+      if (i >= max - 1) throw err
+      await sleep(interval)
+      continue
+    }
+
+    const s = status.status?.toLowerCase() ?? ""
+    if (s === "completed" || s === "ready" || s === "done") return
+    if (s === "error" || s === "failed" || s === "cancelled") {
+      throw new Error(status.message || `Lucida job ${s}`)
+    }
+    await sleep(interval)
+  }
+  throw new Error("Lucida job timed out")
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms))
+}
