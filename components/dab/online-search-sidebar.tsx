@@ -11,10 +11,47 @@ import { ArtistDetailView } from "./artist-detail-view"
 import { DabLoginDialog } from "./dab-login-dialog"
 import { DownloadQueueBar } from "./download-queue-bar"
 import type { UseTidalSearchReturn } from "@/hooks/use-tidal-search"
+import type { SearchSource } from "@/lib/tidal-service"
 
 interface OnlineSearchSidebarProps {
   dab: UseTidalSearchReturn
   hideSearch?: boolean
+}
+
+const SOURCE_OPTIONS: { value: SearchSource; label: string }[] = [
+  { value: "auto", label: "Auto" },
+  { value: "qobuz", label: "Qobuz" },
+  { value: "amazon", label: "Amazon" },
+]
+
+function SourceToggle({
+  value,
+  onChange,
+}: {
+  value: SearchSource
+  onChange: (s: SearchSource) => void
+}) {
+  return (
+    <div className="flex items-center gap-1 p-0.5 bg-white/5 rounded-md w-fit">
+      {SOURCE_OPTIONS.map((opt) => {
+        const active = value === opt.value
+        return (
+          <button
+            key={opt.value}
+            type="button"
+            onClick={() => onChange(opt.value)}
+            className={`px-2.5 py-1 rounded text-[11px] font-medium transition-colors ${
+              active
+                ? "bg-white/15 text-white"
+                : "text-white/50 hover:text-white/80"
+            }`}
+          >
+            {opt.label}
+          </button>
+        )
+      })}
+    </div>
+  )
 }
 
 export function OnlineSearchSidebar({ dab, hideSearch = false }: OnlineSearchSidebarProps) {
@@ -110,12 +147,14 @@ export function OnlineSearchSidebar({ dab, hideSearch = false }: OnlineSearchSid
               )}
             </Button>
           </form>
+          <SourceToggle value={dab.searchSource} onChange={dab.setSearchSource} />
           <SearchTypeTabs value={dab.searchType} onChange={dab.setSearchType} />
         </div>
       )}
       {/* Search type tabs shown even when header has search */}
       {dab.currentView === "search" && hideSearch && (
-        <div className="flex-shrink-0 pb-3">
+        <div className="flex-shrink-0 pb-3 space-y-2">
+          <SourceToggle value={dab.searchSource} onChange={dab.setSearchSource} />
           <SearchTypeTabs value={dab.searchType} onChange={dab.setSearchType} />
         </div>
       )}

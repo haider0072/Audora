@@ -22,12 +22,12 @@ export class TidalCache {
     return `${prefix}:${parts.map((p) => p.toLowerCase().trim()).join("|")}`
   }
 
-  static getCachedSearch(query: string, type: string): TidalSearchResult | null {
-    return this.get<TidalSearchResult>(this.generateKey("search", query, type))
+  static getCachedSearch(query: string, type: string, source = "auto"): TidalSearchResult | null {
+    return this.get<TidalSearchResult>(this.generateKey("search", query, type, source))
   }
 
-  static cacheSearch(query: string, type: string, data: TidalSearchResult): void {
-    this.set(this.generateKey("search", query, type), data, this.SEARCH_DURATION)
+  static cacheSearch(query: string, type: string, data: TidalSearchResult, source = "auto"): void {
+    this.set(this.generateKey("search", query, type, source), data, this.SEARCH_DURATION)
   }
 
   static getCachedAlbum(albumId: string): TidalAlbum | null {

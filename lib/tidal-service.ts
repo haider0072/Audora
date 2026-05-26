@@ -5,6 +5,8 @@ import type {
   TidalDiscographyResult,
 } from "./tidal-types"
 
+export type SearchSource = "auto" | "qobuz" | "amazon"
+
 export class TidalService {
   private static queue: Array<() => void> = []
   private static isProcessing = false
@@ -38,9 +40,10 @@ export class TidalService {
   static async search(
     query: string,
     type: string = "track",
-    limit: number = 20
+    limit: number = 20,
+    source: SearchSource = "auto"
   ): Promise<TidalSearchResult | null> {
-    const cached = TidalCache.getCachedSearch(query, type)
+    const cached = TidalCache.getCachedSearch(query, type, source)
     if (cached) return cached
 
     return this.enqueue(async () => {
@@ -50,6 +53,8 @@ export class TidalService {
           type,
           limit: String(limit),
         })
+        if (source !== "auto") params.set("source", source)
+
         const res = await fetch(`/api/tidal/search?${params}`)
 
         if (res.status === 429) {
@@ -79,7 +84,7 @@ export class TidalService {
           searchType: data.searchType || type,
         }
 
-        TidalCache.cacheSearch(query, type, result)
+        TidalCache.cacheSearch(query, type, result, source)
         return result
       } catch (error) {
         if (

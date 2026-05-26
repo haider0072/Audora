@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useRef, useEffect } from "react"
 import { toast } from "@/hooks/use-toast"
-import { TidalService } from "@/lib/tidal-service"
+import { TidalService, type SearchSource } from "@/lib/tidal-service"
 import { MetadataExtractor } from "@/lib/metadata-extractor"
 import { LoudnessAnalyzer } from "@/lib/loudness-analyzer"
 import { PlaylistStorage } from "@/lib/playlist-storage"
@@ -39,6 +39,22 @@ export function useTidalSearch(options: UseTidalSearchOptions) {
   const [searchType, setSearchType] = useState<"track" | "album" | "artist" | "all">("all")
   const [searchResults, setSearchResults] = useState<TidalSearchResult | null>(null)
   const [isSearching, setIsSearching] = useState(false)
+
+  // Source preference (auto = merge Qobuz+Amazon, otherwise pin to one).
+  // Lazy-init from localStorage so the choice survives reloads.
+  const [searchSource, setSearchSourceState] = useState<SearchSource>(() => {
+    if (typeof window === "undefined") return "auto"
+    const saved = window.localStorage.getItem("audora_search_source")
+    return saved === "qobuz" || saved === "amazon" ? saved : "auto"
+  })
+  const setSearchSource = useCallback((s: SearchSource) => {
+    setSearchSourceState(s)
+    try {
+      window.localStorage.setItem("audora_search_source", s)
+    } catch {
+      // localStorage may be disabled — preference just won't persist.
+    }
+  }, [])
 
   // Navigation state
   const [currentView, setCurrentView] = useState<TidalView>("search")
@@ -91,7 +107,7 @@ export function useTidalSearch(options: UseTidalSearchOptions) {
     setError(null)
 
     try {
-      const data = await TidalService.search(q, searchType)
+      const data = await TidalService.search(q, searchType, 20, searchSource)
       setSearchResults(data)
       setCurrentView("search")
     } catch (err) {
@@ -105,7 +121,7 @@ export function useTidalSearch(options: UseTidalSearchOptions) {
     } finally {
       setIsSearching(false)
     }
-  }, [searchQuery, searchType])
+  }, [searchQuery, searchType, searchSource])
 
   // View album detail
   const viewAlbum = useCallback(async (albumId: string) => {
@@ -473,6 +489,8 @@ export function useTidalSearch(options: UseTidalSearchOptions) {
     setSearchQuery,
     searchType,
     setSearchType,
+    searchSource,
+    setSearchSource,
     searchResults,
     isSearching,
     search,
