@@ -9,7 +9,10 @@ interface CacheEntry<T> {
 type CacheData = Record<string, CacheEntry<unknown>>
 
 export class TidalCache {
-  private static readonly CACHE_KEY = "audora_tidal_cache"
+  // Bumped from v1 → v2 when the Tidal route was rerouted onto Lucida.
+  // Old entries hold dead qqdl.site IDs and have to be invalidated.
+  private static readonly CACHE_KEY = "audora_tidal_cache_v2"
+  private static readonly LEGACY_KEYS = ["audora_tidal_cache"]
   private static readonly SEARCH_DURATION = 60 * 60 * 1000 // 1 hour
   private static readonly DETAIL_DURATION = 24 * 60 * 60 * 1000 // 24 hours
   private static readonly MAX_ENTRIES = 200
@@ -101,6 +104,9 @@ export class TidalCache {
 
   private static loadCache(): CacheData {
     try {
+      for (const legacy of this.LEGACY_KEYS) {
+        if (localStorage.getItem(legacy)) localStorage.removeItem(legacy)
+      }
       const cached = localStorage.getItem(this.CACHE_KEY)
       return cached ? JSON.parse(cached) : {}
     } catch {

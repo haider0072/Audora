@@ -9,7 +9,11 @@ interface DabCacheEntry<T> {
 type CacheData = Record<string, DabCacheEntry<unknown>>
 
 export class DabCache {
-  private static readonly CACHE_KEY = "audora_dab_cache"
+  // Bumped from v1 → v2 with the DAB→Lucida swap. Entries from before
+  // the swap have the wrong shape (no `source`, old numeric track IDs)
+  // and need to be re-fetched.
+  private static readonly CACHE_KEY = "audora_dab_cache_v2"
+  private static readonly LEGACY_KEYS = ["audora_dab_cache"]
   private static readonly SEARCH_DURATION = 60 * 60 * 1000 // 1 hour
   private static readonly DETAIL_DURATION = 24 * 60 * 60 * 1000 // 24 hours
   private static readonly MAX_ENTRIES = 200
@@ -109,6 +113,11 @@ export class DabCache {
 
   private static loadCache(): CacheData {
     try {
+      // Drop any cache buckets from previous versions so we don't waste
+      // storage on data that can never satisfy a current read.
+      for (const legacy of this.LEGACY_KEYS) {
+        if (localStorage.getItem(legacy)) localStorage.removeItem(legacy)
+      }
       const cached = localStorage.getItem(this.CACHE_KEY)
       return cached ? JSON.parse(cached) : {}
     } catch {
