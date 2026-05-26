@@ -1,111 +1,82 @@
 import { NextRequest, NextResponse } from "next/server"
+import {
+  initLucidaDownload,
+  waitForLucidaReady,
+  fetchLucidaAudio,
+} from "@/lib/lucida-client"
+import { decodeId } from "@/lib/lucida-ids"
 
-const API_SERVERS = [
-  "https://hund.qqdl.site",
-  "https://katze.qqdl.site",
-  "https://maus.qqdl.site",
-  "https://vogel.qqdl.site",
-  "https://wolf.qqdl.site",
-]
-let serverIndex = 0
-
-function getApiBase(): string {
-  const server = API_SERVERS[serverIndex % API_SERVERS.length]
-  serverIndex++
-  return server
-}
-
-const FETCH_TIMEOUT = 60000
+export const maxDuration = 300
+export const dynamic = "force-dynamic"
 
 export async function GET(request: NextRequest) {
   const { searchParams } = request.nextUrl
   const trackId = searchParams.get("trackId")
-  const quality = searchParams.get("quality") || "LOSSLESS"
+  const country = searchParams.get("country") || "auto"
 
   if (!trackId) {
-    return NextResponse.json(
-      { error: "trackId is required" },
-      { status: 400 }
-    )
+    return NextResponse.json({ error: "trackId is required" }, { status: 400 })
   }
 
-  try {
-    const apiBase = getApiBase()
+  const payload = decodeId(trackId)
+  if (!payload || payload.k !== "t") {
+    return NextResponse.json({ error: "invalid trackId" }, { status: 400 })
+  }
+  const trackUrl = payload.u
+  const fileSlug = sanitizeFilename(
+    [payload.a, payload.t].filter(Boolean).join(" - ") || trackUrl
+  )
 
-    // Step 1: Get track manifest from Tidal API
-    const params = new URLSearchParams({ id: trackId, quality })
-    const res = await fetch(`${apiBase}/track/?${params}`, {
-      signal: AbortSignal.timeout(FETCH_TIMEOUT),
+  try {
+    const { handoff, server } = await initLucidaDownload(trackUrl, { country })
+
+    await waitForLucidaReady(handoff, server, {
+      signal: request.signal,
+      maxAttempts: 80,
+      intervalMs: 1500,
     })
 
-    if (!res.ok) {
-      console.error("Tidal track API error:", res.status)
-      return NextResponse.json(
-        { error: "Failed to get track info" },
-        { status: 502 }
-      )
-    }
-
-    const data = await res.json()
-    const manifestB64 = data.data?.manifest
-    if (!manifestB64) {
-      return NextResponse.json(
-        { error: "No manifest returned" },
-        { status: 502 }
-      )
-    }
-
-    // Step 2: Decode base64 manifest to get stream URL
-    const manifestJson = Buffer.from(manifestB64, "base64").toString("utf-8")
-    const manifest = JSON.parse(manifestJson)
-    const streamUrl = manifest.urls?.[0]
-
-    if (!streamUrl) {
-      return NextResponse.json(
-        { error: "No stream URL in manifest" },
-        { status: 502 }
-      )
-    }
-
-    // Step 3: Fetch the actual audio file and stream it back
-    const audioRes = await fetch(streamUrl)
+    const audioRes = await fetchLucidaAudio(handoff, server, request.signal)
 
     if (!audioRes.ok || !audioRes.body) {
-      console.error("Tidal audio fetch error:", audioRes.status)
+      console.error("Lucida tidal audio fetch failed:", audioRes.status)
       return NextResponse.json(
         { error: "Failed to fetch audio file" },
         { status: 502 }
       )
     }
 
+    const contentType = audioRes.headers.get("content-type") || "audio/flac"
     const contentLength = audioRes.headers.get("content-length")
-    const mimeType = manifest.mimeType || "audio/flac"
-    const codec = manifest.codecs || "flac"
-    const ext = codec === "flac" ? "flac" : "m4a"
 
     const headers: Record<string, string> = {
-      "Content-Type": mimeType,
-      "Content-Disposition": `attachment; filename="${trackId}.${ext}"`,
+      "Content-Type": contentType,
+      "Content-Disposition": `attachment; filename="${fileSlug}.${extFromMime(contentType)}"`,
     }
-    if (contentLength) {
-      headers["Content-Length"] = contentLength
-    }
+    if (contentLength) headers["Content-Length"] = contentLength
 
-    return new NextResponse(audioRes.body, {
-      status: 200,
-      headers,
-    })
+    return new NextResponse(audioRes.body, { status: 200, headers })
   } catch (error) {
-    if (error instanceof Error && error.name === "TimeoutError") {
-      return NextResponse.json(
-        { error: "Request timed out" },
-        { status: 504 }
-      )
+    if (error instanceof Error && error.name === "AbortError") {
+      return NextResponse.json({ error: "Cancelled" }, { status: 499 })
     }
-    console.error("Tidal stream route error:", error)
+    console.error("Lucida tidal stream error:", error)
     return NextResponse.json(
-      { error: "Stream request failed" },
+      { error: error instanceof Error ? error.message : "Stream request failed" },
       { status: 500 }
     )
   }
+}
+
+function sanitizeFilename(input: string): string {
+  return input.replace(/[^a-zA-Z0-9-_ ]/g, "_").trim().slice(0, 80) || "track"
+}
+
+function extFromMime(mime: string): string {
+  if (mime.includes("flac")) return "flac"
+  if (mime.includes("mpeg") || mime.includes("mp3")) return "mp3"
+  if (mime.includes("aac") || mime.includes("mp4")) return "m4a"
+  if (mime.includes("ogg")) return "ogg"
+  if (mime.includes("opus")) return "opus"
+  return "audio"
 }
