@@ -10,6 +10,7 @@ export interface DabTrack {
   genre: string
   duration: number
   audioQuality: string
+  source?: "qobuz" | "amazon"
 }
 
 export interface DabAlbum {
@@ -24,6 +25,7 @@ export interface DabAlbum {
   trackCount: number
   totalDuration: number
   label?: string
+  source?: "qobuz" | "amazon"
 }
 
 export interface DabArtist {

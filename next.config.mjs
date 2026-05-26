@@ -43,7 +43,7 @@ const nextConfig = {
             "default-src 'self'",
             "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://www.youtube.com https://s.ytimg.com",
             "style-src 'self' 'unsafe-inline'",
-            "img-src 'self' blob: data: https://i.ytimg.com https://*.googleapis.com https://i.scdn.co https://*.yeet.su https://static.qobuz.com https://resources.tidal.com",
+            "img-src 'self' blob: data: https://i.ytimg.com https://*.googleapis.com https://i.scdn.co https://*.yeet.su https://static.qobuz.com https://resources.tidal.com https://m.media-amazon.com https://images-na.ssl-images-amazon.com",
             "font-src 'self'",
             "connect-src 'self' blob: https://lrclib.net https://www.googleapis.com https://*.yeet.su https://resources.tidal.com",
             "frame-src https://www.youtube.com",

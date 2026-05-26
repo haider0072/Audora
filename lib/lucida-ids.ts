@@ -5,12 +5,15 @@
 
 export type IdKind = "track" | "album" | "artist"
 
+// `s` records which Lucida service the item came from so follow-up search
+// routes (album, discography) re-query the same source instead of guessing.
 export interface TrackIdPayload {
   k: "t"
   u: string // streaming URL (e.g. https://play.qobuz.com/track/...)
   t?: string // track title
   a?: string // artist name
   al?: string // album title
+  s?: "qobuz" | "amazon" // originating source
 }
 
 export interface AlbumIdPayload {
@@ -18,12 +21,14 @@ export interface AlbumIdPayload {
   u: string // album URL
   t?: string // album title
   a?: string // primary artist name
+  s?: "qobuz" | "amazon"
 }
 
 export interface ArtistIdPayload {
   k: "ar"
   u: string // artist URL
   n?: string // artist name
+  s?: "qobuz" | "amazon"
 }
 
 export type IdPayload = TrackIdPayload | AlbumIdPayload | ArtistIdPayload

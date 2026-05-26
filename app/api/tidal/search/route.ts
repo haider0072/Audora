@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from "next/server"
 import {
-  searchLucida,
+  searchAllSources,
+  narrowSource,
   type LucidaService,
-  type LucidaTrack,
-  type LucidaAlbumStub,
-  type LucidaArtist,
   type LucidaCoverArtwork,
+  type SourcedTrack,
+  type SourcedAlbum,
+  type SourcedArtist,
 } from "@/lib/lucida-client"
 import { encodeId } from "@/lib/lucida-ids"
 
@@ -36,23 +37,23 @@ function pickCover(artwork: LucidaCoverArtwork[] | undefined, target = 640): str
   return sorted[0]?.url || artwork[artwork.length - 1].url
 }
 
-function artistsToString(artists: LucidaArtist[]): string {
+function artistsToString(artists: { name: string }[]): string {
   return artists.map((a) => a.name).join(", ")
 }
 
-function mapTrack(t: LucidaTrack) {
+function mapTrack(t: SourcedTrack) {
   const album = t.album
   const artistName = artistsToString(t.artists)
   return {
-    id: encodeId({ k: "t", u: t.url, t: t.title, a: artistName, al: album?.title }),
+    id: encodeId({ k: "t", u: t.url, t: t.title, a: artistName, al: album?.title, s: narrowSource(t.source) }),
     title: t.title,
     artist: artistName,
     artistId: t.artists[0]
-      ? encodeId({ k: "ar", u: t.artists[0].url, n: t.artists[0].name })
+      ? encodeId({ k: "ar", u: t.artists[0].url, n: t.artists[0].name, s: narrowSource(t.source) })
       : "",
     albumTitle: album?.title || "",
     albumId: album
-      ? encodeId({ k: "al", u: album.url, t: album.title, a: album.artists?.[0]?.name })
+      ? encodeId({ k: "al", u: album.url, t: album.title, a: album.artists?.[0]?.name, s: narrowSource(t.source) })
       : "",
     albumCover: pickCover(album?.coverArtwork),
     releaseDate: album?.releaseDate || "",
@@ -63,16 +64,17 @@ function mapTrack(t: LucidaTrack) {
     discNumber: t.discNumber,
     copyright: t.copyright,
     isrc: t.isrc,
+    source: narrowSource(t.source),
   }
 }
 
-function mapAlbum(a: LucidaAlbumStub) {
+function mapAlbum(a: SourcedAlbum) {
   return {
-    id: encodeId({ k: "al", u: a.url, t: a.title, a: a.artists?.[0]?.name }),
+    id: encodeId({ k: "al", u: a.url, t: a.title, a: a.artists?.[0]?.name, s: narrowSource(a.source) }),
     title: a.title,
     artist: artistsToString(a.artists),
     artistId: a.artists[0]
-      ? encodeId({ k: "ar", u: a.artists[0].url, n: a.artists[0].name })
+      ? encodeId({ k: "ar", u: a.artists[0].url, n: a.artists[0].name, s: narrowSource(a.source) })
       : "",
     cover: pickCover(a.coverArtwork),
     releaseDate: a.releaseDate || "",
@@ -81,12 +83,13 @@ function mapAlbum(a: LucidaAlbumStub) {
     trackCount: 0,
     totalDuration: 0,
     label: a.label,
+    source: narrowSource(a.source),
   }
 }
 
-function mapArtist(a: LucidaArtist) {
+function mapArtist(a: SourcedArtist) {
   return {
-    id: encodeId({ k: "ar", u: a.url, n: a.name }),
+    id: encodeId({ k: "ar", u: a.url, n: a.name, s: narrowSource(a.source) }),
     name: a.name,
     image: "",
     albumCount: undefined,
@@ -98,12 +101,8 @@ export async function GET(request: NextRequest) {
   const q = searchParams.get("q")
   const type = searchParams.get("type") || "track"
   const limit = Number(searchParams.get("limit") || "20")
-  // Lucida's public workers only expose direct search for qobuz + amazon.
-  // Tidal/Deezer/SoundCloud requests go through the Cloudflare-walled
-  // frontend, so we default to qobuz here regardless of the historical
-  // route name. The audio quality is FLAC either way.
-  const service = (searchParams.get("service") || "qobuz") as LucidaService
   const country = searchParams.get("country") || "US"
+  const sourceFilter = searchParams.get("source") as LucidaService | null
 
   if (!q) {
     return NextResponse.json(
@@ -121,14 +120,18 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const results = await searchLucida(q, service, country)
+    const services: LucidaService[] = sourceFilter
+      ? [sourceFilter]
+      : ["qobuz", "amazon"]
 
-    const tracks = results.tracks.map(mapTrack).slice(0, limit)
-    const albums = results.albums.map(mapAlbum).slice(0, limit)
+    const merged = await searchAllSources(q, country, services)
+
+    const tracks = merged.tracks.map(mapTrack).slice(0, limit)
+    const albums = merged.albums.map(mapAlbum).slice(0, limit)
 
     const seenArtists = new Set<string>()
     const artists: ReturnType<typeof mapArtist>[] = []
-    for (const a of results.artists) {
+    for (const a of merged.artists) {
       if (seenArtists.has(a.url)) continue
       seenArtists.add(a.url)
       artists.push(mapArtist(a))

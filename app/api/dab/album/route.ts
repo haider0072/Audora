@@ -27,11 +27,14 @@ export async function GET(request: NextRequest) {
     (payload.k === "t" && payload.al) ||
     ""
   const artistHint = (payload as { a?: string }).a || ""
+  // Use the source that originally produced this album for follow-up
+  // searches — Qobuz IDs won't match Amazon's album catalog and vice versa.
+  const resolvedService = (payload.s as LucidaService | undefined) || service
 
   try {
     // 1. Find the album stub itself so we have authoritative metadata.
     const stubQuery = [albumTitleHint, artistHint].filter(Boolean).join(" ") || albumUrl
-    const stubSearch = await searchLucida(stubQuery, service, country)
+    const stubSearch = await searchLucida(stubQuery, resolvedService, country)
     const albumStub =
       stubSearch.albums.find((a) => a.url === albumUrl) ?? stubSearch.albums[0]
 
@@ -66,7 +69,7 @@ export async function GET(request: NextRequest) {
     for (const q of queries) {
       let res
       try {
-        res = await searchLucida(q, service, country)
+        res = await searchLucida(q, resolvedService, country)
       } catch {
         continue
       }
@@ -87,11 +90,11 @@ export async function GET(request: NextRequest) {
       .map<DabTrack>((t) => {
         const artistName = t.artists.map((a) => a.name).join(", ")
         return {
-          id: encodeId({ k: "t", u: t.url, t: t.title, a: artistName, al: albumStub.title }),
+          id: encodeId({ k: "t", u: t.url, t: t.title, a: artistName, al: albumStub.title, s: resolvedService as "qobuz" | "amazon" }),
           title: t.title,
           artist: artistName,
           artistId: t.artists[0]
-            ? encodeId({ k: "ar", u: t.artists[0].url, n: t.artists[0].name })
+            ? encodeId({ k: "ar", u: t.artists[0].url, n: t.artists[0].name, s: resolvedService as "qobuz" | "amazon" })
             : "",
           albumTitle: albumStub.title,
           albumId,
@@ -100,6 +103,7 @@ export async function GET(request: NextRequest) {
           genre: (albumStub.genre || []).join(", "),
           duration: t.durationMs ? Math.round(t.durationMs / 1000) : 0,
           audioQuality: "FLAC",
+          source: resolvedService as "qobuz" | "amazon",
         }
       })
       .sort((a, b) => {
@@ -120,7 +124,7 @@ export async function GET(request: NextRequest) {
       title: albumStub.title,
       artist: albumStub.artists.map((a) => a.name).join(", "),
       artistId: albumStub.artists[0]
-        ? encodeId({ k: "ar", u: albumStub.artists[0].url, n: albumStub.artists[0].name })
+        ? encodeId({ k: "ar", u: albumStub.artists[0].url, n: albumStub.artists[0].name, s: resolvedService as "qobuz" | "amazon" })
         : "",
       cover: largestCover,
       releaseDate: albumStub.releaseDate || "",
@@ -129,6 +133,7 @@ export async function GET(request: NextRequest) {
       trackCount: dabTracks.length,
       totalDuration: dabTracks.reduce((sum, t) => sum + t.duration, 0),
       label: albumStub.label,
+      source: resolvedService as "qobuz" | "amazon",
     }
 
     return NextResponse.json({ album, authenticated: true })

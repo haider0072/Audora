@@ -1,19 +1,15 @@
 import { NextRequest, NextResponse } from "next/server"
 import {
-  searchLucida,
+  searchAllSources,
+  narrowSource,
   type LucidaService,
-  type LucidaTrack,
-  type LucidaAlbumStub,
-  type LucidaArtist,
   type LucidaCoverArtwork,
+  type SourcedTrack,
+  type SourcedAlbum,
+  type SourcedArtist,
 } from "@/lib/lucida-client"
 import { encodeId } from "@/lib/lucida-ids"
-import type {
-  DabTrack,
-  DabAlbum,
-  DabArtist,
-  DabSearchResult,
-} from "@/lib/dab-types"
+import type { DabTrack, DabAlbum, DabArtist, DabSearchResult } from "@/lib/dab-types"
 
 const requestTimestamps: number[] = []
 const RATE_LIMIT = 30
@@ -36,44 +32,46 @@ function checkRateLimit(): { allowed: boolean; retryAfter?: number } {
 
 function pickCover(artwork: LucidaCoverArtwork[] | undefined, target = 600): string {
   if (!artwork || artwork.length === 0) return ""
-  const sorted = [...artwork].sort((a, b) => Math.abs(a.width - target) - Math.abs(b.width - target))
+  const sorted = [...artwork].sort(
+    (a, b) => Math.abs(a.width - target) - Math.abs(b.width - target)
+  )
   return sorted[0]?.url || artwork[artwork.length - 1].url
 }
 
-function artistsToString(artists: LucidaArtist[]): string {
+function artistsToString(artists: { name: string }[]): string {
   return artists.map((a) => a.name).join(", ")
 }
 
-function lucidaTrackToDab(t: LucidaTrack): DabTrack {
+function lucidaTrackToDab(t: SourcedTrack): DabTrack {
   const album = t.album
   const artistName = artistsToString(t.artists)
   return {
-    id: encodeId({ k: "t", u: t.url, t: t.title, a: artistName, al: album?.title }),
+    id: encodeId({ k: "t", u: t.url, t: t.title, a: artistName, al: album?.title, s: narrowSource(t.source) }),
     title: t.title,
     artist: artistName,
     artistId: t.artists[0]
-      ? encodeId({ k: "ar", u: t.artists[0].url, n: t.artists[0].name })
+      ? encodeId({ k: "ar", u: t.artists[0].url, n: t.artists[0].name, s: narrowSource(t.source) })
       : "",
     albumTitle: album?.title || "",
     albumId: album
-      ? encodeId({ k: "al", u: album.url, t: album.title, a: album.artists?.[0]?.name })
+      ? encodeId({ k: "al", u: album.url, t: album.title, a: album.artists?.[0]?.name, s: narrowSource(t.source) })
       : "",
     albumCover: pickCover(album?.coverArtwork),
     releaseDate: album?.releaseDate || "",
     genre: (album?.genre || t.genres || []).join(", "),
     duration: t.durationMs ? Math.round(t.durationMs / 1000) : 0,
     audioQuality: "FLAC",
+    source: narrowSource(t.source),
   }
 }
 
-function lucidaAlbumToDab(a: LucidaAlbumStub): DabAlbum {
-  const artistName = artistsToString(a.artists)
+function lucidaAlbumToDab(a: SourcedAlbum): DabAlbum {
   return {
-    id: encodeId({ k: "al", u: a.url, t: a.title, a: a.artists?.[0]?.name }),
+    id: encodeId({ k: "al", u: a.url, t: a.title, a: a.artists?.[0]?.name, s: narrowSource(a.source) }),
     title: a.title,
-    artist: artistName,
+    artist: artistsToString(a.artists),
     artistId: a.artists[0]
-      ? encodeId({ k: "ar", u: a.artists[0].url, n: a.artists[0].name })
+      ? encodeId({ k: "ar", u: a.artists[0].url, n: a.artists[0].name, s: narrowSource(a.source) })
       : "",
     cover: pickCover(a.coverArtwork),
     releaseDate: a.releaseDate || "",
@@ -82,12 +80,13 @@ function lucidaAlbumToDab(a: LucidaAlbumStub): DabAlbum {
     trackCount: 0,
     totalDuration: 0,
     label: a.label,
+    source: narrowSource(a.source),
   }
 }
 
-function lucidaArtistToDab(a: LucidaArtist): DabArtist {
+function lucidaArtistToDab(a: SourcedArtist): DabArtist {
   return {
-    id: encodeId({ k: "ar", u: a.url, n: a.name }),
+    id: encodeId({ k: "ar", u: a.url, n: a.name, s: narrowSource(a.source) }),
     name: a.name,
     image: "",
   }
@@ -98,8 +97,8 @@ export async function GET(request: NextRequest) {
   const q = searchParams.get("q")
   const type = searchParams.get("type") || "track"
   const limit = Number(searchParams.get("limit") || "20")
-  const service = (searchParams.get("service") || "qobuz") as LucidaService
   const country = searchParams.get("country") || "US"
+  const sourceFilter = searchParams.get("source") as LucidaService | null
 
   if (!q) {
     return NextResponse.json({ error: "q (search query) is required" }, { status: 400 })
@@ -114,19 +113,15 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const results = await searchLucida(q, service, country)
+    const services: LucidaService[] = sourceFilter
+      ? [sourceFilter]
+      : ["qobuz", "amazon"]
 
-    const tracks = results.tracks.map(lucidaTrackToDab).slice(0, limit)
-    const albums = results.albums.map(lucidaAlbumToDab).slice(0, limit)
+    const merged = await searchAllSources(q, country, services)
 
-    const seenArtists = new Set<string>()
-    const artists: DabArtist[] = []
-    for (const a of results.artists) {
-      if (seenArtists.has(a.url)) continue
-      seenArtists.add(a.url)
-      artists.push(lucidaArtistToDab(a))
-      if (artists.length >= limit) break
-    }
+    const tracks = merged.tracks.map(lucidaTrackToDab).slice(0, limit)
+    const albums = merged.albums.map(lucidaAlbumToDab).slice(0, limit)
+    const artists = merged.artists.map(lucidaArtistToDab).slice(0, limit)
 
     const dabShape: DabSearchResult = {
       tracks,

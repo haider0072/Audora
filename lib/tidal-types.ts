@@ -14,6 +14,7 @@ export interface TidalTrack {
   discNumber?: number
   copyright?: string
   isrc?: string
+  source?: "qobuz" | "amazon"
 }
 
 export interface TidalAlbum {
@@ -28,6 +29,7 @@ export interface TidalAlbum {
   trackCount: number
   totalDuration: number
   label?: string
+  source?: "qobuz" | "amazon"
 }
 
 export interface TidalArtist {

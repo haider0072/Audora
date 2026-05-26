@@ -1,10 +1,27 @@
 "use client"
 
 import { memo } from "react"
-import { Music, Disc, User, Clock } from "lucide-react"
+import { Music, Disc, User } from "lucide-react"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { DownloadIndicator } from "./download-indicator"
 import type { TidalSearchResult, TidalTrack, TidalAlbum, TidalArtist, DownloadState } from "@/lib/tidal-types"
+
+function SourceBadge({ source }: { source?: "qobuz" | "amazon" }) {
+  if (!source) return null
+  const isQobuz = source === "qobuz"
+  return (
+    <span
+      title={isQobuz ? "Source: Qobuz" : "Source: Amazon Music"}
+      className={`flex-shrink-0 inline-flex items-center justify-center h-4 min-w-[16px] px-1 rounded text-[9px] font-bold uppercase ${
+        isQobuz
+          ? "bg-pink-500/20 text-pink-300 border border-pink-500/40"
+          : "bg-orange-500/20 text-orange-300 border border-orange-500/40"
+      }`}
+    >
+      {isQobuz ? "Q" : "A"}
+    </span>
+  )
+}
 
 interface SearchResultsProps {
   results: TidalSearchResult
@@ -50,7 +67,10 @@ const TrackItem = memo(function TrackItem({
 
       {/* Info */}
       <div className="flex-1 min-w-0">
-        <p className="text-sm font-medium truncate">{track.title}</p>
+        <div className="flex items-center gap-1.5">
+          <p className="text-sm font-medium truncate">{track.title}</p>
+          <SourceBadge source={track.source} />
+        </div>
         <p className="text-xs text-muted-foreground truncate">
           {track.artist} {track.albumTitle ? `· ${track.albumTitle}` : ""}
         </p>
@@ -98,7 +118,10 @@ const AlbumItem = memo(function AlbumItem({
         )}
       </div>
       <div className="flex-1 min-w-0">
-        <p className="text-sm font-medium truncate">{album.title}</p>
+        <div className="flex items-center gap-1.5">
+          <p className="text-sm font-medium truncate">{album.title}</p>
+          <SourceBadge source={album.source} />
+        </div>
         <p className="text-xs text-muted-foreground truncate">
           {album.artist}
           {album.trackCount ? ` · ${album.trackCount} tracks` : ""}

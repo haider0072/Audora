@@ -109,6 +109,103 @@ export async function searchLucida(
   return data.results
 }
 
+export interface SourcedTrack extends LucidaTrack {
+  source: LucidaService
+}
+export interface SourcedAlbum extends LucidaAlbumStub {
+  source: LucidaService
+}
+export interface SourcedArtist extends LucidaArtist {
+  source: LucidaService
+}
+
+export interface MergedSearchResult {
+  query: string
+  tracks: SourcedTrack[]
+  albums: SourcedAlbum[]
+  artists: SourcedArtist[]
+}
+
+// The two services the public katze.lucida.to worker exposes via direct
+// search. UI badge / DabTrack.source narrows to this set.
+export type PublicSource = "qobuz" | "amazon"
+
+export function narrowSource(s: LucidaService | undefined): PublicSource | undefined {
+  if (s === "qobuz" || s === "amazon") return s
+  return undefined
+}
+
+// The katze worker only exposes direct search for qobuz + amazon.
+// Run both in parallel, attach the originating source to every item,
+// then dedupe (preferring qobuz on ties because of richer metadata).
+export async function searchAllSources(
+  query: string,
+  country = "US",
+  services: LucidaService[] = ["qobuz", "amazon"]
+): Promise<MergedSearchResult> {
+  const settled = await Promise.allSettled(
+    services.map((s) => searchLucida(query, s, country).then((r) => ({ s, r })))
+  )
+
+  const tracks: SourcedTrack[] = []
+  const albums: SourcedAlbum[] = []
+  const artists: SourcedArtist[] = []
+
+  for (const result of settled) {
+    if (result.status !== "fulfilled") continue
+    const { s, r } = result.value
+    for (const t of r.tracks) tracks.push({ ...t, source: s })
+    for (const a of r.albums) albums.push({ ...a, source: s })
+    for (const a of r.artists) artists.push({ ...a, source: s })
+  }
+
+  return {
+    query,
+    tracks: dedupeBy(tracks, trackKey),
+    albums: dedupeBy(albums, albumKey),
+    artists: dedupeBy(artists, artistKey),
+  }
+}
+
+function normalise(s: string): string {
+  return s
+    .toLowerCase()
+    .replace(/\s*\(.*?\)\s*/g, " ")
+    .replace(/\s*\[.*?\]\s*/g, " ")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+}
+
+function trackKey(t: SourcedTrack): string {
+  if (t.isrc) return `isrc:${t.isrc.toLowerCase()}`
+  const artist = t.artists[0]?.name || ""
+  return `t:${normalise(t.title)}|${normalise(artist)}|${Math.round((t.durationMs || 0) / 1000)}`
+}
+
+function albumKey(a: SourcedAlbum): string {
+  if (a.upc) return `upc:${a.upc.toLowerCase()}`
+  const artist = a.artists[0]?.name || ""
+  return `al:${normalise(a.title)}|${normalise(artist)}`
+}
+
+function artistKey(a: SourcedArtist): string {
+  return `ar:${normalise(a.name)}`
+}
+
+// Preserves the order of the first occurrence. Since qobuz is listed first
+// in the default `services` array, qobuz items naturally win ties.
+function dedupeBy<T>(items: T[], keyFn: (item: T) => string): T[] {
+  const seen = new Set<string>()
+  const out: T[] = []
+  for (const item of items) {
+    const k = keyFn(item)
+    if (seen.has(k)) continue
+    seen.add(k)
+    out.push(item)
+  }
+  return out
+}
+
 export async function initLucidaDownload(
   url: string,
   opts: { country?: string; metadata?: boolean; private?: boolean } = {}

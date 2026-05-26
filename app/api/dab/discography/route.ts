@@ -25,10 +25,11 @@ export async function GET(request: NextRequest) {
     (payload.k === "ar" && payload.n) ||
     (payload.k !== "ar" && (payload as { a?: string }).a) ||
     ""
+  const resolvedService = (payload.s as LucidaService | undefined) || service
 
   try {
     const query = artistName || artistUrl
-    const results = await searchLucida(query, service, country)
+    const results = await searchLucida(query, resolvedService, country)
 
     const matchingArtist =
       results.artists.find((a) => a.url === artistUrl) ??
@@ -49,7 +50,7 @@ export async function GET(request: NextRequest) {
       const largestCover =
         album.coverArtwork[album.coverArtwork.length - 1]?.url || ""
       albumMap.set(album.url, {
-        id: encodeId({ k: "al", u: album.url, t: album.title, a: album.artists?.[0]?.name }),
+        id: encodeId({ k: "al", u: album.url, t: album.title, a: album.artists?.[0]?.name, s: resolvedService as "qobuz" | "amazon" }),
         title: album.title,
         artist: album.artists.map((a) => a.name).join(", "),
         artistId,
@@ -60,6 +61,7 @@ export async function GET(request: NextRequest) {
         trackCount: 0,
         totalDuration: 0,
         label: album.label,
+        source: resolvedService as "qobuz" | "amazon",
       })
     }
 

@@ -25,11 +25,12 @@ export async function GET(request: NextRequest) {
     (payload.k === "t" && payload.al) ||
     ""
   const artistHint = (payload as { a?: string }).a || ""
+  const resolvedService = (payload.s as LucidaService | undefined) || service
 
   try {
     const stubQuery =
       [albumTitleHint, artistHint].filter(Boolean).join(" ") || albumUrl
-    const stubSearch = await searchLucida(stubQuery, service, country)
+    const stubSearch = await searchLucida(stubQuery, resolvedService, country)
 
     const targetAlbumId = lastSegment(albumUrl)
     const albumStub =
@@ -59,7 +60,7 @@ export async function GET(request: NextRequest) {
     for (const q of queries) {
       let res
       try {
-        res = await searchLucida(q, service, country)
+        res = await searchLucida(q, resolvedService, country)
       } catch {
         continue
       }
@@ -79,11 +80,11 @@ export async function GET(request: NextRequest) {
       .map((t) => {
         const artistName = t.artists.map((a) => a.name).join(", ")
         return {
-          id: encodeId({ k: "t", u: t.url, t: t.title, a: artistName, al: albumStub.title }),
+          id: encodeId({ k: "t", u: t.url, t: t.title, a: artistName, al: albumStub.title, s: resolvedService as "qobuz" | "amazon" }),
           title: t.title,
           artist: artistName,
           artistId: t.artists[0]
-            ? encodeId({ k: "ar", u: t.artists[0].url, n: t.artists[0].name })
+            ? encodeId({ k: "ar", u: t.artists[0].url, n: t.artists[0].name, s: resolvedService as "qobuz" | "amazon" })
             : "",
           albumTitle: albumStub.title,
           albumId,
@@ -96,6 +97,7 @@ export async function GET(request: NextRequest) {
           discNumber: t.discNumber,
           copyright: t.copyright,
           isrc: t.isrc,
+          source: resolvedService as "qobuz" | "amazon",
         }
       })
       .sort((a, b) => {
@@ -116,7 +118,7 @@ export async function GET(request: NextRequest) {
       title: albumStub.title,
       artist: albumStub.artists.map((a) => a.name).join(", "),
       artistId: albumStub.artists[0]
-        ? encodeId({ k: "ar", u: albumStub.artists[0].url, n: albumStub.artists[0].name })
+        ? encodeId({ k: "ar", u: albumStub.artists[0].url, n: albumStub.artists[0].name, s: resolvedService as "qobuz" | "amazon" })
         : "",
       cover: largestCover,
       releaseDate: albumStub.releaseDate || "",
@@ -125,6 +127,7 @@ export async function GET(request: NextRequest) {
       trackCount: tracks.length,
       totalDuration: tracks.reduce((sum, t) => sum + t.duration, 0),
       label: albumStub.label,
+      source: resolvedService as "qobuz" | "amazon",
     }
 
     return NextResponse.json({ album })
