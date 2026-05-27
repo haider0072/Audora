@@ -331,20 +331,29 @@ export class PlaylistStorage {
     }
   }
 
-  // Validate stored files against metadata
+  // Validate stored files against metadata.
+  //
+  // We deliberately do not compare `lastModified` here. Downloaded files go
+  // through a two-step File construction (raw blob → art-embedded blob),
+  // each call to `new File(...)` stamps its own fresh `Date.now()`, and the
+  // auto-save snapshot can race the second mutation. A strict timestamp
+  // match would then purge a perfectly good IndexedDB entry on reload —
+  // which is exactly the "songs disappear after refresh" bug we hit.
+  //
+  // Name + size are still checked: an external edit that meaningfully
+  // alters the file will change the size, and rename collisions are
+  // unlikely enough that name equality is a reasonable additional guard.
   static async validateStoredFiles(songs: StoredSong[]): Promise<StoredSong[]> {
     const validSongs: StoredSong[] = []
 
     for (const song of songs) {
       const file = await this.getSongFile(song.id)
-      if (file) {
-        // Verify file integrity
-        if (file.name === song.fileName && file.size === song.fileSize && file.lastModified === song.fileLastModified) {
-          validSongs.push(song)
-        } else {
-          // File mismatch, remove from storage
-          await this.removeSongFile(song.id)
-        }
+      if (!file) continue
+
+      if (file.name === song.fileName && file.size === song.fileSize) {
+        validSongs.push(song)
+      } else {
+        await this.removeSongFile(song.id)
       }
     }
 

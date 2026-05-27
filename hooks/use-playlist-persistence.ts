@@ -215,6 +215,15 @@ export function useAutoSave(
     if (!isInitialized || isRestoringPlaylist || !data) return
 
     const timeoutId = setTimeout(() => {
+      // Guard: never overwrite a non-empty saved playlist with an empty one.
+      // If restorePlaylist returned [] (e.g. transient IndexedDB read failure,
+      // permission prompt, validation purge) the auto-save would otherwise
+      // permanently nuke localStorage. Treat an empty in-memory playlist as
+      // "nothing to save" instead.
+      if (data.songs.length === 0) {
+        const existing = PlaylistStorage.loadPlaylistMetadata()
+        if (existing && existing.songs.length > 0) return
+      }
       savePlaylist(data)
     }, delay)
 
