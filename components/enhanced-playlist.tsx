@@ -28,6 +28,14 @@ interface Song extends AudioMetadata {
   url: string
 }
 
+export interface PlaylistScrollTarget {
+  type: "artist" | "album"
+  name: string
+  // Bumped on every click so repeating the same target still triggers the
+  // scroll effect (state-equality dedup would otherwise swallow it).
+  nonce: number
+}
+
 interface EnhancedPlaylistProps {
   songs: Song[]
   currentSong: Song | null
@@ -44,6 +52,7 @@ interface EnhancedPlaylistProps {
   onlineSearchContent?: React.ReactNode
   activeDownloadCount?: number
   searchQuery?: string
+  scrollTarget?: PlaylistScrollTarget | null
 }
 
 interface GroupedSongs {
@@ -199,6 +208,7 @@ export function EnhancedPlaylist({
   onlineSearchContent,
   activeDownloadCount = 0,
   searchQuery = "",
+  scrollTarget = null,
 }: EnhancedPlaylistProps) {
   const [activeLetter, setActiveLetter] = useState("")
   const scrollAreaRef = useRef<HTMLDivElement>(null)
@@ -349,6 +359,38 @@ export function EnhancedPlaylist({
     }
   }, [])
 
+  // External scroll requests: clicking the artist/album text in the player
+  // bumps scrollTarget.nonce; we find the matching marker and scroll to it,
+  // then flash a brief ring so the user sees where it landed.
+  useEffect(() => {
+    if (!scrollTarget) return
+    const container = scrollAreaRef.current
+    if (!container) return
+    const viewport = container.querySelector(
+      "[data-radix-scroll-area-viewport]",
+    ) as HTMLElement | null
+    if (!viewport) return
+
+    const attr =
+      scrollTarget.type === "artist" ? "data-artist-name" : "data-album-name"
+    const selector = `[${attr}="${CSS.escape(scrollTarget.name)}"]`
+    const target = container.querySelector(selector) as HTMLElement | null
+    if (!target) return
+
+    viewport.scrollTo({ top: target.offsetTop, behavior: "smooth" })
+    target.classList.add(
+      "ring-2",
+      "ring-primary/50",
+      "rounded-lg",
+      "transition-shadow",
+      "duration-500",
+    )
+    const timer = window.setTimeout(() => {
+      target.classList.remove("ring-2", "ring-primary/50")
+    }, 1500)
+    return () => window.clearTimeout(timer)
+  }, [scrollTarget])
+
   useEffect(() => {
     const container = scrollAreaRef.current
     if (!container) return
@@ -432,24 +474,32 @@ export function EnhancedPlaylist({
               // List view - sorted by artist
               <div className="space-y-1 w-full">
                 <div className="text-xs text-muted-foreground mb-2 px-3">Sorted by Artist</div>
-                {filteredSongs.map((song, index) => (
-                  <div
-                    key={song.id}
-                    className="w-full"
-                    {...(letterData.boundaryIndices.has(index)
-                      ? { "data-letter-marker": letterData.boundaryIndices.get(index) }
-                      : {})}
-                  >
-                    <SongItem
-                      song={song}
-                      isCurrentSong={currentSong?.id === song.id}
-                      showArtistAlbum={true}
-                      onSongSelect={onSongSelect}
-                      onSongRemove={onSongRemove}
-                      onSongPlayNext={onSongPlayNext}
-                    />
-                  </div>
-                ))}
+                {filteredSongs.map((song, index) => {
+                  const prev = index > 0 ? filteredSongs[index - 1] : null
+                  const artist = song.artist || ""
+                  const album = song.album || ""
+                  const firstOfArtist = !prev || (prev.artist || "") !== artist
+                  const firstOfAlbum =
+                    firstOfArtist || (prev?.album || "") !== album
+                  const dataAttrs: Record<string, string> = {}
+                  if (letterData.boundaryIndices.has(index)) {
+                    dataAttrs["data-letter-marker"] = letterData.boundaryIndices.get(index) as string
+                  }
+                  if (firstOfArtist) dataAttrs["data-artist-name"] = artist
+                  if (firstOfAlbum) dataAttrs["data-album-name"] = album
+                  return (
+                    <div key={song.id} className="w-full" {...dataAttrs}>
+                      <SongItem
+                        song={song}
+                        isCurrentSong={currentSong?.id === song.id}
+                        showArtistAlbum={true}
+                        onSongSelect={onSongSelect}
+                        onSongRemove={onSongRemove}
+                        onSongPlayNext={onSongPlayNext}
+                      />
+                    </div>
+                  )
+                })}
               </div>
             ) : (
               // Grouped view
@@ -457,6 +507,7 @@ export function EnhancedPlaylist({
                 {Object.entries(groupedSongs).map(([artist, albums]) => (
                   <div
                     key={artist}
+                    data-artist-name={artist}
                     className="space-y-3 mb-6 w-full"
                     {...(letterData.firstArtistOfLetter.has(artist)
                       ? { "data-letter-marker": getArtistLetter(artist) }
@@ -479,7 +530,11 @@ export function EnhancedPlaylist({
                     </div>
 
                     {Object.entries(albums).map(([album, albumSongs]) => (
-                      <div key={`${artist}-${album}`} className="ml-4 space-y-2 w-full">
+                      <div
+                        key={`${artist}-${album}`}
+                        data-album-name={album}
+                        className="ml-4 space-y-2 w-full"
+                      >
                         <div className="flex items-center justify-between gap-3 pl-2">
                           <h4
                             className="font-medium text-muted-foreground text-sm uppercase tracking-wide truncate"

@@ -15,7 +15,7 @@ import {
 } from "lucide-react"
 
 import Image from "next/image"
-import { EnhancedPlaylist, type Song } from "@/components/enhanced-playlist"
+import { EnhancedPlaylist, type Song, type PlaylistScrollTarget } from "@/components/enhanced-playlist"
 import { RefinedEqualizer, type EqualizerBand } from "@/components/refined-equalizer"
 import { AlbumArtBackground } from "@/components/album-art-background"
 import { AlbumArtDisplay } from "@/components/album-art-display"
@@ -58,6 +58,19 @@ export default function EnhancedMusicPlayer() {
   const [albumArtSourceRect, setAlbumArtSourceRect] = useState<DOMRect | null>(null);
   const [sidebarMode, setSidebarMode] = useState<"library" | "online">("library");
   const [searchQuery, setSearchQuery] = useState("")
+  const [playlistScrollTarget, setPlaylistScrollTarget] = useState<PlaylistScrollTarget | null>(null)
+
+  const jumpToArtist = useCallback((artist: string) => {
+    if (!artist) return
+    setSidebarMode("library")
+    setPlaylistScrollTarget({ type: "artist", name: artist, nonce: Date.now() })
+  }, [])
+
+  const jumpToAlbum = useCallback((album: string) => {
+    if (!album) return
+    setSidebarMode("library")
+    setPlaylistScrollTarget({ type: "album", name: album, nonce: Date.now() })
+  }, [])
 
   const albumArtRef = useRef<HTMLDivElement>(null)
   const audioRef = useRef<HTMLAudioElement>(null)
@@ -584,7 +597,29 @@ export default function EnhancedMusicPlayer() {
                         >
                           <h2 className="text-xl font-bold line-clamp-1 leading-tight">{currentSong.title}</h2>
                           <p className="text-base text-muted-foreground font-medium mt-0.5 line-clamp-1">
-                            {currentSong.artist}{currentSong.album ? ` \u2014 ${currentSong.album}` : ""}
+                            {currentSong.artist && (
+                              <button
+                                type="button"
+                                onClick={() => jumpToArtist(currentSong.artist!)}
+                                className="hover:text-foreground hover:underline underline-offset-2 transition-colors"
+                                title={`Jump to ${currentSong.artist}`}
+                              >
+                                {currentSong.artist}
+                              </button>
+                            )}
+                            {currentSong.album && (
+                              <>
+                                {" \u2014 "}
+                                <button
+                                  type="button"
+                                  onClick={() => jumpToAlbum(currentSong.album!)}
+                                  className="hover:text-foreground hover:underline underline-offset-2 transition-colors"
+                                  title={`Jump to ${currentSong.album}`}
+                                >
+                                  {currentSong.album}
+                                </button>
+                              </>
+                            )}
                           </p>
                         </div>
                       </>
@@ -703,6 +738,7 @@ export default function EnhancedMusicPlayer() {
               activeDownloadCount={tidalSearch.activeDownloadCount}
               onlineSearchContent={<OnlineSearchSidebar dab={tidalSearch} hideSearch />}
               searchQuery={searchQuery}
+              scrollTarget={playlistScrollTarget}
             />
           </div>
         </div>
