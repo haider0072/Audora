@@ -81,6 +81,15 @@ export function useFileImporter(options: UseFileImporterOptions): UseFileImporte
       const duplicates: string[] = []
       const errors: string[] = []
       const existingIds = new Set(songs.map((s) => s.id))
+      // Secondary content fingerprint: catches the case where the same audio
+      // already lives in the library under a different songId scheme (e.g.
+      // downloads use `tidal-<id>`, imports use filename-size-mtime). Same
+      // file → same byte count.
+      const existingSizes = new Set(
+        songs
+          .map((s) => s.file?.size)
+          .filter((size): size is number => typeof size === "number" && size > 0)
+      )
 
       // Process files in batches
       for (let i = 0; i < validFiles.length; i += BATCH_SIZE) {
@@ -92,8 +101,8 @@ export function useFileImporter(options: UseFileImporterOptions): UseFileImporte
 
           const songId = generateSongId(file)
 
-          // Check for duplicates
-          if (existingIds.has(songId)) {
+          // Check for duplicates (by songId or by content fingerprint)
+          if (existingIds.has(songId) || existingSizes.has(file.size)) {
             duplicates.push(file.name)
             return null
           }

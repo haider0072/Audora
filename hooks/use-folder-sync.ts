@@ -83,8 +83,23 @@ export function useFolderSync(options: UseFolderSyncOptions): UseFolderSyncRetur
       const existingIds = new Set(songs.map((s) => s.id))
       const newFileIds = new Set(validFiles.map((f) => generateSongId(f)))
 
+      // Content-based dedup: the songId scheme is filename + size + mtime,
+      // but downloaded songs use `tidal-<id>` as their songId and a separate
+      // organize-songs pass usually renames the file on disk. Same audio,
+      // different songId, would otherwise look like a brand-new track.
+      // File size is byte-identical across the same audio + embedded art,
+      // so we use that as a secondary fingerprint to skip already-imported
+      // songs.
+      const existingSizes = new Set(
+        songs
+          .map((s) => s.file?.size)
+          .filter((size): size is number => typeof size === "number" && size > 0)
+      )
+
       // Find new files (in folder but not in playlist)
-      const filesToAdd = validFiles.filter((f) => !existingIds.has(generateSongId(f)))
+      const filesToAdd = validFiles.filter(
+        (f) => !existingIds.has(generateSongId(f)) && !existingSizes.has(f.size)
+      )
 
       // Find removed files (in playlist but not in folder)
       // Only consider songs that were from this folder (matching pattern)
