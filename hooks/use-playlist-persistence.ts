@@ -158,7 +158,14 @@ export function usePlaylistPersistence(
     const { songs, currentSongId, equalizerBands, volume, shuffleMode, viewMode, showEqualizer, crossfadeDuration } =
       data
 
-    // Serialize songs (exclude File objects)
+    // Serialize songs (exclude File objects). The file-identity fields
+    // (name/size/lastModified) MUST come from song.file rather than the
+    // Song's flat metadata — the metadata snapshot is taken on the raw
+    // downloaded blob, but song.file is later replaced with the art-
+    // embedded blob whose size is larger. Using the metadata `fileSize`
+    // here would put a stale value in localStorage and validateStoredFiles
+    // would then drop the IndexedDB entry as "mismatched" on the next
+    // reload, exactly causing the "songs vanish after refresh" bug.
     const serializableSongs = songs.map((song) => ({
       id: song.id,
       title: song.title,
@@ -172,7 +179,7 @@ export function usePlaylistPersistence(
       duration: song.duration,
       isHiRes: song.isHiRes,
       albumArt: song.albumArt,
-      fileSize: song.fileSize,
+      fileSize: song.file ? song.file.size : (song.fileSize ?? 0),
       format: song.format,
       loudnessLUFS: song.loudnessLUFS,
       gainCorrection: song.gainCorrection,

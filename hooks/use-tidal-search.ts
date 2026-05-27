@@ -369,6 +369,9 @@ export function useTidalSearch(options: UseTidalSearchOptions) {
           ? new File([finalBlob], fileName, { type: contentType, lastModified: Date.now() })
           : file
         song.file = fileWithArt
+        // Keep the displayable metadata field in step with the actual File
+        // so any consumer reading song.fileSize sees the embedded size.
+        song.fileSize = fileWithArt.size
         await PlaylistStorage.storeSongFile(songId, fileWithArt)
 
         // Add to playlist
