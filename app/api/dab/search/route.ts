@@ -56,7 +56,7 @@ function lucidaTrackToDab(t: SourcedTrack): DabTrack {
     albumId: album
       ? encodeId({ k: "al", u: album.url, t: album.title, a: album.artists?.[0]?.name, s: narrowSource(t.source) })
       : "",
-    albumCover: pickCover(album?.coverArtwork),
+    albumCover: pickCover(t.coverArtwork ?? album?.coverArtwork),
     releaseDate: album?.releaseDate || "",
     genre: (album?.genre || t.genres || []).join(", "),
     duration: t.durationMs ? Math.round(t.durationMs / 1000) : 0,

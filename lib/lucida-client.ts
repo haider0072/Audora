@@ -52,6 +52,9 @@ export interface LucidaTrack {
   url: string
   artists: LucidaArtist[]
   album?: LucidaAlbumStub
+  // Amazon Music returns coverArtwork on the track itself rather than the
+  // album stub, so we look here first when picking a cover URL.
+  coverArtwork?: LucidaCoverArtwork[]
   durationMs?: number
   explicit?: boolean
   isrc?: string
