@@ -214,6 +214,10 @@ export function OnlineSearchSidebar({ dab, hideSearch = false }: OnlineSearchSid
             onDownloadAll={dab.downloadAlbum}
             onBack={dab.goBack}
             onArtistClick={dab.viewArtist}
+            previewTrackId={dab.previewTrackId}
+            previewIsPlaying={dab.previewIsPlaying}
+            previewIsLoading={dab.previewIsLoading}
+            onTogglePreview={dab.togglePreview}
           />
         )}
 

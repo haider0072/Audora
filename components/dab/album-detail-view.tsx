@@ -1,7 +1,7 @@
 "use client"
 
 import { memo } from "react"
-import { ArrowLeft, Disc, Download, Calendar, Clock, Music } from "lucide-react"
+import { ArrowLeft, Disc, Download, Calendar, Clock, Music, Play, Pause, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { DownloadIndicator } from "./download-indicator"
@@ -16,6 +16,10 @@ interface AlbumDetailViewProps {
   onDownloadAll: (album: TidalAlbum) => void
   onBack: () => void
   onArtistClick?: (artistId: string) => void
+  previewTrackId?: string | null
+  previewIsPlaying?: boolean
+  previewIsLoading?: boolean
+  onTogglePreview?: (track: TidalTrack) => void
 }
 
 function formatDuration(seconds: number): string {
@@ -40,6 +44,10 @@ export const AlbumDetailView = memo(function AlbumDetailView({
   onDownloadAll,
   onBack,
   onArtistClick,
+  previewTrackId = null,
+  previewIsPlaying = false,
+  previewIsLoading = false,
+  onTogglePreview,
 }: AlbumDetailViewProps) {
   const allInLibrary = album.tracks?.every((t) => isInLibrary(t.id)) ?? false
 
@@ -125,42 +133,71 @@ export const AlbumDetailView = memo(function AlbumDetailView({
       {/* Track list */}
       <ScrollArea className="flex-1 min-h-0">
         <div className="space-y-0.5 pb-4">
-          {(album.tracks || []).map((track, idx) => (
-            <div
-              key={track.id}
-              className="flex items-center gap-3 py-2 px-3 rounded-md hover:bg-white/5"
-            >
-              {/* Track number */}
-              <span className="text-xs text-muted-foreground w-5 text-right flex-shrink-0">
-                {idx + 1}
-              </span>
+          {(album.tracks || []).map((track, idx) => {
+            const isActive = previewTrackId === track.id
+            const showPause = isActive && previewIsPlaying
+            const showLoader = isActive && previewIsLoading && !previewIsPlaying
+            return (
+              <div
+                key={track.id}
+                className="flex items-center gap-3 py-2 px-3 rounded-md hover:bg-white/5 group"
+              >
+                {/* Track number / play button (number hides on hover or when active) */}
+                <div className="relative w-5 h-5 flex-shrink-0">
+                  <span
+                    className={`absolute inset-0 flex items-center justify-end text-xs text-muted-foreground transition-opacity ${
+                      isActive ? "opacity-0" : "group-hover:opacity-0"
+                    }`}
+                  >
+                    {idx + 1}
+                  </span>
+                  {onTogglePreview && (
+                    <button
+                      type="button"
+                      onClick={() => onTogglePreview(track)}
+                      aria-label={showPause ? "Pause preview" : "Play preview"}
+                      className={`absolute inset-0 flex items-center justify-center text-white/90 hover:text-white transition-opacity ${
+                        isActive ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+                      }`}
+                    >
+                      {showLoader ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : showPause ? (
+                        <Pause className="h-3.5 w-3.5" />
+                      ) : (
+                        <Play className="h-3.5 w-3.5 ml-0.5" />
+                      )}
+                    </button>
+                  )}
+                </div>
 
-              {/* Info */}
-              <div className="flex-1 min-w-0">
-                <p className="text-sm truncate">{track.title}</p>
-                {track.artist !== album.artist && (
-                  <p className="text-xs text-muted-foreground truncate">{track.artist}</p>
-                )}
+                {/* Info */}
+                <div className="flex-1 min-w-0">
+                  <p className={`text-sm truncate ${isActive ? "text-primary" : ""}`}>{track.title}</p>
+                  {track.artist !== album.artist && (
+                    <p className="text-xs text-muted-foreground truncate">{track.artist}</p>
+                  )}
+                </div>
+
+                {/* Duration */}
+                <span className="text-xs text-muted-foreground flex-shrink-0">
+                  {track.duration ? formatDuration(track.duration) : ""}
+                </span>
+
+                {/* Download */}
+                <div className="flex-shrink-0">
+                  <DownloadIndicator
+                    state={downloads.get(track.id)}
+                    isInLibrary={isInLibrary(track.id)}
+                    onDownload={() => onTrackDownload(track)}
+                    onCancel={() => onCancelDownload(track.id)}
+                    onRetry={() => onTrackDownload(track)}
+                    compact
+                  />
+                </div>
               </div>
-
-              {/* Duration */}
-              <span className="text-xs text-muted-foreground flex-shrink-0">
-                {track.duration ? formatDuration(track.duration) : ""}
-              </span>
-
-              {/* Download */}
-              <div className="flex-shrink-0">
-                <DownloadIndicator
-                  state={downloads.get(track.id)}
-                  isInLibrary={isInLibrary(track.id)}
-                  onDownload={() => onTrackDownload(track)}
-                  onCancel={() => onCancelDownload(track.id)}
-                  onRetry={() => onTrackDownload(track)}
-                  compact
-                />
-              </div>
-            </div>
-          ))}
+            )
+          })}
         </div>
       </ScrollArea>
     </div>
