@@ -1,10 +1,12 @@
 "use client"
 
 import { memo } from "react"
-import { Music, Disc, User } from "lucide-react"
+import { Music, Disc, User, Play, Pause, Loader2 } from "lucide-react"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { DownloadIndicator } from "./download-indicator"
 import type { TidalSearchResult, TidalTrack, TidalAlbum, TidalArtist, DownloadState } from "@/lib/tidal-types"
+
+export type SearchTypeFilter = "all" | "track" | "album" | "artist"
 
 function SourceBadge({ source }: { source?: "qobuz" | "amazon" }) {
   if (!source) return null
@@ -31,6 +33,11 @@ interface SearchResultsProps {
   onCancelDownload: (trackId: string) => void
   onAlbumClick: (albumId: string) => void
   onArtistClick: (artistId: string) => void
+  searchType?: SearchTypeFilter
+  previewTrackId?: string | null
+  previewIsPlaying?: boolean
+  previewIsLoading?: boolean
+  onTogglePreview?: (track: TidalTrack) => void
 }
 
 function formatDuration(seconds: number): string {
@@ -45,17 +52,27 @@ const TrackItem = memo(function TrackItem({
   inLibrary,
   onDownload,
   onCancel,
+  isPreviewActive,
+  isPreviewPlaying,
+  isPreviewLoading,
+  onTogglePreview,
 }: {
   track: TidalTrack
   downloadState?: DownloadState
   inLibrary: boolean
   onDownload: () => void
   onCancel: () => void
+  isPreviewActive: boolean
+  isPreviewPlaying: boolean
+  isPreviewLoading: boolean
+  onTogglePreview?: () => void
 }) {
+  const showPause = isPreviewActive && isPreviewPlaying
+  const showLoader = isPreviewActive && isPreviewLoading && !isPreviewPlaying
   return (
     <div className="flex items-center gap-3 py-2 px-3 rounded-md hover:bg-white/5 group">
-      {/* Album art */}
-      <div className="h-10 w-10 rounded overflow-hidden flex-shrink-0 bg-white/10">
+      {/* Album art + play overlay */}
+      <div className="relative h-10 w-10 rounded overflow-hidden flex-shrink-0 bg-white/10">
         {track.albumCover ? (
           <img src={track.albumCover} alt="" className="h-full w-full object-cover" />
         ) : (
@@ -63,12 +80,35 @@ const TrackItem = memo(function TrackItem({
             <Music className="h-4 w-4 text-muted-foreground" />
           </div>
         )}
+        {onTogglePreview && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation()
+              onTogglePreview()
+            }}
+            aria-label={showPause ? "Pause preview" : "Play preview"}
+            className={`absolute inset-0 flex items-center justify-center bg-black/60 text-white transition-opacity ${
+              isPreviewActive ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+            }`}
+          >
+            {showLoader ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : showPause ? (
+              <Pause className="h-4 w-4" />
+            ) : (
+              <Play className="h-4 w-4 ml-0.5" />
+            )}
+          </button>
+        )}
       </div>
 
       {/* Info */}
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-1.5">
-          <p className="text-sm font-medium truncate">{track.title}</p>
+          <p className={`text-sm font-medium truncate ${isPreviewActive ? "text-primary" : ""}`}>
+            {track.title}
+          </p>
           <SourceBadge source={track.source} />
         </div>
         <p className="text-xs text-muted-foreground truncate">
@@ -173,10 +213,19 @@ export const SearchResults = memo(function SearchResults({
   onCancelDownload,
   onAlbumClick,
   onArtistClick,
+  searchType = "all",
+  previewTrackId = null,
+  previewIsPlaying = false,
+  previewIsLoading = false,
+  onTogglePreview,
 }: SearchResultsProps) {
-  const hasTracks = results.tracks.length > 0
-  const hasAlbums = results.albums.length > 0
-  const hasArtists = results.artists.length > 0
+  const showTracks = searchType === "all" || searchType === "track"
+  const showAlbums = searchType === "all" || searchType === "album"
+  const showArtists = searchType === "all" || searchType === "artist"
+
+  const hasTracks = showTracks && results.tracks.length > 0
+  const hasAlbums = showAlbums && results.albums.length > 0
+  const hasArtists = showArtists && results.artists.length > 0
   const isEmpty = !hasTracks && !hasAlbums && !hasArtists
 
   if (isEmpty) {
@@ -202,16 +251,23 @@ export const SearchResults = memo(function SearchResults({
               </h3>
             </div>
             <div>
-              {results.tracks.map((track) => (
-                <TrackItem
-                  key={track.id}
-                  track={track}
-                  downloadState={downloads.get(track.id)}
-                  inLibrary={isInLibrary(track.id)}
-                  onDownload={() => onTrackDownload(track)}
-                  onCancel={() => onCancelDownload(track.id)}
-                />
-              ))}
+              {results.tracks.map((track) => {
+                const isActive = previewTrackId === track.id
+                return (
+                  <TrackItem
+                    key={track.id}
+                    track={track}
+                    downloadState={downloads.get(track.id)}
+                    inLibrary={isInLibrary(track.id)}
+                    onDownload={() => onTrackDownload(track)}
+                    onCancel={() => onCancelDownload(track.id)}
+                    isPreviewActive={isActive}
+                    isPreviewPlaying={isActive && previewIsPlaying}
+                    isPreviewLoading={isActive && previewIsLoading}
+                    onTogglePreview={onTogglePreview ? () => onTogglePreview(track) : undefined}
+                  />
+                )
+              })}
             </div>
           </div>
         )}

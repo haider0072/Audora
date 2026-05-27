@@ -393,7 +393,21 @@ export default function EnhancedMusicPlayer() {
     onSongDownloaded: (newSong) => {
       setSongs((prev) => [...prev, newSong])
     },
+    // Whenever a search-result preview starts, silence the main library
+    // playback so the two streams don't overlap.
+    onPreviewStart: () => {
+      if (audioRef.current && !audioRef.current.paused) {
+        pause()
+      }
+    },
   })
+
+  // And the inverse: when library playback resumes, kill any preview stream.
+  useEffect(() => {
+    if (isPlaying && tidalSearch.previewTrackId) {
+      tidalSearch.stopPreview()
+    }
+  }, [isPlaying, tidalSearch.previewTrackId, tidalSearch.stopPreview])
 
   // Cleanup Object URLs and caches on unmount
   useEffect(() => {

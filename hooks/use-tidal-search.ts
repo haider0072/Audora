@@ -20,6 +20,11 @@ import type {
 export interface UseTidalSearchOptions {
   songs: Song[]
   onSongDownloaded: (song: Song) => void
+  /**
+   * Called the moment a preview begins loading/playing. The host player uses
+   * this to pause its own library audio so the two don't overlap.
+   */
+  onPreviewStart?: () => void
 }
 
 export type TidalView = "search" | "album" | "artist"
@@ -28,7 +33,11 @@ export type TidalQuality = "HI_RES_LOSSLESS" | "LOSSLESS" | "HIGH"
 const MAX_CONCURRENT_DOWNLOADS = 2
 
 export function useTidalSearch(options: UseTidalSearchOptions) {
-  const { songs, onSongDownloaded } = options
+  const { songs, onSongDownloaded, onPreviewStart } = options
+  const onPreviewStartRef = useRef(onPreviewStart)
+  useEffect(() => {
+    onPreviewStartRef.current = onPreviewStart
+  }, [onPreviewStart])
 
   // No auth needed for Tidal — always authenticated
   const isAuthenticated = true as boolean
@@ -72,6 +81,93 @@ export function useTidalSearch(options: UseTidalSearchOptions) {
   // Quality preference
   const [quality, setQuality] = useState<TidalQuality>("HI_RES_LOSSLESS")
 
+  // Preview-play state. We stream straight from the Lucida endpoint without
+  // ever persisting to IndexedDB so the library stays clean.
+  const previewAudioRef = useRef<HTMLAudioElement | null>(null)
+  const [previewTrackId, setPreviewTrackId] = useState<string | null>(null)
+  const [previewIsPlaying, setPreviewIsPlaying] = useState(false)
+  const [previewIsLoading, setPreviewIsLoading] = useState(false)
+
+  const stopPreview = useCallback(() => {
+    const audio = previewAudioRef.current
+    if (audio) {
+      audio.pause()
+      audio.removeAttribute("src")
+      audio.load()
+    }
+    setPreviewTrackId(null)
+    setPreviewIsPlaying(false)
+    setPreviewIsLoading(false)
+  }, [])
+
+  const togglePreview = useCallback(
+    (track: TidalTrack) => {
+      if (typeof window === "undefined") return
+
+      // Lazy-init the singleton audio element on first interaction so SSR
+      // doesn't touch `Audio`, and so a user gesture is in scope when we
+      // call play() — autoplay policy needs that.
+      if (!previewAudioRef.current) {
+        const a = new Audio()
+        a.preload = "none"
+        a.addEventListener("playing", () => {
+          setPreviewIsPlaying(true)
+          setPreviewIsLoading(false)
+        })
+        a.addEventListener("pause", () => setPreviewIsPlaying(false))
+        a.addEventListener("ended", () => {
+          setPreviewIsPlaying(false)
+          setPreviewTrackId(null)
+        })
+        a.addEventListener("waiting", () => setPreviewIsLoading(true))
+        a.addEventListener("canplay", () => setPreviewIsLoading(false))
+        a.addEventListener("error", () => {
+          setPreviewIsPlaying(false)
+          setPreviewIsLoading(false)
+          toast({ title: "Preview failed to load", variant: "destructive" })
+        })
+        previewAudioRef.current = a
+      }
+
+      const audio = previewAudioRef.current
+
+      // Same track → toggle play/pause without re-fetching.
+      if (previewTrackId === track.id) {
+        if (audio.paused) {
+          onPreviewStartRef.current?.()
+          audio.play().catch(() => setPreviewIsLoading(false))
+        } else {
+          audio.pause()
+        }
+        return
+      }
+
+      // Switching tracks — tell the host to pause its library audio first.
+      onPreviewStartRef.current?.()
+      audio.pause()
+      audio.src = TidalService.getStreamUrl(track.id, quality)
+      setPreviewTrackId(track.id)
+      setPreviewIsLoading(true)
+      setPreviewIsPlaying(false)
+      audio.play().catch(() => {
+        setPreviewIsLoading(false)
+        toast({ title: "Preview failed to start", variant: "destructive" })
+      })
+    },
+    [previewTrackId, quality]
+  )
+
+  // Cleanup on unmount — kill any in-flight preview stream.
+  useEffect(() => {
+    return () => {
+      const audio = previewAudioRef.current
+      if (audio) {
+        audio.pause()
+        audio.removeAttribute("src")
+        audio.load()
+      }
+    }
+  }, [])
 
   // Error state
   const [error, setError] = useState<string | null>(null)
@@ -527,6 +623,13 @@ export function useTidalSearch(options: UseTidalSearchOptions) {
 
     // Online
     isOnline,
+
+    // Preview-play
+    previewTrackId,
+    previewIsPlaying,
+    previewIsLoading,
+    togglePreview,
+    stopPreview,
   }
 }
 
