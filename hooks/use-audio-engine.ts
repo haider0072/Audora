@@ -330,6 +330,19 @@ export function useAudioEngine(options: UseAudioEngineOptions): UseAudioEngineRe
 
     if (!inactiveAudio || !activeMixGain || !inactiveMixGain) return false
 
+    // If we're swapping out of a paused state (e.g. skip near end-of-track),
+    // the pause-fade may have left the master gain at ~0 — clear it so the
+    // incoming track is audible.
+    if (pendingPauseRef.current) {
+      clearTimeout(pendingPauseRef.current)
+      pendingPauseRef.current = null
+    }
+    if (gainNodeRef.current) {
+      const gt = ctx?.currentTime ?? 0
+      gainNodeRef.current.gain.cancelScheduledValues(gt)
+      gainNodeRef.current.gain.value = volumeRef.current / 100
+    }
+
     inactiveAudio.play().catch(() => {})
 
     // Default to the auto-advance length; manual changes pass a shorter one.
@@ -457,6 +470,15 @@ export function useAudioEngine(options: UseAudioEngineOptions): UseAudioEngineRe
       secondaryAudio.currentTime = 0
     }
 
+    // Cancel any pending pause-fade timeout and restore the master gain. A
+    // pause-fade ramps the master gain to ~0 and defers the element.pause();
+    // skipping to a new track from a paused state must NOT inherit that silence
+    // (the bug: next track played but was inaudible until a manual pause/play).
+    if (pendingPauseRef.current) {
+      clearTimeout(pendingPauseRef.current)
+      pendingPauseRef.current = null
+    }
+
     // Reset mix gains: primary=1, secondary=0 (cancel any scheduled crossfade ramps first)
     const ctxTime = audioContextRef.current?.currentTime ?? 0
     if (primaryMixGainRef.current) {
@@ -466,6 +488,11 @@ export function useAudioEngine(options: UseAudioEngineOptions): UseAudioEngineRe
     if (secondaryMixGainRef.current) {
       secondaryMixGainRef.current.gain.cancelScheduledValues(ctxTime)
       secondaryMixGainRef.current.gain.value = 0
+    }
+    // Restore master gain to the current volume so the new track starts audible.
+    if (gainNodeRef.current) {
+      gainNodeRef.current.gain.cancelScheduledValues(ctxTime)
+      gainNodeRef.current.gain.value = volumeRef.current / 100
     }
 
     // Reset active tracking to primary
