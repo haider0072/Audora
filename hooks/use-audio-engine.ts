@@ -1,6 +1,7 @@
 import { useRef, useState, useCallback, useEffect } from "react"
 import type { EqualizerBand } from "@/components/refined-equalizer"
 import { DEFAULT_Q_VALUES } from "@/hooks/use-equalizer-manager"
+import { waitForCanPlay } from "@/lib/utils"
 
 export interface UseAudioEngineOptions {
   audioRef: React.RefObject<HTMLAudioElement | null>
@@ -10,6 +11,14 @@ export interface UseAudioEngineOptions {
   onDurationChange?: (duration: number) => void
   onEnded?: () => void
   onNearEnd?: () => void
+  /** Crossfade length in seconds (0 = disabled, instant gapless swap). */
+  crossfadeDuration?: number
+  /**
+   * Fired `crossfadeDuration` seconds before the active track ends, so the
+   * player can advance early and let the two tracks overlap. Only fires when
+   * crossfade is enabled and the next track is already preloaded.
+   */
+  onCrossfadeStart?: () => void
 }
 
 export interface UseAudioEngineReturn {
@@ -51,9 +60,30 @@ export interface UseAudioEngineReturn {
   swapToPreloaded: () => boolean
   resetGaplessState: () => void
   isPreloaded: boolean
+
+  // Crossfade on demand (manual next / non-preloaded). Loads the file into the
+  // inactive element and equal-power crossfades into it. Returns false when
+  // crossfade is disabled or nothing is currently playing (caller falls back).
+  crossfadeTo: (file: File, signal?: AbortSignal) => Promise<boolean>
 }
 
 const PRELOAD_THRESHOLD_SECONDS = 3
+/** Master-gain fade time for pause/play, in seconds (anti-click + smooth). */
+const PAUSE_FADE_SECONDS = 0.2
+/** Headroom (seconds) added on top of crossfade for preloading the next track. */
+const CROSSFADE_PRELOAD_HEADROOM = 2
+
+// Equal-power crossfade curves (cos/sin) — keep constant perceived loudness
+// across the blend instead of the ~-6dB dip a linear crossfade leaves at the
+// midpoint. Precomputed once at module load.
+const CROSSFADE_CURVE_POINTS = 64
+const FADE_OUT_CURVE = new Float32Array(CROSSFADE_CURVE_POINTS)
+const FADE_IN_CURVE = new Float32Array(CROSSFADE_CURVE_POINTS)
+for (let i = 0; i < CROSSFADE_CURVE_POINTS; i++) {
+  const t = i / (CROSSFADE_CURVE_POINTS - 1)
+  FADE_OUT_CURVE[i] = Math.cos((t * Math.PI) / 2)
+  FADE_IN_CURVE[i] = Math.sin((t * Math.PI) / 2)
+}
 
 /**
  * Custom hook for managing Web Audio API, playback, and audio node connections.
@@ -69,6 +99,7 @@ export function useAudioEngine(options: UseAudioEngineOptions): UseAudioEngineRe
   const {
     audioRef, secondaryAudioRef, equalizerBands,
     onTimeUpdate, onDurationChange, onEnded, onNearEnd,
+    crossfadeDuration = 0, onCrossfadeStart,
   } = options
 
   // Core audio refs
@@ -88,6 +119,20 @@ export function useAudioEngine(options: UseAudioEngineOptions): UseAudioEngineRe
   const preloadedRef = useRef(false)
   const preloadedUrlRef = useRef<string | null>(null)
   const nearEndFiredRef = useRef(false)
+
+  // Crossfade / fade refs
+  const crossfadeDurationRef = useRef(crossfadeDuration)
+  crossfadeDurationRef.current = crossfadeDuration
+  const crossfadeStartedRef = useRef(false)
+  // Bumped on every swap/reset so a stale "pause old track" timeout from an
+  // interrupted crossfade can detect it's no longer the current transition.
+  const crossfadeTokenRef = useRef(0)
+  // Pending setTimeout id for the deferred pause after a pause-fade.
+  const pendingPauseRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // Pending setTimeout id for pausing the outgoing track after a crossfade.
+  const pendingCrossfadeStopRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // Mirror of the latest user volume (0-100) for ramp targets without stale closures.
+  const volumeRef = useRef(80)
 
   // State
   const [isPlaying, setIsPlaying] = useState(false)
@@ -125,6 +170,11 @@ export function useAudioEngine(options: UseAudioEngineOptions): UseAudioEngineRe
       ? secondaryMixGainRef.current
       : primaryMixGainRef.current
   }, [])
+
+  // Keep volumeRef in sync so gain-ramp targets never use a stale value.
+  useEffect(() => {
+    volumeRef.current = volume[0]
+  }, [volume])
 
   /**
    * Initialize Web Audio API context and create dual-source audio graph.
@@ -253,7 +303,9 @@ export function useAudioEngine(options: UseAudioEngineOptions): UseAudioEngineRe
   }, [getInactiveAudio])
 
   /**
-   * Swap to the preloaded song — instant gapless transition.
+   * Swap to the preloaded song. When crossfade is enabled the outgoing and
+   * incoming mix gains are ramped with an equal-power curve so the two tracks
+   * overlap smoothly; otherwise it's an instant gapless swap.
    * Returns true if swap succeeded.
    */
   const swapToPreloaded = useCallback((): boolean => {
@@ -263,18 +315,47 @@ export function useAudioEngine(options: UseAudioEngineOptions): UseAudioEngineRe
     const inactiveAudio = getInactiveAudio()
     const activeMixGain = getActiveMixGain()
     const inactiveMixGain = getInactiveMixGain()
+    const ctx = audioContextRef.current
 
     if (!inactiveAudio || !activeMixGain || !inactiveMixGain) return false
 
-    // Instant swap: mute old, unmute new
-    activeMixGain.gain.value = 0
-    inactiveMixGain.gain.value = 1
-
     inactiveAudio.play().catch(() => {})
 
-    if (activeAudio) {
-      activeAudio.pause()
-      activeAudio.currentTime = 0
+    const crossfadeSec = crossfadeDurationRef.current
+    const token = ++crossfadeTokenRef.current
+
+    if (crossfadeSec > 0 && ctx) {
+      // Equal-power crossfade: ramp old out, new in, then pause old once done.
+      const now = ctx.currentTime
+      activeMixGain.gain.cancelScheduledValues(now)
+      inactiveMixGain.gain.cancelScheduledValues(now)
+      activeMixGain.gain.setValueCurveAtTime(FADE_OUT_CURVE, now, crossfadeSec)
+      inactiveMixGain.gain.setValueCurveAtTime(FADE_IN_CURVE, now, crossfadeSec)
+
+      const fadingAudio = activeAudio
+      if (pendingCrossfadeStopRef.current) clearTimeout(pendingCrossfadeStopRef.current)
+      pendingCrossfadeStopRef.current = setTimeout(() => {
+        pendingCrossfadeStopRef.current = null
+        // Skip if a newer transition superseded this one (interrupted crossfade).
+        if (crossfadeTokenRef.current !== token) return
+        if (fadingAudio) {
+          fadingAudio.pause()
+          fadingAudio.currentTime = 0
+        }
+        // Clamp the (now inactive) gain to exactly 0 after the curve completes.
+        activeMixGain.gain.cancelScheduledValues(ctx.currentTime)
+        activeMixGain.gain.value = 0
+      }, crossfadeSec * 1000 + 50)
+    } else {
+      // Instant swap: mute old, unmute new
+      activeMixGain.gain.cancelScheduledValues(ctx?.currentTime ?? 0)
+      inactiveMixGain.gain.cancelScheduledValues(ctx?.currentTime ?? 0)
+      activeMixGain.gain.value = 0
+      inactiveMixGain.gain.value = 1
+      if (activeAudio) {
+        activeAudio.pause()
+        activeAudio.currentTime = 0
+      }
     }
 
     // Swap active tracking
@@ -288,9 +369,60 @@ export function useAudioEngine(options: UseAudioEngineOptions): UseAudioEngineRe
     preloadedRef.current = false
     setIsPreloaded(false)
     nearEndFiredRef.current = false
+    crossfadeStartedRef.current = false
 
     return true
   }, [getActiveAudio, getInactiveAudio, getActiveMixGain, getInactiveMixGain])
+
+  /**
+   * Crossfade into an arbitrary file (manual "Next", or any non-preloaded
+   * track change). Loads it into the inactive element, waits until it can play,
+   * then runs the same equal-power crossfade as the gapless swap.
+   *
+   * Returns false (so the caller can fall back to a normal load) when crossfade
+   * is disabled, the graph isn't ready, or nothing is currently playing.
+   */
+  const crossfadeTo = useCallback(async (file: File, signal?: AbortSignal): Promise<boolean> => {
+    const crossfadeSec = crossfadeDurationRef.current
+    if (crossfadeSec <= 0) return false
+
+    const ctx = audioContextRef.current
+    const activeAudio = getActiveAudio()
+    const inactiveAudio = getInactiveAudio()
+    const inactiveMixGain = getInactiveMixGain()
+
+    // Need an initialized graph and an actively-playing track to fade from.
+    if (!ctx || !inactiveAudio || !inactiveMixGain) return false
+    if (!activeAudio || activeAudio.paused) return false
+
+    try {
+      if (preloadedUrlRef.current) {
+        URL.revokeObjectURL(preloadedUrlRef.current)
+        preloadedUrlRef.current = null
+      }
+
+      const url = URL.createObjectURL(file)
+      preloadedUrlRef.current = url
+      inactiveAudio.src = url
+      inactiveAudio.load()
+
+      await waitForCanPlay(inactiveAudio)
+      if (signal?.aborted) return false
+
+      inactiveAudio.currentTime = 0
+      // Start the incoming track silent; swapToPreloaded ramps it up.
+      inactiveMixGain.gain.cancelScheduledValues(ctx.currentTime)
+      inactiveMixGain.gain.value = 0
+
+      preloadedRef.current = true
+      setIsPreloaded(true)
+      return swapToPreloaded()
+    } catch {
+      preloadedRef.current = false
+      setIsPreloaded(false)
+      return false
+    }
+  }, [getActiveAudio, getInactiveAudio, getInactiveMixGain, swapToPreloaded])
 
   /**
    * Reset gapless state back to primary element.
@@ -298,6 +430,14 @@ export function useAudioEngine(options: UseAudioEngineOptions): UseAudioEngineRe
    * we load into the correct audio element.
    */
   const resetGaplessState = useCallback(() => {
+    // Invalidate any in-flight crossfade so its deferred "pause old track"
+    // timeout becomes a no-op, then cancel it outright.
+    crossfadeTokenRef.current++
+    if (pendingCrossfadeStopRef.current) {
+      clearTimeout(pendingCrossfadeStopRef.current)
+      pendingCrossfadeStopRef.current = null
+    }
+
     // Stop secondary audio if playing
     const secondaryAudio = secondaryAudioRef?.current
     if (secondaryAudio) {
@@ -305,9 +445,16 @@ export function useAudioEngine(options: UseAudioEngineOptions): UseAudioEngineRe
       secondaryAudio.currentTime = 0
     }
 
-    // Reset mix gains: primary=1, secondary=0
-    if (primaryMixGainRef.current) primaryMixGainRef.current.gain.value = 1
-    if (secondaryMixGainRef.current) secondaryMixGainRef.current.gain.value = 0
+    // Reset mix gains: primary=1, secondary=0 (cancel any scheduled crossfade ramps first)
+    const ctxTime = audioContextRef.current?.currentTime ?? 0
+    if (primaryMixGainRef.current) {
+      primaryMixGainRef.current.gain.cancelScheduledValues(ctxTime)
+      primaryMixGainRef.current.gain.value = 1
+    }
+    if (secondaryMixGainRef.current) {
+      secondaryMixGainRef.current.gain.cancelScheduledValues(ctxTime)
+      secondaryMixGainRef.current.gain.value = 0
+    }
 
     // Reset active tracking to primary
     activeElementRef.current = "primary"
@@ -316,6 +463,7 @@ export function useAudioEngine(options: UseAudioEngineOptions): UseAudioEngineRe
     preloadedRef.current = false
     setIsPreloaded(false)
     nearEndFiredRef.current = false
+    crossfadeStartedRef.current = false
 
     if (preloadedUrlRef.current) {
       URL.revokeObjectURL(preloadedUrlRef.current)
@@ -330,6 +478,12 @@ export function useAudioEngine(options: UseAudioEngineOptions): UseAudioEngineRe
     const audio = getActiveAudio()
     if (!audio) return
 
+    // Cancel any pending deferred-pause from an interrupted pause-fade.
+    if (pendingPauseRef.current) {
+      clearTimeout(pendingPauseRef.current)
+      pendingPauseRef.current = null
+    }
+
     try {
       if (audioContextRef.current?.state === "suspended") {
         await audioContextRef.current.resume()
@@ -338,6 +492,17 @@ export function useAudioEngine(options: UseAudioEngineOptions): UseAudioEngineRe
       playPromiseRef.current = audio.play()
       await playPromiseRef.current
       setIsPlaying(true)
+
+      // Fade the master gain up to the current volume (anti-click smooth start).
+      const gain = gainNodeRef.current
+      const ctx = audioContextRef.current
+      if (gain && ctx) {
+        const target = volumeRef.current / 100
+        const now = ctx.currentTime
+        gain.gain.cancelScheduledValues(now)
+        gain.gain.setValueAtTime(Math.min(gain.gain.value, target), now)
+        gain.gain.linearRampToValueAtTime(target, now + PAUSE_FADE_SECONDS)
+      }
     } catch (error) {
       if ((error as DOMException).name !== "AbortError") {
         console.error("Error playing audio:", error)
@@ -348,14 +513,32 @@ export function useAudioEngine(options: UseAudioEngineOptions): UseAudioEngineRe
   }, [getActiveAudio])
 
   /**
-   * Pause audio playback
+   * Pause audio playback with a short fade-out (anti-click). The element is
+   * paused only after the master gain has ramped to silence.
    */
   const pause = useCallback(() => {
     const audio = getActiveAudio()
-    if (audio) {
+    if (!audio) return
+
+    const gain = gainNodeRef.current
+    const ctx = audioContextRef.current
+
+    if (gain && ctx) {
+      const now = ctx.currentTime
+      gain.gain.cancelScheduledValues(now)
+      gain.gain.setValueAtTime(gain.gain.value, now)
+      gain.gain.linearRampToValueAtTime(0.0001, now + PAUSE_FADE_SECONDS)
+
+      if (pendingPauseRef.current) clearTimeout(pendingPauseRef.current)
+      pendingPauseRef.current = setTimeout(() => {
+        audio.pause()
+        pendingPauseRef.current = null
+      }, PAUSE_FADE_SECONDS * 1000 + 20)
+    } else {
       audio.pause()
-      setIsPlaying(false)
     }
+
+    setIsPlaying(false)
   }, [getActiveAudio])
 
   /**
@@ -374,6 +557,7 @@ export function useAudioEngine(options: UseAudioEngineOptions): UseAudioEngineRe
   const changeVolume = useCallback((value: number[]) => {
     setVolume(value)
     const vol = value[0]
+    volumeRef.current = vol
     if (audioRef.current) {
       audioRef.current.volume = vol / 100
       audioRef.current.muted = vol === 0
@@ -382,7 +566,12 @@ export function useAudioEngine(options: UseAudioEngineOptions): UseAudioEngineRe
       secondaryAudioRef.current.volume = vol / 100
       secondaryAudioRef.current.muted = vol === 0
     }
-    if (gainNodeRef.current) {
+    // Skip touching the master gain mid pause-fade — the new level is captured
+    // in volumeRef and applied on the next play() ramp, avoiding an audible blip.
+    if (gainNodeRef.current && !pendingPauseRef.current) {
+      const ctx = audioContextRef.current
+      const now = ctx?.currentTime ?? 0
+      gainNodeRef.current.gain.cancelScheduledValues(now)
       gainNodeRef.current.gain.value = vol / 100
     }
     setIsMuted(vol === 0)
@@ -454,6 +643,14 @@ export function useAudioEngine(options: UseAudioEngineOptions): UseAudioEngineRe
         URL.revokeObjectURL(preloadedUrlRef.current)
         preloadedUrlRef.current = null
       }
+      if (pendingPauseRef.current) {
+        clearTimeout(pendingPauseRef.current)
+        pendingPauseRef.current = null
+      }
+      if (pendingCrossfadeStopRef.current) {
+        clearTimeout(pendingCrossfadeStopRef.current)
+        pendingCrossfadeStopRef.current = null
+      }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -480,11 +677,33 @@ export function useAudioEngine(options: UseAudioEngineOptions): UseAudioEngineRe
       setCurrentTime(time)
       onTimeUpdate?.(time)
 
-      // Fire onNearEnd when approaching song end
+      if (!(audio.duration > 0)) return
       const remaining = audio.duration - time
-      if (remaining <= PRELOAD_THRESHOLD_SECONDS && remaining > 0 && !nearEndFiredRef.current && audio.duration > 0) {
+      const crossfadeSec = crossfadeDurationRef.current
+
+      // Preload the next track early. With crossfade on we need it ready before
+      // the crossfade begins, so push the preload window out by some headroom.
+      const preloadThreshold =
+        crossfadeSec > 0 ? crossfadeSec + CROSSFADE_PRELOAD_HEADROOM : PRELOAD_THRESHOLD_SECONDS
+      if (remaining <= preloadThreshold && remaining > 0 && !nearEndFiredRef.current) {
         nearEndFiredRef.current = true
         onNearEnd?.()
+      }
+
+      // Begin the crossfade `crossfadeSec` before the end so the two tracks
+      // overlap. Requires the next track to be preloaded; otherwise we fall back
+      // to the regular `ended` swap. Guard `time > crossfadeSec` so very short
+      // clips don't trigger near their start.
+      if (
+        crossfadeSec > 0 &&
+        preloadedRef.current &&
+        !crossfadeStartedRef.current &&
+        remaining <= crossfadeSec &&
+        remaining > 0 &&
+        time > crossfadeSec
+      ) {
+        crossfadeStartedRef.current = true
+        onCrossfadeStart?.()
       }
     }
 
@@ -513,6 +732,7 @@ export function useAudioEngine(options: UseAudioEngineOptions): UseAudioEngineRe
 
       setIsPlaying(false)
       nearEndFiredRef.current = false
+      crossfadeStartedRef.current = false
       onEnded?.()
     }
 
@@ -537,7 +757,7 @@ export function useAudioEngine(options: UseAudioEngineOptions): UseAudioEngineRe
         secondaryAudio.removeEventListener("ended", handleEnded)
       }
     }
-  }, [audioRef, secondaryAudioRef, onTimeUpdate, onDurationChange, onEnded, onNearEnd])
+  }, [audioRef, secondaryAudioRef, onTimeUpdate, onDurationChange, onEnded, onNearEnd, onCrossfadeStart])
 
   return {
     // Refs
@@ -578,5 +798,6 @@ export function useAudioEngine(options: UseAudioEngineOptions): UseAudioEngineRe
     swapToPreloaded,
     resetGaplessState,
     isPreloaded,
+    crossfadeTo,
   }
 }

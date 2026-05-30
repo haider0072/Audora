@@ -30,6 +30,9 @@ import { OnlineSearchSidebar } from "@/components/dab/online-search-sidebar"
 import type { EqualizerBand } from "@/components/refined-equalizer"
 import { formatTime, waitForCanPlay } from "@/lib/utils"
 
+/** Track-to-track crossfade length in seconds (0 disables it). */
+const CROSSFADE_SECONDS = 3
+
 export default function MobileMusicPlayer() {
   const [searchQuery, setSearchQuery] = useState("")
   const [isTransitioning, setIsTransitioning] = useState(false)
@@ -52,6 +55,12 @@ export default function MobileMusicPlayer() {
     nearEndHandlerRef.current()
   }, [])
 
+  // Crossfade-start fires before the track ends — advance early so the two
+  // tracks overlap. Same advance path as onEnded (which becomes a no-op fallback).
+  const handleCrossfadeStart = useCallback(() => {
+    skipToNextRef.current()
+  }, [])
+
   const [equalizerBands, setEqualizerBands] = useState<EqualizerBand[]>(DEFAULT_EQUALIZER_BANDS)
 
   const {
@@ -60,13 +69,15 @@ export default function MobileMusicPlayer() {
     filterNodes, audioContextRef, playPromiseRef, gainNodeRef,
     initializeAudioContext, play, pause, seek,
     changeVolume, toggleMute, adjustVolume, applyNormalization,
-    preloadNextSong, swapToPreloaded, resetGaplessState, isPreloaded,
+    preloadNextSong, swapToPreloaded, resetGaplessState, isPreloaded, crossfadeTo,
   } = useAudioEngine({
     audioRef,
     secondaryAudioRef,
     equalizerBands,
     onEnded: handleEnded,
     onNearEnd: handleNearEnd,
+    crossfadeDuration: CROSSFADE_SECONDS,
+    onCrossfadeStart: handleCrossfadeStart,
   })
 
   const {
@@ -252,7 +263,7 @@ export default function MobileMusicPlayer() {
   // Auto-save playlist data
   const persistenceData = useMemo(() => ({
     songs, currentSongId: currentSong?.id, equalizerBands,
-    volume: volume[0], shuffleMode, viewMode, showEqualizer, crossfadeDuration: 0,
+    volume: volume[0], shuffleMode, viewMode, showEqualizer, crossfadeDuration: CROSSFADE_SECONDS,
   }), [songs, currentSong?.id, equalizerBands, volume, shuffleMode, viewMode, showEqualizer])
 
   useAutoSave(persistenceData, isInitialized, isRestoringPlaylist, savePlaylist)
@@ -293,6 +304,21 @@ export default function MobileMusicPlayer() {
         )
         applyNormalization(loudness.gainCorrection)
       }).catch(() => { /* non-critical */ })
+    }
+
+    // Manual / non-preloaded crossfade: blend into the new track via the
+    // inactive element instead of a hard reload. Returns false (→ normal load)
+    // when crossfade is off or nothing is currently playing.
+    applyNormalization(song.gainCorrection ?? 0)
+    const faded = await crossfadeTo(song.file, abort.signal)
+    if (abort.signal.aborted) return
+    if (faded) {
+      if (currentSong?.url) URL.revokeObjectURL(currentSong.url)
+      setCurrentSong(song)
+      setIsPlaying(true)
+      notifySongSelected(song, isAutoAdvance)
+      setTimeout(() => preloadUpcomingSongs(), 100)
+      return
     }
 
     // Reset gapless state so we load into primary audio element
@@ -351,7 +377,7 @@ export default function MobileMusicPlayer() {
         toast({ title: "Error loading song", description: "Unable to load the selected audio file.", variant: "destructive" })
       }
     }
-  }, [currentSong, notifySongSelected, initializeAudioContext, preloadUpcomingSongs, setIsPlaying, setCurrentSong, isPreloaded, swapToPreloaded, resetGaplessState, applyNormalization])
+  }, [currentSong, notifySongSelected, initializeAudioContext, preloadUpcomingSongs, setIsPlaying, setCurrentSong, isPreloaded, swapToPreloaded, resetGaplessState, applyNormalization, crossfadeTo])
 
 
   const togglePlayPause = async () => {

@@ -49,6 +49,9 @@ const ArtistInfoDisplay = lazy(() =>
   import("@/components/artist-info-display").then(mod => ({ default: mod.ArtistInfoDisplay }))
 )
 
+/** Track-to-track crossfade length in seconds (0 disables it). */
+const CROSSFADE_SECONDS = 3
+
 export default function EnhancedMusicPlayer() {
   const [currentBitrate, setCurrentBitrate] = useState<number | undefined>()
   const [isTransitioning, setIsTransitioning] = useState(false)
@@ -90,6 +93,12 @@ export default function EnhancedMusicPlayer() {
     nearEndHandlerRef.current()
   }, [])
 
+  // Crossfade-start fires before the track ends — advance early so the two
+  // tracks overlap. Same advance path as onEnded (which becomes a no-op fallback).
+  const handleCrossfadeStart = useCallback(() => {
+    skipToNextRef.current()
+  }, [])
+
   const [equalizerBands, setEqualizerBands] = useState<EqualizerBand[]>(DEFAULT_EQUALIZER_BANDS)
 
   const {
@@ -98,13 +107,15 @@ export default function EnhancedMusicPlayer() {
     filterNodes, audioContextRef, playPromiseRef, gainNodeRef,
     initializeAudioContext, play, pause, seek,
     changeVolume, toggleMute, adjustVolume, applyNormalization,
-    preloadNextSong, swapToPreloaded, resetGaplessState, isPreloaded,
+    preloadNextSong, swapToPreloaded, resetGaplessState, isPreloaded, crossfadeTo,
   } = useAudioEngine({
     audioRef,
     secondaryAudioRef,
     equalizerBands,
     onEnded: handleEnded,
     onNearEnd: handleNearEnd,
+    crossfadeDuration: CROSSFADE_SECONDS,
+    onCrossfadeStart: handleCrossfadeStart,
   })
 
   const {
@@ -192,7 +203,7 @@ export default function EnhancedMusicPlayer() {
   // Auto-save playlist data
   const persistenceData = useMemo(() => ({
     songs, currentSongId: currentSong?.id, equalizerBands,
-    volume: volume[0], shuffleMode, viewMode, showEqualizer, crossfadeDuration: 0,
+    volume: volume[0], shuffleMode, viewMode, showEqualizer, crossfadeDuration: CROSSFADE_SECONDS,
   }), [songs, currentSong?.id, equalizerBands, volume, shuffleMode, viewMode, showEqualizer])
 
   useAutoSave(persistenceData, isInitialized, isRestoringPlaylist, savePlaylist)
@@ -249,6 +260,22 @@ export default function EnhancedMusicPlayer() {
         }).catch(() => { /* non-critical */ })
       }
 
+      // Manual / non-preloaded crossfade: blend into the new track via the
+      // inactive element instead of a hard reload. Returns false (→ normal load)
+      // when crossfade is off or nothing is currently playing.
+      applyNormalization(song.gainCorrection ?? 0)
+      const faded = await crossfadeTo(song.file, abort.signal)
+      if (abort.signal.aborted) return
+      if (faded) {
+        if (currentSong?.url) URL.revokeObjectURL(currentSong.url)
+        setCurrentSong(song)
+        setCurrentBitrate(song.bitrate)
+        setIsPlaying(true)
+        notifySongSelected(song, isAutoAdvance)
+        preloadUpcomingSongs()
+        return
+      }
+
       // Reset gapless state so we load into primary audio element
       resetGaplessState()
 
@@ -291,7 +318,7 @@ export default function EnhancedMusicPlayer() {
         }
       }
     },
-    [currentSong, notifySongSelected, initializeAudioContext, preloadUpcomingSongs, isPreloaded, swapToPreloaded, resetGaplessState, applyNormalization],
+    [currentSong, notifySongSelected, initializeAudioContext, preloadUpcomingSongs, isPreloaded, swapToPreloaded, resetGaplessState, applyNormalization, crossfadeTo],
   )
   
   const togglePlayPause = async () => {
