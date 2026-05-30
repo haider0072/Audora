@@ -11,12 +11,21 @@ export interface UseAudioEngineOptions {
   onDurationChange?: (duration: number) => void
   onEnded?: () => void
   onNearEnd?: () => void
-  /** Crossfade length in seconds (0 = disabled, instant gapless swap). */
+  /**
+   * Auto-advance crossfade length in seconds (0 = gapless, instant swap when a
+   * track ends on its own). Used by the gapless swap + the early crossfade-start
+   * trigger.
+   */
   crossfadeDuration?: number
+  /**
+   * Manual track-change crossfade length in seconds (0 = hard cut). Used when
+   * the user changes track (Next/Prev/pick), independent of the auto length.
+   */
+  manualCrossfadeDuration?: number
   /**
    * Fired `crossfadeDuration` seconds before the active track ends, so the
    * player can advance early and let the two tracks overlap. Only fires when
-   * crossfade is enabled and the next track is already preloaded.
+   * auto crossfade is enabled and the next track is already preloaded.
    */
   onCrossfadeStart?: () => void
 }
@@ -57,7 +66,7 @@ export interface UseAudioEngineReturn {
 
   // Gapless methods
   preloadNextSong: (file: File) => Promise<boolean>
-  swapToPreloaded: () => boolean
+  swapToPreloaded: (durationSec?: number) => boolean
   resetGaplessState: () => void
   isPreloaded: boolean
 
@@ -69,7 +78,7 @@ export interface UseAudioEngineReturn {
 
 const PRELOAD_THRESHOLD_SECONDS = 3
 /** Master-gain fade time for pause/play, in seconds (anti-click + smooth). */
-const PAUSE_FADE_SECONDS = 0.2
+const PAUSE_FADE_SECONDS = 0.4
 /** Headroom (seconds) added on top of crossfade for preloading the next track. */
 const CROSSFADE_PRELOAD_HEADROOM = 2
 
@@ -99,7 +108,7 @@ export function useAudioEngine(options: UseAudioEngineOptions): UseAudioEngineRe
   const {
     audioRef, secondaryAudioRef, equalizerBands,
     onTimeUpdate, onDurationChange, onEnded, onNearEnd,
-    crossfadeDuration = 0, onCrossfadeStart,
+    crossfadeDuration = 0, manualCrossfadeDuration = 0, onCrossfadeStart,
   } = options
 
   // Core audio refs
@@ -123,6 +132,8 @@ export function useAudioEngine(options: UseAudioEngineOptions): UseAudioEngineRe
   // Crossfade / fade refs
   const crossfadeDurationRef = useRef(crossfadeDuration)
   crossfadeDurationRef.current = crossfadeDuration
+  const manualCrossfadeDurationRef = useRef(manualCrossfadeDuration)
+  manualCrossfadeDurationRef.current = manualCrossfadeDuration
   const crossfadeStartedRef = useRef(false)
   // Bumped on every swap/reset so a stale "pause old track" timeout from an
   // interrupted crossfade can detect it's no longer the current transition.
@@ -308,7 +319,7 @@ export function useAudioEngine(options: UseAudioEngineOptions): UseAudioEngineRe
    * overlap smoothly; otherwise it's an instant gapless swap.
    * Returns true if swap succeeded.
    */
-  const swapToPreloaded = useCallback((): boolean => {
+  const swapToPreloaded = useCallback((durationSec?: number): boolean => {
     if (!preloadedRef.current) return false
 
     const activeAudio = getActiveAudio()
@@ -321,7 +332,8 @@ export function useAudioEngine(options: UseAudioEngineOptions): UseAudioEngineRe
 
     inactiveAudio.play().catch(() => {})
 
-    const crossfadeSec = crossfadeDurationRef.current
+    // Default to the auto-advance length; manual changes pass a shorter one.
+    const crossfadeSec = durationSec ?? crossfadeDurationRef.current
     const token = ++crossfadeTokenRef.current
 
     if (crossfadeSec > 0 && ctx) {
@@ -383,7 +395,7 @@ export function useAudioEngine(options: UseAudioEngineOptions): UseAudioEngineRe
    * is disabled, the graph isn't ready, or nothing is currently playing.
    */
   const crossfadeTo = useCallback(async (file: File, signal?: AbortSignal): Promise<boolean> => {
-    const crossfadeSec = crossfadeDurationRef.current
+    const crossfadeSec = manualCrossfadeDurationRef.current
     if (crossfadeSec <= 0) return false
 
     const ctx = audioContextRef.current
@@ -416,7 +428,7 @@ export function useAudioEngine(options: UseAudioEngineOptions): UseAudioEngineRe
 
       preloadedRef.current = true
       setIsPreloaded(true)
-      return swapToPreloaded()
+      return swapToPreloaded(crossfadeSec)
     } catch {
       preloadedRef.current = false
       setIsPreloaded(false)

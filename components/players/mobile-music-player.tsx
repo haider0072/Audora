@@ -30,8 +30,10 @@ import { OnlineSearchSidebar } from "@/components/dab/online-search-sidebar"
 import type { EqualizerBand } from "@/components/refined-equalizer"
 import { formatTime, waitForCanPlay } from "@/lib/utils"
 
-/** Track-to-track crossfade length in seconds (0 disables it). */
-const CROSSFADE_SECONDS = 3
+/** Auto-advance crossfade (song ends on its own). 0 = gapless, no overlap. */
+const CROSSFADE_AUTO_SECONDS = 0
+/** Manual track-change crossfade (Next/Prev/pick) — short & snappy. */
+const CROSSFADE_MANUAL_SECONDS = 0.4
 
 export default function MobileMusicPlayer() {
   const [searchQuery, setSearchQuery] = useState("")
@@ -76,7 +78,8 @@ export default function MobileMusicPlayer() {
     equalizerBands,
     onEnded: handleEnded,
     onNearEnd: handleNearEnd,
-    crossfadeDuration: CROSSFADE_SECONDS,
+    crossfadeDuration: CROSSFADE_AUTO_SECONDS,
+    manualCrossfadeDuration: CROSSFADE_MANUAL_SECONDS,
     onCrossfadeStart: handleCrossfadeStart,
   })
 
@@ -263,7 +266,7 @@ export default function MobileMusicPlayer() {
   // Auto-save playlist data
   const persistenceData = useMemo(() => ({
     songs, currentSongId: currentSong?.id, equalizerBands,
-    volume: volume[0], shuffleMode, viewMode, showEqualizer, crossfadeDuration: CROSSFADE_SECONDS,
+    volume: volume[0], shuffleMode, viewMode, showEqualizer, crossfadeDuration: CROSSFADE_AUTO_SECONDS,
   }), [songs, currentSong?.id, equalizerBands, volume, shuffleMode, viewMode, showEqualizer])
 
   useAutoSave(persistenceData, isInitialized, isRestoringPlaylist, savePlaylist)
