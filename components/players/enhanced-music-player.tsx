@@ -623,8 +623,8 @@ export default function EnhancedMusicPlayer() {
                     {currentSong ? (
                       <>
                         {/* Album Art */}
-                        <div ref={albumArtRef} className="flex-1 min-h-0 flex items-center justify-center">
-                          <div className="h-full aspect-square max-w-full">
+                        <div ref={albumArtRef} className="flex-1 min-h-0 min-w-0 flex items-center justify-center [container-type:size]">
+                          <div className="aspect-square h-[min(100cqw,100cqh)]">
                             <AlbumArtDisplay
                               songId={currentSong.id}
                               albumArt={currentSong.albumArt}
