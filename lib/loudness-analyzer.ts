@@ -1,7 +1,14 @@
 /**
- * LUFS-based loudness analyzer using ITU-R BS.1770 simplified algorithm.
- * Analyzes audio files via OfflineAudioContext and returns integrated loudness
- * plus a gain correction value targeting -14 LUFS (Spotify standard).
+ * Approximate loudness analyzer: full-file RMS via OfflineAudioContext,
+ * returning a pseudo-LUFS figure plus a gain correction targeting -14 LUFS.
+ *
+ * NOT true ITU-R BS.1770: there is no K-weighting filter and no gating, and
+ * decodeAudioData resamples to the 44.1 kHz context rate first, so the
+ * numbers can differ a few dB from a reference meter. Values are only
+ * compared against each other for relative track-to-track leveling, so the
+ * consistent bias cancels out. The whole file is decoded into RAM
+ * (~200MB+ for hi-res FLAC) — which is why analysis runs lazily on first
+ * play and only while the user has normalization enabled.
  */
 
 const TARGET_LUFS = -14

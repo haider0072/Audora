@@ -5,6 +5,7 @@ import { toast } from "@/hooks/use-toast"
 
 import { AlbumArtCache } from "@/lib/album-art-cache"
 import { LoudnessAnalyzer } from "@/lib/loudness-analyzer"
+import { getAllPresets, type EqPreset } from "@/lib/eq-presets"
 import { useAlbumArtPreloader } from "@/hooks/use-album-art-preloader"
 import { usePlaylistManager } from "@/hooks/use-playlist-manager"
 import { useAudioEngine } from "@/hooks/use-audio-engine"
@@ -64,6 +65,10 @@ export default function MobileMusicPlayer() {
   }, [])
 
   const [equalizerBands, setEqualizerBands] = useState<EqualizerBand[]>(DEFAULT_EQUALIZER_BANDS)
+  const [normalizationEnabled, setNormalizationEnabledState] = useState(false)
+  const [preampDb, setPreampDbState] = useState(0)
+  const [customEqPresets, setCustomEqPresets] = useState<EqPreset[]>([])
+  const [activeEqPresetId, setActiveEqPresetId] = useState<string | undefined>(undefined)
 
   const {
     isPlaying, setIsPlaying, currentTime, setCurrentTime,
@@ -71,6 +76,8 @@ export default function MobileMusicPlayer() {
     filterNodes, audioContextRef, playPromiseRef, gainNodeRef,
     initializeAudioContext, play, pause, seek,
     changeVolume, toggleMute, adjustVolume, applyNormalization,
+    setNormalizationEnabled: engineSetNormalizationEnabled,
+    setPreamp: engineSetPreamp,
     preloadNextSong, swapToPreloaded, resetGaplessState, isPreloaded, crossfadeTo,
   } = useAudioEngine({
     audioRef,
@@ -103,8 +110,55 @@ export default function MobileMusicPlayer() {
 
   const {
     showEqualizer, setShowEqualizer,
-    updateBand: updateEqualizerBand, resetEqualizer,
+    updateBand: updateEqualizerBand, applyBands, resetEqualizer,
   } = useEqualizerManager({ equalizerBands, setEqualizerBands, filterNodes })
+
+  // Keep the engine's normalization/preamp in sync with player state
+  // (the engine gates the actual gain by these — see updateGainStructure).
+  useEffect(() => {
+    engineSetNormalizationEnabled(normalizationEnabled)
+  }, [normalizationEnabled, engineSetNormalizationEnabled])
+
+  useEffect(() => {
+    engineSetPreamp(preampDb)
+  }, [preampDb, engineSetPreamp])
+
+  const eqPresets = useMemo(() => getAllPresets(customEqPresets), [customEqPresets])
+
+  // Manual band edits detach from the selected preset.
+  const handleBandChange = useCallback((index: number, gain: number) => {
+    updateEqualizerBand(index, gain)
+    setActiveEqPresetId(undefined)
+  }, [updateEqualizerBand])
+
+  const handleEqReset = useCallback(() => {
+    resetEqualizer()
+    setPreampDbState(0)
+    setActiveEqPresetId("flat")
+  }, [resetEqualizer])
+
+  const handlePresetSelect = useCallback((preset: EqPreset) => {
+    applyBands(preset.gains)
+    setPreampDbState(preset.preamp)
+    setActiveEqPresetId(preset.id)
+  }, [applyBands])
+
+  const handlePresetSave = useCallback((name: string) => {
+    const preset: EqPreset = {
+      id: `custom-${Date.now().toString(36)}`,
+      name,
+      gains: equalizerBands.map((b) => b.gain),
+      preamp: preampDb,
+    }
+    // Same-name save replaces the existing custom preset.
+    setCustomEqPresets((prev) => [...prev.filter((p) => p.name !== name), preset])
+    setActiveEqPresetId(preset.id)
+  }, [equalizerBands, preampDb])
+
+  const handlePresetDelete = useCallback((id: string) => {
+    setCustomEqPresets((prev) => prev.filter((p) => p.id !== id))
+    setActiveEqPresetId((prev) => (prev === id ? undefined : prev))
+  }, [])
 
   // New state for lyrics and network sharing
   const [showLyrics, setShowLyrics] = useState(false)
@@ -243,6 +297,10 @@ export default function MobileMusicPlayer() {
   useEffect(() => {
     restorePlaylist().then(({ songs: restoredSongs, currentSong: current, settings }) => {
       if (settings.equalizerBands) setEqualizerBands(settings.equalizerBands)
+      if (settings.eqPresets) setCustomEqPresets(settings.eqPresets)
+      setActiveEqPresetId(settings.activeEqPresetId)
+      if (settings.normalizationEnabled !== undefined) setNormalizationEnabledState(settings.normalizationEnabled)
+      if (settings.preampDb !== undefined) setPreampDbState(settings.preampDb)
       if (settings.volume !== undefined) setVolume([settings.volume])
       if (settings.shuffleMode !== undefined) setShuffleMode(settings.shuffleMode)
       if (settings.viewMode) setViewMode(settings.viewMode)
@@ -266,8 +324,10 @@ export default function MobileMusicPlayer() {
   // Auto-save playlist data
   const persistenceData = useMemo(() => ({
     songs, currentSongId: currentSong?.id, equalizerBands,
+    eqPresets: customEqPresets, activeEqPresetId,
     volume: volume[0], shuffleMode, viewMode, showEqualizer, crossfadeDuration: CROSSFADE_AUTO_SECONDS,
-  }), [songs, currentSong?.id, equalizerBands, volume, shuffleMode, viewMode, showEqualizer])
+    normalizationEnabled, preampDb,
+  }), [songs, currentSong?.id, equalizerBands, customEqPresets, activeEqPresetId, volume, shuffleMode, viewMode, showEqualizer, normalizationEnabled, preampDb])
 
   useAutoSave(persistenceData, isInitialized, isRestoringPlaylist, savePlaylist)
 
@@ -295,8 +355,10 @@ export default function MobileMusicPlayer() {
 
     pendingPreloadRef.current = null
 
-    // Lazy loudness analysis — runs in background on first play
-    if (song.loudnessLUFS == null && song.file) {
+    // Lazy loudness analysis — runs in background on first play. Skipped
+    // entirely while normalization is off: no point decoding a whole FLAC
+    // into RAM for a correction that would not be applied.
+    if (normalizationEnabled && song.loudnessLUFS == null && song.file) {
       LoudnessAnalyzer.analyze(song.file).then((loudness) => {
         setSongs((prev) =>
           prev.map((s) =>
@@ -305,7 +367,11 @@ export default function MobileMusicPlayer() {
               : s
           )
         )
-        applyNormalization(loudness.gainCorrection)
+        // Analysis may finish after the user already skipped away — only
+        // apply the correction if this song is still the selected one.
+        if (!abort.signal.aborted) {
+          applyNormalization(loudness.gainCorrection)
+        }
       }).catch(() => { /* non-critical */ })
     }
 
@@ -380,7 +446,7 @@ export default function MobileMusicPlayer() {
         toast({ title: "Error loading song", description: "Unable to load the selected audio file.", variant: "destructive" })
       }
     }
-  }, [currentSong, notifySongSelected, initializeAudioContext, preloadUpcomingSongs, setIsPlaying, setCurrentSong, isPreloaded, swapToPreloaded, resetGaplessState, applyNormalization, crossfadeTo])
+  }, [currentSong, notifySongSelected, initializeAudioContext, preloadUpcomingSongs, setIsPlaying, setCurrentSong, isPreloaded, swapToPreloaded, resetGaplessState, applyNormalization, crossfadeTo, normalizationEnabled])
 
 
   const togglePlayPause = async () => {
@@ -574,12 +640,21 @@ export default function MobileMusicPlayer() {
           isOpen={showEqualizer}
           onOpenChange={setShowEqualizer}
           bands={equalizerBands}
-          onBandChange={updateEqualizerBand}
-          onReset={resetEqualizer}
+          onBandChange={handleBandChange}
+          onReset={handleEqReset}
           volume={volume}
           onVolumeChange={changeVolume}
           isMuted={isMuted}
           onToggleMute={toggleMute}
+          preampDb={preampDb}
+          onPreampChange={setPreampDbState}
+          normalizationEnabled={normalizationEnabled}
+          onNormalizationChange={setNormalizationEnabledState}
+          presets={eqPresets}
+          activePresetId={activeEqPresetId}
+          onPresetSelect={handlePresetSelect}
+          onPresetSave={handlePresetSave}
+          onPresetDelete={handlePresetDelete}
         />
 
         {/* Lyrics Sheet */}

@@ -1,15 +1,30 @@
 import { renderHook, act } from '@testing-library/react'
 import { useState } from 'react'
-import { useEqualizerManager, DEFAULT_EQUALIZER_BANDS } from '../use-equalizer-manager'
+import { useEqualizerManager, DEFAULT_EQUALIZER_BANDS, PEAKING_Q } from '../use-equalizer-manager'
 import type { EqualizerBand } from '@/components/refined-equalizer'
 
 describe('useEqualizerManager', () => {
-  // Mock filter nodes
-  const createMockFilterNode = (): BiquadFilterNode => ({
-    gain: { value: 0 } as any,
-    connect: jest.fn(),
-    disconnect: jest.fn(),
-  } as any)
+  // Mock filter nodes. Gain writes go through lib/audio-params rampToValue:
+  // cancel (cancelAndHoldAtTime → cancelScheduledValues fallback) →
+  // setTargetAtTime(target) → setValueAtTime(target) exact snap. The mock
+  // mirrors the final value into gain.value via setValueAtTime for easy
+  // assertions.
+  const createMockFilterNode = (): BiquadFilterNode => {
+    const gain = {
+      value: 0,
+      cancelScheduledValues: jest.fn(),
+      setTargetAtTime: jest.fn(),
+      setValueAtTime: jest.fn((v: number) => {
+        gain.value = v
+      }),
+    }
+    return {
+      gain,
+      context: { currentTime: 0 },
+      connect: jest.fn(),
+      disconnect: jest.fn(),
+    } as unknown as BiquadFilterNode
+  }
 
   const createMockFilterNodes = (count = 10) =>
     Array(count).fill(null).map(() => createMockFilterNode())
@@ -39,6 +54,10 @@ describe('useEqualizerManager', () => {
     expect(result.current.showEqualizer).toBe(false)
   })
 
+  it('exposes the standard one-octave Q for peaking bands', () => {
+    expect(PEAKING_Q).toBeCloseTo(1.41, 2)
+  })
+
   it('should initialize with custom bands', () => {
     const customBands: EqualizerBand[] = [
       { frequency: 100, gain: 5, label: '100Hz' },
@@ -55,7 +74,7 @@ describe('useEqualizerManager', () => {
     expect(result.current.equalizerBands[1].gain).toBe(-3)
   })
 
-  it('should update band gain', () => {
+  it('should update band gain with a ramped (zipper-free) write', () => {
     const mockFilterNodes = createMockFilterNodes()
     const { result } = renderHook(() =>
       useTestEqualizerManager(DEFAULT_EQUALIZER_BANDS, mockFilterNodes)
@@ -66,7 +85,30 @@ describe('useEqualizerManager', () => {
     })
 
     expect(result.current.equalizerBands[0].gain).toBe(10)
+    // Ramped write: smooth approach + exact snap — never a bare .value jump.
+    expect(mockFilterNodes[0].gain.setTargetAtTime).toHaveBeenCalledWith(10, 0, expect.any(Number))
+    expect(mockFilterNodes[0].gain.setValueAtTime).toHaveBeenCalledWith(10, expect.any(Number))
     expect(mockFilterNodes[0].gain.value).toBe(10)
+  })
+
+  it('should apply a full preset of band gains at once', () => {
+    const mockFilterNodes = createMockFilterNodes()
+    const { result } = renderHook(() =>
+      useTestEqualizerManager(DEFAULT_EQUALIZER_BANDS, mockFilterNodes)
+    )
+
+    const gains = [1.5, 2, 3, 0, -1.5, -1.5, 0, 1.5, 5.8, 5.8]
+
+    act(() => {
+      result.current.applyBands(gains)
+    })
+
+    result.current.equalizerBands.forEach((band: EqualizerBand, i: number) => {
+      expect(band.gain).toBe(gains[i])
+    })
+    mockFilterNodes.forEach((node, i) => {
+      expect(node.gain.value).toBe(gains[i])
+    })
   })
 
   it('should reset equalizer', () => {

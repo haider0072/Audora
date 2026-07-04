@@ -1,11 +1,22 @@
 "use client"
 
+import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Slider } from "@/components/ui/slider"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Switch } from "@/components/ui/switch"
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet"
-import { Settings, RotateCcw, Volume2, VolumeX } from "lucide-react"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import { Settings, RotateCcw, Volume2, VolumeX, ChevronDown, Save, Trash2, Check } from "lucide-react"
+import type { EqPreset } from "@/lib/eq-presets"
 
 interface EqualizerBand {
   frequency: number
@@ -23,6 +34,15 @@ interface MobileEqualizerSheetProps {
   onVolumeChange: (value: number[]) => void
   isMuted: boolean
   onToggleMute: () => void
+  preampDb: number
+  onPreampChange: (db: number) => void
+  normalizationEnabled: boolean
+  onNormalizationChange: (enabled: boolean) => void
+  presets: EqPreset[]
+  activePresetId?: string
+  onPresetSelect: (preset: EqPreset) => void
+  onPresetSave: (name: string) => void
+  onPresetDelete: (id: string) => void
 }
 
 export function MobileEqualizerSheet({
@@ -35,10 +55,48 @@ export function MobileEqualizerSheet({
   onVolumeChange,
   isMuted,
   onToggleMute,
+  preampDb,
+  onPreampChange,
+  normalizationEnabled,
+  onNormalizationChange,
+  presets,
+  activePresetId,
+  onPresetSelect,
+  onPresetSave,
+  onPresetDelete,
 }: MobileEqualizerSheetProps) {
+  // Per-band text buffers while an input is focused; a missing key means
+  // "not editing" and the input shows the applied gain instead.
+  const [manualInputs, setManualInputs] = useState<{ [key: number]: string }>({})
+  const [isSavingPreset, setIsSavingPreset] = useState(false)
+  const [presetName, setPresetName] = useState("")
+
+  const activePreset = presets.find((p) => p.id === activePresetId)
+
+  const commitManualInput = (index: number) => {
+    const raw = manualInputs[index]
+    setManualInputs((prev) => {
+      const next = { ...prev }
+      delete next[index]
+      return next
+    })
+    if (raw == null || raw.trim() === "") return
+    const value = Number.parseFloat(raw)
+    if (Number.isNaN(value)) return
+    onBandChange(index, Math.max(-12, Math.min(12, value)))
+  }
+
+  const savePreset = () => {
+    const name = presetName.trim()
+    if (!name) return
+    onPresetSave(name)
+    setPresetName("")
+    setIsSavingPreset(false)
+  }
+
   return (
     <Sheet open={isOpen} onOpenChange={onOpenChange}>
-      <SheetContent side="bottom" className="h-[80vh] overflow-y-auto">
+      <SheetContent side="bottom" className="h-[85vh] overflow-y-auto">
         <SheetHeader className="pb-4">
           <SheetTitle className="flex items-center gap-2">
             <Settings className="w-5 h-5" />
@@ -62,13 +120,83 @@ export function MobileEqualizerSheet({
 
           {/* Equalizer */}
           <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <Label className="text-sm font-medium">10-Band Equalizer</Label>
-              <Button variant="outline" size="sm" onClick={onReset}>
-                <RotateCcw className="w-3 h-3 mr-2" />
-                Reset
-              </Button>
+            <div className="flex items-center justify-between gap-2">
+              <Label className="text-sm font-medium flex-shrink-0">Equalizer</Label>
+              <div className="flex items-center gap-2">
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="outline" size="sm" className="max-w-[130px] justify-between">
+                      <span className="truncate">{activePreset?.name ?? "Custom"}</span>
+                      <ChevronDown className="w-3 h-3 ml-1 flex-shrink-0" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="max-h-72 overflow-y-auto">
+                    <DropdownMenuLabel>Presets</DropdownMenuLabel>
+                    {presets.filter((p) => p.builtIn).map((preset) => (
+                      <DropdownMenuItem key={preset.id} onClick={() => onPresetSelect(preset)}>
+                        {preset.id === activePresetId && <Check className="w-3.5 h-3.5 mr-2" />}
+                        <span className={preset.id === activePresetId ? "" : "ml-[22px]"}>{preset.name}</span>
+                      </DropdownMenuItem>
+                    ))}
+                    {presets.some((p) => !p.builtIn) && (
+                      <>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuLabel>My Presets</DropdownMenuLabel>
+                        {presets.filter((p) => !p.builtIn).map((preset) => (
+                          <DropdownMenuItem key={preset.id} onClick={() => onPresetSelect(preset)}>
+                            {preset.id === activePresetId && <Check className="w-3.5 h-3.5 mr-2" />}
+                            <span className={`flex-1 ${preset.id === activePresetId ? "" : "ml-[22px]"}`}>
+                              {preset.name}
+                            </span>
+                            <button
+                              type="button"
+                              aria-label={`Delete preset ${preset.name}`}
+                              className="ml-2 text-muted-foreground hover:text-destructive"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                onPresetDelete(preset.id)
+                              }}
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </DropdownMenuItem>
+                        ))}
+                      </>
+                    )}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setIsSavingPreset((v) => !v)}
+                  aria-label="Save current settings as preset"
+                >
+                  <Save className="w-3.5 h-3.5" />
+                </Button>
+                <Button variant="outline" size="sm" onClick={onReset} aria-label="Reset equalizer">
+                  <RotateCcw className="w-3 h-3" />
+                </Button>
+              </div>
             </div>
+
+            {isSavingPreset && (
+              <div className="flex items-center gap-2">
+                <Input
+                  value={presetName}
+                  onChange={(e) => setPresetName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") savePreset()
+                    if (e.key === "Escape") setIsSavingPreset(false)
+                  }}
+                  placeholder="Preset name"
+                  className="h-8 text-sm"
+                  autoFocus
+                />
+                <Button size="sm" className="h-8" onClick={savePreset} disabled={!presetName.trim()}>
+                  Save
+                </Button>
+              </div>
+            )}
 
             {/* Mobile-optimized equalizer grid */}
             <div className="grid grid-cols-5 gap-3">
@@ -85,6 +213,7 @@ export function MobileEqualizerSheet({
                       step={0.1}
                       onValueChange={(value) => onBandChange(index, value[0])}
                       className="h-full"
+                      aria-label={`${band.label} gain`}
                     />
                   </div>
 
@@ -94,26 +223,62 @@ export function MobileEqualizerSheet({
                       {band.gain.toFixed(1)}dB
                     </div>
                     <Input
-                      type="number"
-                      min="-12"
-                      max="12"
-                      step="0.1"
-                      value={band.gain.toFixed(1)}
-                      onChange={(e) => {
-                        const value = Number.parseFloat(e.target.value)
-                        if (!isNaN(value) && value >= -12 && value <= 12) {
-                          onBandChange(index, value)
-                        }
+                      type="text"
+                      inputMode="decimal"
+                      value={manualInputs[index] ?? band.gain.toFixed(1)}
+                      onFocus={(e) => {
+                        setManualInputs((prev) => ({ ...prev, [index]: band.gain.toFixed(1) }))
+                        e.target.select()
                       }}
+                      onChange={(e) => {
+                        const raw = e.target.value
+                        setManualInputs((prev) => ({ ...prev, [index]: raw }))
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") (e.target as HTMLInputElement).blur()
+                      }}
+                      onBlur={() => commitManualInput(index)}
                       className="h-6 text-xs text-center w-12 p-1"
+                      aria-label={`${band.label} gain in dB`}
                     />
                   </div>
                 </div>
               ))}
             </div>
 
-            <div className="text-center">
-              <p className="text-xs text-muted-foreground">Adjust frequency bands to customize your audio experience</p>
+            {/* Preamp */}
+            <div className="flex items-center gap-3">
+              <Label className="text-xs font-medium w-16 flex-shrink-0">Preamp</Label>
+              <Slider
+                value={[preampDb]}
+                min={-12}
+                max={12}
+                step={0.5}
+                onValueChange={(value) => onPreampChange(value[0])}
+                className="flex-1"
+                aria-label="Preamp gain"
+              />
+              <span className="text-xs font-mono w-14 text-right flex-shrink-0">
+                {preampDb > 0 ? "+" : ""}
+                {preampDb.toFixed(1)}dB
+              </span>
+            </div>
+
+            {/* Normalization */}
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <Label htmlFor="mobile-normalization-switch" className="text-xs font-medium">
+                  Loudness normalization
+                </Label>
+                <p className="text-[11px] text-muted-foreground mt-0.5">
+                  Evens out volume between tracks. Off = untouched original dynamics.
+                </p>
+              </div>
+              <Switch
+                id="mobile-normalization-switch"
+                checked={normalizationEnabled}
+                onCheckedChange={onNormalizationChange}
+              />
             </div>
           </div>
 

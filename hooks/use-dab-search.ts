@@ -4,7 +4,6 @@ import { useState, useCallback, useRef, useEffect } from "react"
 import { toast } from "@/hooks/use-toast"
 import { DabService } from "@/lib/dab-service"
 import { MetadataExtractor } from "@/lib/metadata-extractor"
-import { LoudnessAnalyzer } from "@/lib/loudness-analyzer"
 import { PlaylistStorage } from "@/lib/playlist-storage"
 import { AlbumArtCache } from "@/lib/album-art-cache"
 import type { Song } from "@/components/enhanced-playlist"
@@ -302,14 +301,10 @@ export function useDabSearch(options: UseDabSearchOptions) {
           }
         }
 
-        // Loudness analysis (non-critical)
-        try {
-          const loudness = await LoudnessAnalyzer.analyze(file)
-          metadata.loudnessLUFS = loudness.lufs
-          metadata.gainCorrection = loudness.gainCorrection
-        } catch {
-          // Continue without loudness data
-        }
+        // Loudness analysis intentionally NOT run here: decoding a full
+        // hi-res FLAC into RAM per download caused 200MB+ memory spikes.
+        // The player analyzes lazily on first play, and only while
+        // normalization is enabled.
 
         // Build Song with DAB metadata overrides (more reliable)
         const song: Song = {

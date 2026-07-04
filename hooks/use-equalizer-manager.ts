@@ -1,4 +1,5 @@
 import { useState, useCallback } from "react"
+import { rampToValue } from "@/lib/audio-params"
 import type { EqualizerBand } from "@/components/refined-equalizer"
 
 export interface UseEqualizerManagerOptions {
@@ -11,22 +12,18 @@ export interface UseEqualizerManagerReturn {
   showEqualizer: boolean
   setShowEqualizer: (show: boolean) => void
   updateBand: (index: number, gain: number) => void
+  applyBands: (gains: number[]) => void
   resetEqualizer: () => void
 }
 
-// Frequency-specific Q values: broader at bass, narrower at treble for natural sound
-export const DEFAULT_Q_VALUES: Record<number, number> = {
-  32: 0.6,
-  64: 0.7,
-  125: 0.8,
-  250: 1.0,
-  500: 1.2,
-  1000: 1.4,
-  2000: 1.6,
-  4000: 1.8,
-  8000: 2.0,
-  16000: 2.2,
-}
+/**
+ * Q for the peaking bands. The 10 bands are spaced one octave apart
+ * (32…16k), and Q = √2 ≈ 1.41 gives each peaking filter a one-octave
+ * bandwidth — the standard for graphic octave EQs, so adjacent bands meet
+ * without gaps or excessive overlap. The shelf endpoints (32 Hz / 16 kHz)
+ * ignore Q by spec.
+ */
+export const PEAKING_Q = 1.41
 
 export const DEFAULT_EQUALIZER_BANDS: EqualizerBand[] = [
   { frequency: 32, gain: 0, label: "32Hz" },
@@ -45,7 +42,8 @@ export const DEFAULT_EQUALIZER_BANDS: EqualizerBand[] = [
  * Custom hook for managing equalizer state and filter updates
  *
  * Handles:
- * - Filter node gain updates
+ * - Filter node gain updates (ramped — direct value writes cause zipper noise)
+ * - Applying a full set of band gains at once (presets)
  * - Equalizer UI visibility
  * - Reset functionality
  */
@@ -65,11 +63,29 @@ export function useEqualizerManager(options: UseEqualizerManagerOptions): UseEqu
         return newBands
       })
 
-      // Update the corresponding Web Audio API filter node (not React state)
-      if (filterNodes[index]) {
-        // eslint-disable-next-line react-hooks/immutability -- Web Audio API node, not React state
-        filterNodes[index].gain.value = gain
+      // Update the corresponding Web Audio API filter node (not React state).
+      const filter = filterNodes[index]
+      if (filter) {
+        rampToValue(filter.gain, filter.context, gain)
       }
+    },
+    [setEqualizerBands, filterNodes]
+  )
+
+  /**
+   * Apply a full set of band gains at once (used by presets)
+   */
+  const applyBands = useCallback(
+    (gains: number[]) => {
+      setEqualizerBands((prev) =>
+        prev.map((band, index) => (gains[index] != null ? { ...band, gain: gains[index] } : band))
+      )
+
+      filterNodes.forEach((filter, index) => {
+        if (gains[index] != null) {
+          rampToValue(filter.gain, filter.context, gains[index])
+        }
+      })
     },
     [setEqualizerBands, filterNodes]
   )
@@ -80,14 +96,16 @@ export function useEqualizerManager(options: UseEqualizerManagerOptions): UseEqu
   const resetEqualizer = useCallback(() => {
     setEqualizerBands((prev) => prev.map((band) => ({ ...band, gain: 0 })))
 
-    // Reset all Web Audio API filter nodes (not React state)
-    filterNodes.forEach((filter) => { filter.gain.value = 0 })
+    filterNodes.forEach((filter) => {
+      rampToValue(filter.gain, filter.context, 0)
+    })
   }, [setEqualizerBands, filterNodes])
 
   return {
     showEqualizer,
     setShowEqualizer,
     updateBand,
+    applyBands,
     resetEqualizer,
   }
 }
