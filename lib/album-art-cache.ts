@@ -201,12 +201,14 @@ export class AlbumArtCache {
       this.cache.delete(songId)
     })
 
-    // Second pass — if still over the cap, evict oldest-unused first. Entries
-    // with a dangling refCount are still eligible once untouched for 24h:
-    // callers routinely forget releaseAlbumArt(), and without this valve those
+    // Second pass — if still over either cap (entry count OR byte size),
+    // evict oldest-unused first until both are satisfied. Entries with a
+    // dangling refCount are still eligible once untouched for 24h: callers
+    // routinely forget releaseAlbumArt(), and without this valve those
     // pinned entries would grow the cache without bound.
     const remainingEntries = Array.from(this.cache.entries())
-    if (remainingEntries.length > this.MAX_CACHE_ENTRIES) {
+    let remainingSize = remainingEntries.reduce((sum, [, cached]) => sum + cached.size, 0)
+    if (remainingEntries.length > this.MAX_CACHE_ENTRIES || remainingSize > this.MAX_CACHE_SIZE) {
       const evictable = remainingEntries
         .filter(([, cached]) =>
           !cached.isLoading &&
@@ -214,17 +216,16 @@ export class AlbumArtCache {
         )
         .sort((a, b) => a[1].lastAccessed - b[1].lastAccessed)
 
-      const excessCount = remainingEntries.length - this.MAX_CACHE_ENTRIES
-      const toRemove = evictable.slice(0, Math.max(0, excessCount))
-
-      toRemove.forEach(([songId, cached]) => {
+      for (const [songId, cached] of evictable) {
+        if (this.cache.size <= this.MAX_CACHE_ENTRIES && remainingSize <= this.MAX_CACHE_SIZE) break
         try {
           URL.revokeObjectURL(cached.url)
         } catch (error) {
           console.error("Error revoking URL:", error)
         }
         this.cache.delete(songId)
-      })
+        remainingSize -= cached.size
+      }
     }
   }
 

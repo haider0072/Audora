@@ -343,6 +343,12 @@ export function useAudioEngine(options: UseAudioEngineOptions): UseAudioEngineRe
    * outgoing track silenced and paused. Idempotent — safe to call when no
    * crossfade is active (it still clears a stale settle timeout).
    *
+   * The settle is deliberately instant, not ramped: it runs either once the
+   * master gain is silent (deferred pause path) or at a track-change/seek
+   * boundary where a hard cut is expected. In the one rare race where it can
+   * be briefly audible (resume within the 0.4s pause-fade), a deterministic
+   * micro-cut beats leaving curves and element state to fight each other.
+   *
    * NOTE: relies on activeElementRef already pointing at the incoming track
    * (swapToPreloaded swaps it synchronously when the crossfade starts).
    */
@@ -564,6 +570,7 @@ export function useAudioEngine(options: UseAudioEngineOptions): UseAudioEngineRe
     const secondaryAudio = secondaryAudioRef?.current
     if (secondaryAudio) {
       secondaryAudio.pause()
+      // eslint-disable-next-line react-hooks/immutability -- HTMLMediaElement, not React state
       secondaryAudio.currentTime = 0
     }
 
@@ -586,9 +593,13 @@ export function useAudioEngine(options: UseAudioEngineOptions): UseAudioEngineRe
       cancelRamps(secondaryMixGainRef.current.gain, ctxTime)
       secondaryMixGainRef.current.gain.value = 0
     }
-    // Restore master gain to the current volume so the new track starts audible.
-    if (gainNodeRef.current) {
-      cancelRamps(gainNodeRef.current.gain, ctxTime)
+    // Restore master gain to the current volume so the new track starts
+    // audible. Ramped: a skip can land mid pause-fade, and an instant jump
+    // from the partially-faded level would click.
+    const ctx = audioContextRef.current
+    if (gainNodeRef.current && ctx) {
+      rampToValue(gainNodeRef.current.gain, ctx, volumeToGain(volumeRef.current), 0.01)
+    } else if (gainNodeRef.current) {
       gainNodeRef.current.gain.value = volumeToGain(volumeRef.current)
     }
 

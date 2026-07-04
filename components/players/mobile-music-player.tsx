@@ -367,7 +367,11 @@ export default function MobileMusicPlayer() {
               : s
           )
         )
-        applyNormalization(loudness.gainCorrection)
+        // Analysis may finish after the user already skipped away — only
+        // apply the correction if this song is still the selected one.
+        if (!abort.signal.aborted) {
+          applyNormalization(loudness.gainCorrection)
+        }
       }).catch(() => { /* non-critical */ })
     }
 
