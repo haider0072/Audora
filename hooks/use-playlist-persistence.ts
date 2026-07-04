@@ -5,16 +5,21 @@ import { PlaylistStorage } from "@/lib/playlist-storage"
 import { AlbumArtCache } from "@/lib/album-art-cache"
 import type { Song } from "@/components/enhanced-playlist"
 import type { EqualizerBand } from "@/components/refined-equalizer"
+import { isValidPreset, type EqPreset } from "@/lib/eq-presets"
 
 export interface PlaylistPersistenceData {
   songs: Song[]
   currentSongId?: string
   equalizerBands: EqualizerBand[]
+  eqPresets: EqPreset[]
+  activeEqPresetId?: string
   volume: number
   shuffleMode: boolean
   viewMode: "grouped" | "list"
   showEqualizer: boolean
   crossfadeDuration: number
+  normalizationEnabled: boolean
+  preampDb: number
 }
 
 export interface UsePlaylistPersistenceOptions {
@@ -66,12 +71,17 @@ export function usePlaylistPersistence(
         settings.equalizerBands = savedData.equalizerBands
       }
 
+      settings.eqPresets = (savedData.eqPresets ?? []).filter(isValidPreset)
+      settings.activeEqPresetId = savedData.activeEqPresetId
+
       if (savedData.playerSettings) {
         settings.volume = savedData.playerSettings.volume
         settings.shuffleMode = savedData.playerSettings.shuffleMode
         settings.viewMode = savedData.playerSettings.viewMode
         settings.showEqualizer = savedData.playerSettings.showEqualizer
         settings.crossfadeDuration = savedData.playerSettings.crossfadeDuration ?? 0
+        settings.normalizationEnabled = savedData.playerSettings.normalizationEnabled ?? false
+        settings.preampDb = savedData.playerSettings.preampDb ?? 0
       }
 
       // Load playlist metadata
@@ -155,8 +165,11 @@ export function usePlaylistPersistence(
    * Save playlist to storage
    */
   const savePlaylist = useCallback((data: PlaylistPersistenceData) => {
-    const { songs, currentSongId, equalizerBands, volume, shuffleMode, viewMode, showEqualizer, crossfadeDuration } =
-      data
+    const {
+      songs, currentSongId, equalizerBands, eqPresets, activeEqPresetId,
+      volume, shuffleMode, viewMode, showEqualizer, crossfadeDuration,
+      normalizationEnabled, preampDb,
+    } = data
 
     // Serialize songs (exclude File objects). The file-identity fields
     // (name/size/lastModified) MUST come from song.file rather than the
@@ -188,14 +201,21 @@ export function usePlaylistPersistence(
       fileType: song.file ? song.file.type : "",
     }))
 
-    // Save playlist metadata
+    // Save playlist metadata (canonical songs store — see restorePlaylist)
     PlaylistStorage.savePlaylistMetadata(serializableSongs, currentSongId)
 
-    // Save player settings
+    // Save player settings. Songs are deliberately NOT duplicated here:
+    // nothing reads StorageManager's songs and writing the full array to a
+    // second localStorage key doubled the footprint of a large library.
     StorageManager.saveData({
-      songs: serializableSongs,
+      songs: [], // actively clear the legacy duplicate from older versions
       equalizerBands,
-      playerSettings: { volume, shuffleMode, viewMode, showEqualizer, crossfadeDuration },
+      eqPresets,
+      activeEqPresetId,
+      playerSettings: {
+        volume, shuffleMode, viewMode, showEqualizer, crossfadeDuration,
+        normalizationEnabled, preampDb,
+      },
       currentSongId,
     })
   }, [])
