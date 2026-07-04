@@ -23,6 +23,10 @@ export const EQ_BAND_COUNT = 10
 export const BUILT_IN_PRESETS: EqPreset[] = [
   { id: "flat", name: "Flat", gains: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0], preamp: 0, builtIn: true },
   { id: "my-eq", name: "My EQ", gains: [1.5, 2, 3, 0, -1.5, -1.5, 0, 1.5, 5.8, 5.8], preamp: 0, builtIn: true },
+  // Tuned for small mono Bluetooth speakers (e.g. Sony SRS-XB100): no
+  // sub-bass boost (a 46mm driver can't reproduce it — it only costs
+  // headroom), mild warmth, presence lift for vocal clarity, gentle treble.
+  { id: "xb100", name: "XB100 Speaker", gains: [0, 0, 1, 0, -1, 0, 1, 1.5, 2.5, 1], preamp: 0, builtIn: true },
   { id: "bass-boost", name: "Bass Boost", gains: [5.5, 4.5, 3.5, 2.5, 1.5, 0, 0, 0, 0, 0], preamp: 0, builtIn: true },
   { id: "bass-reducer", name: "Bass Reducer", gains: [-5.5, -4.5, -3.5, -2.5, -1.5, 0, 0, 0, 0, 0], preamp: 0, builtIn: true },
   { id: "treble-boost", name: "Treble Boost", gains: [0, 0, 0, 0, 0, 1.5, 2.5, 3.5, 4.5, 5.5], preamp: 0, builtIn: true },
