@@ -4,7 +4,6 @@ import { useState, useCallback, useRef, useEffect } from "react"
 import { toast } from "@/hooks/use-toast"
 import { TidalService, type SearchSource } from "@/lib/tidal-service"
 import { MetadataExtractor } from "@/lib/metadata-extractor"
-import { LoudnessAnalyzer } from "@/lib/loudness-analyzer"
 import { PlaylistStorage } from "@/lib/playlist-storage"
 import { AlbumArtCache } from "@/lib/album-art-cache"
 import { embedFlacMetadata } from "@/lib/flac-art-embedder"
@@ -385,14 +384,10 @@ export function useTidalSearch(options: UseTidalSearchOptions) {
           }
         }
 
-        // Loudness analysis (non-critical)
-        try {
-          const loudness = await LoudnessAnalyzer.analyze(file)
-          metadata.loudnessLUFS = loudness.lufs
-          metadata.gainCorrection = loudness.gainCorrection
-        } catch {
-          // Continue without loudness data
-        }
+        // Loudness analysis intentionally NOT run here: decoding a full
+        // hi-res FLAC into RAM per download caused 200MB+ memory spikes.
+        // The player analyzes lazily on first play, and only while
+        // normalization is enabled.
 
         // Build Song with Tidal metadata overrides
         const song: Song = {

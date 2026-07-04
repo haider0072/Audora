@@ -107,9 +107,11 @@ export function useFileImporter(options: UseFileImporterOptions): UseFileImporte
             return null
           }
 
+          let albumArtUrl: string | undefined
           try {
             // Extract metadata (pure binary — no Audio element, works in background tabs)
             const metadata = await MetadataExtractor.extractMetadata(file)
+            albumArtUrl = metadata.albumArt
             // Loudness analysis deferred to first playback (uses OfflineAudioContext
             // which gets throttled in background tabs, blocking import)
             const song: Song = { ...metadata, id: songId, file, url: "" }
@@ -126,6 +128,11 @@ export function useFileImporter(options: UseFileImporterOptions): UseFileImporte
           } catch (error) {
             console.error(`Error processing ${file.name}:`, error)
             errors.push(file.name)
+            // The song is being dropped — release the album-art object URL the
+            // metadata extractor created, or it leaks (nothing else owns it).
+            if (albumArtUrl?.startsWith("blob:")) {
+              URL.revokeObjectURL(albumArtUrl)
+            }
             return null
           }
         })

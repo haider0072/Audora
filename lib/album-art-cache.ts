@@ -103,10 +103,7 @@ export class AlbumArtCache {
 
       this.cache.set(songId, cacheEntry)
 
-      // Only cleanup if we're significantly over limits
-      if (this.cache.size > this.MAX_CACHE_ENTRIES * 1.2) {
-        this.cleanupCache()
-      }
+      this.maybeCleanup()
 
       return url
     } catch (error) {
@@ -162,14 +159,28 @@ export class AlbumArtCache {
     )
   }
 
-  // Very conservative cleanup that preserves active entries
+  // Run cleanup as soon as either the entry-count or byte-size cap is hit
+  // (the old 20% slack let the cache balloon 40-100MB past its limits).
+  private static maybeCleanup(): void {
+    if (this.cache.size > this.MAX_CACHE_ENTRIES) {
+      this.cleanupCache()
+      return
+    }
+    let totalSize = 0
+    for (const cached of this.cache.values()) totalSize += cached.size
+    if (totalSize > this.MAX_CACHE_SIZE) {
+      this.cleanupCache()
+    }
+  }
+
+  // Cleanup that prefers idle entries but can still shed stale ref'd ones
   private static cleanupCache(): void {
     if (!this.isBrowser()) return
 
     const now = Date.now()
     const entries = Array.from(this.cache.entries())
 
-    // Only remove entries that are:
+    // First pass — remove entries that are:
     // 1. Not in use (refCount === 0)
     // 2. Not currently loading
     // 3. Very old (over 24 hours) OR (expired and not stable)
@@ -190,15 +201,21 @@ export class AlbumArtCache {
       this.cache.delete(songId)
     })
 
-    // If still significantly over limits, remove oldest unused entries
+    // Second pass — if still over the cap, evict oldest-unused first. Entries
+    // with a dangling refCount are still eligible once untouched for 24h:
+    // callers routinely forget releaseAlbumArt(), and without this valve those
+    // pinned entries would grow the cache without bound.
     const remainingEntries = Array.from(this.cache.entries())
-    if (remainingEntries.length > this.MAX_CACHE_ENTRIES * 1.5) {
-      const unusedEntries = remainingEntries
-        .filter(([, cached]) => cached.refCount === 0 && !cached.isLoading)
+    if (remainingEntries.length > this.MAX_CACHE_ENTRIES) {
+      const evictable = remainingEntries
+        .filter(([, cached]) =>
+          !cached.isLoading &&
+          (cached.refCount === 0 || now - cached.lastAccessed > this.CACHE_EXPIRY)
+        )
         .sort((a, b) => a[1].lastAccessed - b[1].lastAccessed)
 
       const excessCount = remainingEntries.length - this.MAX_CACHE_ENTRIES
-      const toRemove = unusedEntries.slice(0, Math.max(0, excessCount))
+      const toRemove = evictable.slice(0, Math.max(0, excessCount))
 
       toRemove.forEach(([songId, cached]) => {
         try {
