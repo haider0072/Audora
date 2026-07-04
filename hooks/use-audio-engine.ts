@@ -1,6 +1,7 @@
 import { useRef, useState, useCallback, useEffect } from "react"
 import type { EqualizerBand } from "@/components/refined-equalizer"
-import { DEFAULT_Q_VALUES } from "@/hooks/use-equalizer-manager"
+import { PEAKING_Q } from "@/hooks/use-equalizer-manager"
+import { cancelRamps, dbToGain, rampToValue, volumeToGain } from "@/lib/audio-params"
 import { waitForCanPlay } from "@/lib/utils"
 
 export interface UseAudioEngineOptions {
@@ -63,6 +64,8 @@ export interface UseAudioEngineReturn {
   toggleMute: () => void
   adjustVolume: (delta: number) => void
   applyNormalization: (dbCorrection: number) => void
+  setNormalizationEnabled: (enabled: boolean) => void
+  setPreamp: (db: number) => void
 
   // Gapless methods
   preloadNextSong: (file: File) => Promise<boolean>
@@ -99,8 +102,15 @@ for (let i = 0; i < CROSSFADE_CURVE_POINTS; i++) {
  *
  * Audio graph (with dual sources for gapless):
  *   primarySource → primaryMixGain ─┐
- *                                     ├→ filters[] → limiter → normGain → userGain → analyser → dest
+ *                                     ├→ preampGain → filters[] → normGain → userGain → analyser → dest
  *   secondarySource → secondaryMixGain ─┘
+ *
+ * Transparency contract: with a flat EQ, normalization off, and volume at
+ * 100%, every gain in the chain is exactly 1.0 and the biquads are identity —
+ * the browser's decoded PCM reaches the DAC untouched. There is deliberately
+ * no compressor/limiter in the path; clipping from EQ boosts or normalization
+ * is prevented by `updateGainStructure`'s auto-headroom pre-attenuation
+ * instead of dynamic processing.
  *
  * When secondaryAudioRef is not provided, falls back to single-source mode.
  */
@@ -118,10 +128,17 @@ export function useAudioEngine(options: UseAudioEngineOptions): UseAudioEngineRe
   const primaryMixGainRef = useRef<GainNode | null>(null)
   const secondaryMixGainRef = useRef<GainNode | null>(null)
   const gainNodeRef = useRef<GainNode | null>(null)
-  const limiterNodeRef = useRef<DynamicsCompressorNode | null>(null)
+  const preampGainRef = useRef<GainNode | null>(null)
   const normalizationGainRef = useRef<GainNode | null>(null)
   const analyserRef = useRef<AnalyserNode | null>(null)
   const playPromiseRef = useRef<Promise<void> | null>(null)
+
+  // Gain-structure refs (dB domain). Effective pre-EQ gain is
+  // preampDb + auto-headroom; see updateGainStructure.
+  const preampDbRef = useRef(0)
+  const eqMaxBoostRef = useRef(0)
+  const normDbRef = useRef(0)
+  const normalizationEnabledRef = useRef(false)
 
   // Gapless refs
   const activeElementRef = useRef<"primary" | "secondary">("primary")
@@ -135,12 +152,11 @@ export function useAudioEngine(options: UseAudioEngineOptions): UseAudioEngineRe
   const manualCrossfadeDurationRef = useRef(manualCrossfadeDuration)
   manualCrossfadeDurationRef.current = manualCrossfadeDuration
   const crossfadeStartedRef = useRef(false)
-  // Bumped on every swap/reset so a stale "pause old track" timeout from an
-  // interrupted crossfade can detect it's no longer the current transition.
-  const crossfadeTokenRef = useRef(0)
+  // True while a crossfade's gain curves are (or may still be) in flight.
+  const crossfadeActiveRef = useRef(false)
   // Pending setTimeout id for the deferred pause after a pause-fade.
   const pendingPauseRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  // Pending setTimeout id for pausing the outgoing track after a crossfade.
+  // Pending setTimeout id for settling the crossfade once its curves complete.
   const pendingCrossfadeStopRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   // Mirror of the latest user volume (0-100) for ramp targets without stale closures.
   const volumeRef = useRef(80)
@@ -188,6 +204,37 @@ export function useAudioEngine(options: UseAudioEngineOptions): UseAudioEngineRe
   }, [volume])
 
   /**
+   * Recompute the static gain structure (preamp + normalization nodes).
+   *
+   * Auto-headroom: the pre-EQ gain is reduced by the total possible boost
+   * (max positive EQ band gain + positive normalization correction) so that
+   * full-scale material can never exceed 0 dBFS at the destination. The Web
+   * Audio graph is float32 throughout and only clamps at the DAC, so a single
+   * compensation point is sufficient — no limiter/compressor needed.
+   *
+   * The manual preamp is applied on top and may be positive; that is an
+   * explicit user override and is not headroom-compensated.
+   */
+  const updateGainStructure = useCallback(() => {
+    const ctx = audioContextRef.current
+    if (!ctx) return
+    const normDb = normalizationEnabledRef.current ? normDbRef.current : 0
+    const headroomDb = -(Math.max(0, eqMaxBoostRef.current) + Math.max(0, normDb))
+    if (preampGainRef.current) {
+      rampToValue(preampGainRef.current.gain, ctx, dbToGain(preampDbRef.current + headroomDb))
+    }
+    if (normalizationGainRef.current) {
+      rampToValue(normalizationGainRef.current.gain, ctx, dbToGain(normDb))
+    }
+  }, [])
+
+  // Track the largest positive EQ band gain for auto-headroom.
+  useEffect(() => {
+    eqMaxBoostRef.current = equalizerBands.reduce((max, band) => Math.max(max, band.gain), 0)
+    updateGainStructure()
+  }, [equalizerBands, updateGainStructure])
+
+  /**
    * Initialize Web Audio API context and create dual-source audio graph.
    *
    * IMPORTANT: createMediaElementSource can only be called ONCE per
@@ -195,44 +242,66 @@ export function useAudioEngine(options: UseAudioEngineOptions): UseAudioEngineRe
    */
   const initializeAudioContext = useCallback(() => {
     if (!audioContextRef.current && !sourceNodeRef.current && audioRef.current) {
-      const ctx = new (window.AudioContext || (window as any).webkitAudioContext)()
+      // latencyHint "playback" favors larger, glitch-resistant buffers over
+      // interactive latency — right trade-off for a music player. The sample
+      // rate is left at the device default on purpose: the OS output rate is
+      // fixed, so forcing e.g. 96 kHz would just add a second resample stage
+      // for no fidelity gain (exclusive-mode output does not exist on the web).
+      const ctx = window.AudioContext
+        ? new AudioContext({ latencyHint: "playback" })
+        : new (window as any).webkitAudioContext()
       audioContextRef.current = ctx
 
+      // Once the graph owns the signal, the elements must stay at unity —
+      // the master gain node is the single volume stage (element.volume would
+      // otherwise attenuate a second time before the graph even sees samples).
+      audioRef.current.volume = 1
+      audioRef.current.muted = false
+      if (secondaryAudioRef?.current) {
+        secondaryAudioRef.current.volume = 1
+        secondaryAudioRef.current.muted = false
+      }
+
       // Create core nodes
-      gainNodeRef.current = ctx.createGain()
-      analyserRef.current = ctx.createAnalyser()
+      const masterGain = ctx.createGain()
+      masterGain.gain.value = volumeToGain(volumeRef.current)
+      gainNodeRef.current = masterGain
+      const analyser = ctx.createAnalyser()
+      analyserRef.current = analyser
 
-      // Peak limiter (brick-wall, always-on)
-      limiterNodeRef.current = ctx.createDynamicsCompressor()
-      limiterNodeRef.current.threshold.value = -1
-      limiterNodeRef.current.ratio.value = 20
-      limiterNodeRef.current.knee.value = 0
-      limiterNodeRef.current.attack.value = 0.001
-      limiterNodeRef.current.release.value = 0.01
+      // Pre-EQ gain: manual preamp + auto-headroom (see updateGainStructure)
+      const preampGain = ctx.createGain()
+      preampGain.gain.value = 1
+      preampGainRef.current = preampGain
 
-      // Normalization gain (per-song loudness correction)
-      normalizationGainRef.current = ctx.createGain()
-      normalizationGainRef.current.gain.value = 1
+      // Normalization gain (per-song loudness correction; unity when disabled)
+      const normalizationGain = ctx.createGain()
+      normalizationGain.gain.value = 1
+      normalizationGainRef.current = normalizationGain
 
       // Primary source + mix gain
-      sourceNodeRef.current = ctx.createMediaElementSource(audioRef.current)
-      primaryMixGainRef.current = ctx.createGain()
-      primaryMixGainRef.current.gain.value = 1
-      sourceNodeRef.current.connect(primaryMixGainRef.current)
+      const primarySource = ctx.createMediaElementSource(audioRef.current)
+      sourceNodeRef.current = primarySource
+      const primaryMixGain = ctx.createGain()
+      primaryMixGain.gain.value = 1
+      primaryMixGainRef.current = primaryMixGain
+      primarySource.connect(primaryMixGain)
 
       // Secondary source + mix gain (for gapless)
       if (secondaryAudioRef?.current) {
-        secondarySourceNodeRef.current = ctx.createMediaElementSource(secondaryAudioRef.current)
-        secondaryMixGainRef.current = ctx.createGain()
-        secondaryMixGainRef.current.gain.value = 0
-        secondarySourceNodeRef.current.connect(secondaryMixGainRef.current)
+        const secondarySource = ctx.createMediaElementSource(secondaryAudioRef.current)
+        secondarySourceNodeRef.current = secondarySource
+        const secondaryMixGain = ctx.createGain()
+        secondaryMixGain.gain.value = 0
+        secondaryMixGainRef.current = secondaryMixGain
+        secondarySource.connect(secondaryMixGain)
       }
 
       // Create equalizer filter nodes
       const filters = equalizerBands.map((band, index) => {
         const filter = ctx.createBiquadFilter()
         filter.type = index === 0 ? "lowshelf" : index === equalizerBands.length - 1 ? "highshelf" : "peaking"
-        if (filter.type === "peaking") filter.Q.value = DEFAULT_Q_VALUES[band.frequency] ?? 1.0
+        if (filter.type === "peaking") filter.Q.value = PEAKING_Q
         filter.frequency.value = band.frequency
         filter.gain.value = band.gain
         return filter
@@ -240,14 +309,10 @@ export function useAudioEngine(options: UseAudioEngineOptions): UseAudioEngineRe
       setFilterNodes(filters)
       filterNodesRef.current = filters
 
-      // Connect graph: mixGains → filters → limiter → normGain → userGain → analyser → dest
-      const firstFilter = filters[0]
-
-      // Both mix gains connect to first filter (or limiter if no filters)
-      const mergeTarget: AudioNode = firstFilter || limiterNodeRef.current!
-      primaryMixGainRef.current.connect(mergeTarget)
+      // Connect graph: mixGains → preamp → filters → normGain → userGain → analyser → dest
+      primaryMixGain.connect(preampGain)
       if (secondaryMixGainRef.current) {
-        secondaryMixGainRef.current.connect(mergeTarget)
+        secondaryMixGainRef.current.connect(preampGain)
       }
 
       // Chain filters together
@@ -255,17 +320,57 @@ export function useAudioEngine(options: UseAudioEngineOptions): UseAudioEngineRe
         filters[i].connect(filters[i + 1])
       }
 
-      // Last filter → limiter → normGain → userGain → analyser → destination
-      const lastFilter = filters[filters.length - 1] || mergeTarget
-      if (filters.length > 0) {
-        lastFilter.connect(limiterNodeRef.current!)
+      const firstFilter = filters[0]
+      const lastFilter = filters[filters.length - 1]
+      if (firstFilter && lastFilter) {
+        preampGain.connect(firstFilter)
+        lastFilter.connect(normalizationGain)
+      } else {
+        preampGain.connect(normalizationGain)
       }
-      limiterNodeRef.current!.connect(normalizationGainRef.current!)
-      normalizationGainRef.current!.connect(gainNodeRef.current!)
-      gainNodeRef.current!.connect(analyserRef.current!)
-      analyserRef.current!.connect(ctx.destination)
+      normalizationGain.connect(masterGain)
+      masterGain.connect(analyser)
+      analyser.connect(ctx.destination)
+
+      // Seed preamp/normalization from current settings (auto-headroom included)
+      eqMaxBoostRef.current = equalizerBands.reduce((max, band) => Math.max(max, band.gain), 0)
+      updateGainStructure()
     }
-  }, [equalizerBands, audioRef, secondaryAudioRef])
+  }, [equalizerBands, audioRef, secondaryAudioRef, updateGainStructure])
+
+  /**
+   * Settle any in-flight crossfade instantly: incoming track at unity mix,
+   * outgoing track silenced and paused. Idempotent — safe to call when no
+   * crossfade is active (it still clears a stale settle timeout).
+   *
+   * NOTE: relies on activeElementRef already pointing at the incoming track
+   * (swapToPreloaded swaps it synchronously when the crossfade starts).
+   */
+  const finalizeCrossfade = useCallback(() => {
+    if (pendingCrossfadeStopRef.current) {
+      clearTimeout(pendingCrossfadeStopRef.current)
+      pendingCrossfadeStopRef.current = null
+    }
+    if (!crossfadeActiveRef.current) return
+    crossfadeActiveRef.current = false
+
+    const t = audioContextRef.current?.currentTime ?? 0
+    const incomingMixGain = getActiveMixGain()
+    const outgoingMixGain = getInactiveMixGain()
+    if (incomingMixGain) {
+      cancelRamps(incomingMixGain.gain, t)
+      incomingMixGain.gain.value = 1
+    }
+    if (outgoingMixGain) {
+      cancelRamps(outgoingMixGain.gain, t)
+      outgoingMixGain.gain.value = 0
+    }
+    const outgoingAudio = getInactiveAudio()
+    if (outgoingAudio && !outgoingAudio.paused) {
+      outgoingAudio.pause()
+      outgoingAudio.currentTime = 0
+    }
+  }, [getActiveMixGain, getInactiveMixGain, getInactiveAudio])
 
   /**
    * Preload next song into the inactive audio element for gapless playback.
@@ -330,6 +435,10 @@ export function useAudioEngine(options: UseAudioEngineOptions): UseAudioEngineRe
 
     if (!inactiveAudio || !activeMixGain || !inactiveMixGain) return false
 
+    // Settle any previous transition first (rapid double-skip) so its curves
+    // and settle timeout can't fight the one we're about to start.
+    finalizeCrossfade()
+
     // If we're swapping out of a paused state (e.g. skip near end-of-track),
     // the pause-fade may have left the master gain at ~0 — clear it so the
     // incoming track is audible.
@@ -339,42 +448,33 @@ export function useAudioEngine(options: UseAudioEngineOptions): UseAudioEngineRe
     }
     if (gainNodeRef.current) {
       const gt = ctx?.currentTime ?? 0
-      gainNodeRef.current.gain.cancelScheduledValues(gt)
-      gainNodeRef.current.gain.value = volumeRef.current / 100
+      cancelRamps(gainNodeRef.current.gain, gt)
+      gainNodeRef.current.gain.value = volumeToGain(volumeRef.current)
     }
 
     inactiveAudio.play().catch(() => {})
 
     // Default to the auto-advance length; manual changes pass a shorter one.
     const crossfadeSec = durationSec ?? crossfadeDurationRef.current
-    const token = ++crossfadeTokenRef.current
 
     if (crossfadeSec > 0 && ctx) {
-      // Equal-power crossfade: ramp old out, new in, then pause old once done.
+      // Equal-power crossfade: ramp old out, new in, then settle once done.
       const now = ctx.currentTime
-      activeMixGain.gain.cancelScheduledValues(now)
-      inactiveMixGain.gain.cancelScheduledValues(now)
+      cancelRamps(activeMixGain.gain, now)
+      cancelRamps(inactiveMixGain.gain, now)
       activeMixGain.gain.setValueCurveAtTime(FADE_OUT_CURVE, now, crossfadeSec)
       inactiveMixGain.gain.setValueCurveAtTime(FADE_IN_CURVE, now, crossfadeSec)
 
-      const fadingAudio = activeAudio
-      if (pendingCrossfadeStopRef.current) clearTimeout(pendingCrossfadeStopRef.current)
+      crossfadeActiveRef.current = true
       pendingCrossfadeStopRef.current = setTimeout(() => {
         pendingCrossfadeStopRef.current = null
-        // Skip if a newer transition superseded this one (interrupted crossfade).
-        if (crossfadeTokenRef.current !== token) return
-        if (fadingAudio) {
-          fadingAudio.pause()
-          fadingAudio.currentTime = 0
-        }
-        // Clamp the (now inactive) gain to exactly 0 after the curve completes.
-        activeMixGain.gain.cancelScheduledValues(ctx.currentTime)
-        activeMixGain.gain.value = 0
+        finalizeCrossfade()
       }, crossfadeSec * 1000 + 50)
     } else {
       // Instant swap: mute old, unmute new
-      activeMixGain.gain.cancelScheduledValues(ctx?.currentTime ?? 0)
-      inactiveMixGain.gain.cancelScheduledValues(ctx?.currentTime ?? 0)
+      const t = ctx?.currentTime ?? 0
+      cancelRamps(activeMixGain.gain, t)
+      cancelRamps(inactiveMixGain.gain, t)
       activeMixGain.gain.value = 0
       inactiveMixGain.gain.value = 1
       if (activeAudio) {
@@ -383,7 +483,9 @@ export function useAudioEngine(options: UseAudioEngineOptions): UseAudioEngineRe
       }
     }
 
-    // Swap active tracking
+    // Swap active tracking. The crossfade settle path (finalizeCrossfade)
+    // depends on this happening while the curves run: after the swap,
+    // "active" is the incoming track and "inactive" the outgoing one.
     activeElementRef.current = activeElementRef.current === "primary" ? "secondary" : "primary"
 
     // Update duration from the new active audio (loadedmetadata already fired during preload)
@@ -397,7 +499,7 @@ export function useAudioEngine(options: UseAudioEngineOptions): UseAudioEngineRe
     crossfadeStartedRef.current = false
 
     return true
-  }, [getActiveAudio, getInactiveAudio, getActiveMixGain, getInactiveMixGain])
+  }, [getActiveAudio, getInactiveAudio, getActiveMixGain, getInactiveMixGain, finalizeCrossfade])
 
   /**
    * Crossfade into an arbitrary file (manual "Next", or any non-preloaded
@@ -436,7 +538,7 @@ export function useAudioEngine(options: UseAudioEngineOptions): UseAudioEngineRe
 
       inactiveAudio.currentTime = 0
       // Start the incoming track silent; swapToPreloaded ramps it up.
-      inactiveMixGain.gain.cancelScheduledValues(ctx.currentTime)
+      cancelRamps(inactiveMixGain.gain, ctx.currentTime)
       inactiveMixGain.gain.value = 0
 
       preloadedRef.current = true
@@ -455,13 +557,8 @@ export function useAudioEngine(options: UseAudioEngineOptions): UseAudioEngineRe
    * we load into the correct audio element.
    */
   const resetGaplessState = useCallback(() => {
-    // Invalidate any in-flight crossfade so its deferred "pause old track"
-    // timeout becomes a no-op, then cancel it outright.
-    crossfadeTokenRef.current++
-    if (pendingCrossfadeStopRef.current) {
-      clearTimeout(pendingCrossfadeStopRef.current)
-      pendingCrossfadeStopRef.current = null
-    }
+    // Settle any in-flight crossfade (clears its timeout + curves).
+    finalizeCrossfade()
 
     // Stop secondary audio if playing
     const secondaryAudio = secondaryAudioRef?.current
@@ -482,17 +579,17 @@ export function useAudioEngine(options: UseAudioEngineOptions): UseAudioEngineRe
     // Reset mix gains: primary=1, secondary=0 (cancel any scheduled crossfade ramps first)
     const ctxTime = audioContextRef.current?.currentTime ?? 0
     if (primaryMixGainRef.current) {
-      primaryMixGainRef.current.gain.cancelScheduledValues(ctxTime)
+      cancelRamps(primaryMixGainRef.current.gain, ctxTime)
       primaryMixGainRef.current.gain.value = 1
     }
     if (secondaryMixGainRef.current) {
-      secondaryMixGainRef.current.gain.cancelScheduledValues(ctxTime)
+      cancelRamps(secondaryMixGainRef.current.gain, ctxTime)
       secondaryMixGainRef.current.gain.value = 0
     }
     // Restore master gain to the current volume so the new track starts audible.
     if (gainNodeRef.current) {
-      gainNodeRef.current.gain.cancelScheduledValues(ctxTime)
-      gainNodeRef.current.gain.value = volumeRef.current / 100
+      cancelRamps(gainNodeRef.current.gain, ctxTime)
+      gainNodeRef.current.gain.value = volumeToGain(volumeRef.current)
     }
 
     // Reset active tracking to primary
@@ -508,7 +605,7 @@ export function useAudioEngine(options: UseAudioEngineOptions): UseAudioEngineRe
       URL.revokeObjectURL(preloadedUrlRef.current)
       preloadedUrlRef.current = null
     }
-  }, [secondaryAudioRef])
+  }, [secondaryAudioRef, finalizeCrossfade])
 
   /**
    * Play audio with proper promise handling
@@ -522,6 +619,10 @@ export function useAudioEngine(options: UseAudioEngineOptions): UseAudioEngineRe
       clearTimeout(pendingPauseRef.current)
       pendingPauseRef.current = null
     }
+    // If playback was paused mid-crossfade, the blend was frozen — settle it
+    // now so exactly one track is audible on resume. (The master gain is near
+    // silence at this point, so the clamp itself is inaudible.)
+    finalizeCrossfade()
 
     try {
       if (audioContextRef.current?.state === "suspended") {
@@ -536,9 +637,13 @@ export function useAudioEngine(options: UseAudioEngineOptions): UseAudioEngineRe
       const gain = gainNodeRef.current
       const ctx = audioContextRef.current
       if (gain && ctx) {
-        const target = volumeRef.current / 100
+        const target = volumeToGain(volumeRef.current)
+        // Read the clock only now — resume()/play() above may have taken time.
         const now = ctx.currentTime
-        gain.gain.cancelScheduledValues(now)
+        // cancelRamps holds the currently-audible value, so the anchor below
+        // ramps from what the listener actually hears (no pop when play is
+        // hit mid pause-fade).
+        cancelRamps(gain.gain, now)
         gain.gain.setValueAtTime(Math.min(gain.gain.value, target), now)
         gain.gain.linearRampToValueAtTime(target, now + PAUSE_FADE_SECONDS)
       }
@@ -549,7 +654,7 @@ export function useAudioEngine(options: UseAudioEngineOptions): UseAudioEngineRe
       }
       setIsPlaying(false)
     }
-  }, [getActiveAudio])
+  }, [getActiveAudio, finalizeCrossfade])
 
   /**
    * Pause audio playback with a short fade-out (anti-click). The element is
@@ -564,55 +669,84 @@ export function useAudioEngine(options: UseAudioEngineOptions): UseAudioEngineRe
 
     if (gain && ctx) {
       const now = ctx.currentTime
-      gain.gain.cancelScheduledValues(now)
+      cancelRamps(gain.gain, now)
       gain.gain.setValueAtTime(gain.gain.value, now)
       gain.gain.linearRampToValueAtTime(0.0001, now + PAUSE_FADE_SECONDS)
+
+      // Freeze any in-flight crossfade blend while the master fades out; it
+      // is settled for good once we're silent (deferred pause below). Doing
+      // the settle now would audibly cut the blend mid-fade.
+      if (crossfadeActiveRef.current) {
+        if (primaryMixGainRef.current) cancelRamps(primaryMixGainRef.current.gain, now)
+        if (secondaryMixGainRef.current) cancelRamps(secondaryMixGainRef.current.gain, now)
+      }
 
       if (pendingPauseRef.current) clearTimeout(pendingPauseRef.current)
       pendingPauseRef.current = setTimeout(() => {
         audio.pause()
         pendingPauseRef.current = null
+        // Silent now — settle the frozen blend and stop the outgoing element.
+        finalizeCrossfade()
       }, PAUSE_FADE_SECONDS * 1000 + 20)
     } else {
       audio.pause()
     }
 
     setIsPlaying(false)
-  }, [getActiveAudio])
+  }, [getActiveAudio, finalizeCrossfade])
 
   /**
-   * Seek to a specific time in the audio
+   * Seek to a specific time in the audio. Settles any in-flight crossfade
+   * first — seeking during a transition should land cleanly on the active
+   * track only, not resume a half-finished blend.
    */
   const seek = useCallback((time: number) => {
+    finalizeCrossfade()
     const audio = getActiveAudio()
     if (audio) {
       audio.currentTime = time
     }
-  }, [getActiveAudio])
+  }, [getActiveAudio, finalizeCrossfade])
 
   /**
-   * Change volume and update audio nodes
+   * Change volume and update audio nodes.
+   *
+   * After the Web Audio graph exists, the media elements are pinned to unity
+   * and the master gain node is the single volume stage (applying both would
+   * square the attenuation). Before the graph exists (nothing has ever
+   * played), element volume is the only stage available.
    */
   const changeVolume = useCallback((value: number[]) => {
     setVolume(value)
     const vol = value[0]
     volumeRef.current = vol
-    if (audioRef.current) {
-      audioRef.current.volume = vol / 100
-      audioRef.current.muted = vol === 0
+
+    const ctx = audioContextRef.current
+    if (ctx && gainNodeRef.current) {
+      if (audioRef.current) {
+        audioRef.current.volume = 1
+        audioRef.current.muted = false
+      }
+      if (secondaryAudioRef?.current) {
+        secondaryAudioRef.current.volume = 1
+        secondaryAudioRef.current.muted = false
+      }
+      // Skip touching the master gain mid pause-fade — the new level is captured
+      // in volumeRef and applied on the next play() ramp, avoiding an audible blip.
+      if (!pendingPauseRef.current) {
+        rampToValue(gainNodeRef.current.gain, ctx, volumeToGain(vol), 0.01)
+      }
+    } else {
+      if (audioRef.current) {
+        audioRef.current.volume = vol / 100
+        audioRef.current.muted = vol === 0
+      }
+      if (secondaryAudioRef?.current) {
+        secondaryAudioRef.current.volume = vol / 100
+        secondaryAudioRef.current.muted = vol === 0
+      }
     }
-    if (secondaryAudioRef?.current) {
-      secondaryAudioRef.current.volume = vol / 100
-      secondaryAudioRef.current.muted = vol === 0
-    }
-    // Skip touching the master gain mid pause-fade — the new level is captured
-    // in volumeRef and applied on the next play() ramp, avoiding an audible blip.
-    if (gainNodeRef.current && !pendingPauseRef.current) {
-      const ctx = audioContextRef.current
-      const now = ctx?.currentTime ?? 0
-      gainNodeRef.current.gain.cancelScheduledValues(now)
-      gainNodeRef.current.gain.value = vol / 100
-    }
+
     setIsMuted(vol === 0)
     if (vol > 0) {
       volumeBeforeMuteRef.current = vol
@@ -628,14 +762,26 @@ export function useAudioEngine(options: UseAudioEngineOptions): UseAudioEngineRe
   }, [volume, changeVolume])
 
   /**
-   * Apply loudness normalization gain correction (in dB) for the current song
+   * Set the loudness-normalization gain correction (in dB) for the current
+   * song. Only takes effect while normalization is enabled; the engine keeps
+   * the last value so toggling normalization on applies it immediately.
    */
   const applyNormalization = useCallback((dbCorrection: number) => {
-    if (normalizationGainRef.current) {
-      const linearGain = Math.pow(10, dbCorrection / 20)
-      normalizationGainRef.current.gain.value = linearGain
-    }
-  }, [])
+    normDbRef.current = dbCorrection
+    updateGainStructure()
+  }, [updateGainStructure])
+
+  /** Enable/disable loudness normalization (default: disabled = transparent). */
+  const setNormalizationEnabled = useCallback((enabled: boolean) => {
+    normalizationEnabledRef.current = enabled
+    updateGainStructure()
+  }, [updateGainStructure])
+
+  /** Set the manual preamp (dB, applied pre-EQ on top of auto-headroom). */
+  const setPreamp = useCallback((db: number) => {
+    preampDbRef.current = db
+    updateGainStructure()
+  }, [updateGainStructure])
 
   /**
    * Toggle mute state
@@ -661,7 +807,7 @@ export function useAudioEngine(options: UseAudioEngineOptions): UseAudioEngineRe
           secondarySourceNodeRef.current?.disconnect()
           primaryMixGainRef.current?.disconnect()
           secondaryMixGainRef.current?.disconnect()
-          limiterNodeRef.current?.disconnect()
+          preampGainRef.current?.disconnect()
           normalizationGainRef.current?.disconnect()
           gainNodeRef.current?.disconnect()
           analyserRef.current?.disconnect()
@@ -673,7 +819,7 @@ export function useAudioEngine(options: UseAudioEngineOptions): UseAudioEngineRe
         secondarySourceNodeRef.current = null
         primaryMixGainRef.current = null
         secondaryMixGainRef.current = null
-        limiterNodeRef.current = null
+        preampGainRef.current = null
         normalizationGainRef.current = null
         gainNodeRef.current = null
         analyserRef.current = null
@@ -691,7 +837,6 @@ export function useAudioEngine(options: UseAudioEngineOptions): UseAudioEngineRe
         pendingCrossfadeStopRef.current = null
       }
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   /**
@@ -831,6 +976,8 @@ export function useAudioEngine(options: UseAudioEngineOptions): UseAudioEngineRe
     toggleMute,
     adjustVolume,
     applyNormalization,
+    setNormalizationEnabled,
+    setPreamp,
 
     // Gapless methods
     preloadNextSong,
