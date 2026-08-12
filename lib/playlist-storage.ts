@@ -21,7 +21,12 @@ import {
   type OrphanReport,
   type SweepResult,
 } from "./audio-store-sweep"
-import { assertRoomFor, getQuotaStatus, type QuotaStatus } from "./storage-quota"
+import {
+  assertRoomFor,
+  getQuotaStatus,
+  withQuotaRejection,
+  type QuotaStatus,
+} from "./storage-quota"
 
 interface StoredSong {
   id: string
@@ -51,11 +56,12 @@ interface PlaylistData {
 }
 
 export interface StorageInfo {
+  /** Bytes this library occupies, measured by walking the store. */
   used: number
-  available: number
   songs: number
   albumArtCount: number
   albumArtSize: number
+  /** What the browser says about the origin's ceiling — trustworthy or not. */
   quota: QuotaStatus
 }
 
@@ -155,9 +161,12 @@ export class PlaylistStorage {
   /**
    * Store a song file.
    *
-   * Throws `StorageFullError` when the browser cannot fit it. Callers must
-   * surface that rather than swallowing it — a silent failure here is how the
-   * playlist ends up referencing a file that was never written.
+   * Throws `StorageFullError` when the bytes do not fit — refused up front when
+   * the browser reports a quota worth trusting, and otherwise reported by
+   * IndexedDB itself, which is the only verdict that holds in a browser that
+   * clamps what it reports. Callers must surface that rather than swallowing
+   * it: a silent failure here is how the playlist ends up referencing a file
+   * that was never written.
    */
   static async storeSongFile(songId: string, file: File): Promise<void> {
     await assertRoomFor(file.size * this.WRITE_OVERHEAD)
@@ -173,9 +182,11 @@ export class PlaylistStorage {
       storedAt: Date.now(),
     }
 
-    const transaction = db.transaction([this.STORE_NAME], "readwrite")
-    transaction.objectStore(this.STORE_NAME).put(record)
-    return committed(transaction)
+    return withQuotaRejection(file.size, () => {
+      const transaction = db.transaction([this.STORE_NAME], "readwrite")
+      transaction.objectStore(this.STORE_NAME).put(record)
+      return committed(transaction)
+    })
   }
 
   // Retrieve a song file from IndexedDB
@@ -293,8 +304,17 @@ export class PlaylistStorage {
     const response = await fetch(albumArtUrl)
     const blob = await response.blob()
     const hash = await this.hashBlob(blob)
-
     const db = await this.initDB()
+
+    return withQuotaRejection(blob.size, () => this.writeAlbumArt(db, songId, blob, hash))
+  }
+
+  private static async writeAlbumArt(
+    db: IDBDatabase,
+    songId: string,
+    blob: Blob,
+    hash: string | null
+  ): Promise<string> {
     const pointerId = artPointerKey(songId)
     const now = Date.now()
 
@@ -524,7 +544,6 @@ export class PlaylistStorage {
       const used = audio.bytes + albumArtSize
       return {
         used,
-        available: quota.supported ? quota.available : 0,
         songs: audio.count,
         albumArtCount: artPointers.length,
         albumArtSize,
@@ -532,7 +551,7 @@ export class PlaylistStorage {
       }
     } catch (error) {
       console.error("Error getting storage info:", error)
-      return { used: 0, available: 0, songs: 0, albumArtCount: 0, albumArtSize: 0, quota }
+      return { used: 0, songs: 0, albumArtCount: 0, albumArtSize: 0, quota }
     }
   }
 

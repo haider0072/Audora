@@ -1,3 +1,5 @@
+import { isQuotaExceededError } from "./storage-quota"
+
 interface StorageData {
   songs: Array<{
     id: string
@@ -44,16 +46,6 @@ interface StorageData {
     preampDb?: number
   }
   currentSongId?: string
-}
-
-/** True for the quota-exceeded DOMException across browsers. */
-function isQuotaExceededError(error: unknown): boolean {
-  return (
-    error instanceof DOMException &&
-    (error.name === "QuotaExceededError" ||
-      error.name === "NS_ERROR_DOM_QUOTA_REACHED" ||
-      error.code === 22)
-  )
 }
 
 export class StorageManager {
