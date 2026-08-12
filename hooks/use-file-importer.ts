@@ -3,7 +3,7 @@ import { toast } from "@/hooks/use-toast"
 import { MetadataExtractor } from "@/lib/metadata-extractor"
 import { PlaylistStorage } from "@/lib/playlist-storage"
 import { AlbumArtCache } from "@/lib/album-art-cache"
-import { StorageFullError, formatBytes } from "@/lib/storage-quota"
+import { StorageFullError } from "@/lib/storage-quota"
 import type { Song } from "@/components/enhanced-playlist"
 
 export interface UseFileImporterOptions {
@@ -160,7 +160,7 @@ export function useFileImporter(options: UseFileImporterOptions): UseFileImporte
       if (storageError) {
         toast({
           title: "Storage full",
-          description: `Needed ${formatBytes(storageError.needed)}, but only ${formatBytes(storageError.available)} available.`,
+          description: storageError.detail,
           variant: "destructive"
         })
       } else {

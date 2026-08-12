@@ -508,7 +508,7 @@ export function useTidalSearch(options: UseTidalSearchOptions) {
         }
 
         if (err instanceof StorageFullError) {
-          const shortfall = formatBytes(err.needed - err.available)
+          const shortfall = err.shortfallLabel
           console.error(`Download error for ${track.title}: storage full (need ${shortfall}):`, err)
           updateDownload(track.id, {
             status: "error",

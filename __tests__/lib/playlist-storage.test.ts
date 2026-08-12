@@ -126,6 +126,30 @@ describe("PlaylistStorage", () => {
       expect(all).toHaveLength(0)
     })
 
+    it("still writes when the browser clamps its reported quota", async () => {
+      // Brave and Firefox substitute a flat 2 GiB for the real ceiling. Against
+      // a multi-gigabyte library that reads as permanently full, which used to
+      // refuse every import on a machine with plenty of free disk.
+      Object.defineProperty(navigator, "storage", {
+        value: {
+          estimate: jest.fn().mockResolvedValue({
+            usage: 29 * 1024 * 1024 * 1024,
+            quota: 2 * 1024 * 1024 * 1024,
+          }),
+          persisted: jest.fn().mockResolvedValue(false),
+        },
+        writable: true,
+        configurable: true,
+      })
+
+      const file = createTestFile("test.mp3", 1024)
+
+      await expect(PlaylistStorage.storeSongFile("song1", file)).resolves.toBeUndefined()
+
+      const db = await PlaylistStorage.initDB()
+      expect(await getRecord(db, "song1")).toBeDefined()
+    })
+
     it("writes storedAt timestamp", async () => {
       const file = createTestFile("test.mp3", 1024)
       const beforeTime = Date.now()

@@ -27,8 +27,55 @@ import {
 import { toast } from "@/hooks/use-toast"
 import { Database, Download, HardDrive, Info, RotateCcw, AlertTriangle, CheckCircle, XCircle, EllipsisVertical, ImageIcon, Trash2, Shield } from "lucide-react"
 import { PlaylistStorage, type StorageInfo } from "@/lib/playlist-storage"
-import { formatBytes, STORAGE_WARN_THRESHOLD } from "@/lib/storage-quota"
+import { formatBytes, STORAGE_WARN_THRESHOLD, type QuotaStatus } from "@/lib/storage-quota"
 import { AlbumArtManager } from "./album-art-manager"
+
+/**
+ * Quota readout.
+ *
+ * Three cases, because the browser can answer in three ways: a real ceiling, an
+ * honest usage figure behind a clamped ceiling (Brave and Firefox both report a
+ * flat 2 GiB), or nothing at all. Charting a percentage against a clamped
+ * ceiling is how this panel ends up claiming 1400% used and "0 B available" on
+ * a machine with 100 GB free.
+ */
+function QuotaSummary({ quota }: { quota: QuotaStatus }) {
+  if (quota.reliable) {
+    return (
+      <>
+        <div className="flex justify-between text-sm">
+          <span>Used</span>
+          <span className="font-mono">
+            {formatBytes(quota.usage)} of {formatBytes(quota.quota)}
+          </span>
+        </div>
+        <Progress value={Math.min(quota.percentUsed * 100, 100)} className="h-2" />
+        <div className="flex justify-between text-xs text-muted-foreground">
+          <span>{(quota.percentUsed * 100).toFixed(1)}% used</span>
+          <span>{formatBytes(quota.available)} available</span>
+        </div>
+      </>
+    )
+  }
+
+  if (quota.supported) {
+    return (
+      <>
+        <div className="flex justify-between text-sm">
+          <span>Used</span>
+          <span className="font-mono">{formatBytes(quota.usage)}</span>
+        </div>
+        <div className="text-xs text-muted-foreground">
+          This browser reports a placeholder storage limit rather than the real one, so there
+          is no meaningful percentage to show. Nothing is capped — a write is only refused if
+          it genuinely does not fit.
+        </div>
+      </>
+    )
+  }
+
+  return <div className="text-xs text-muted-foreground">Browser does not report storage limits</div>
+}
 
 interface PlaylistManagerProps {
   songCount: number
@@ -39,7 +86,6 @@ interface PlaylistManagerProps {
 export function PlaylistManager({ songCount, songs, onPlaylistReset }: PlaylistManagerProps) {
   const [storageInfo, setStorageInfo] = useState<StorageInfo>({
     used: 0,
-    available: 0,
     songs: 0,
     albumArtCount: 0,
     albumArtSize: 0,
@@ -50,6 +96,7 @@ export function PlaylistManager({ songCount, songs, onPlaylistReset }: PlaylistM
       percentUsed: 0,
       persisted: false,
       supported: false,
+      reliable: false,
     },
   })
   const [isLoading, setIsLoading] = useState(false)
@@ -359,31 +406,10 @@ export function PlaylistManager({ songCount, songs, onPlaylistReset }: PlaylistM
               </CardHeader>
               <CardContent className="space-y-3">
                 <div className="space-y-2">
-                  {storageInfo.quota.supported ? (
-                    <>
-                      <div className="flex justify-between text-sm">
-                        <span>Used</span>
-                        <span className="font-mono">
-                          {formatBytes(storageInfo.quota.usage)} of {formatBytes(storageInfo.quota.quota)}
-                        </span>
-                      </div>
-                      <Progress
-                        value={Math.min(storageInfo.quota.percentUsed * 100, 100)}
-                        className="h-2"
-                      />
-                      <div className="flex justify-between text-xs text-muted-foreground">
-                        <span>{(storageInfo.quota.percentUsed * 100).toFixed(1)}% used</span>
-                        <span>{formatBytes(storageInfo.quota.available)} available</span>
-                      </div>
-                    </>
-                  ) : (
-                    <div className="text-xs text-muted-foreground">
-                      Browser does not report storage limits
-                    </div>
-                  )}
+                  <QuotaSummary quota={storageInfo.quota} />
                 </div>
 
-                {storageInfo.quota.supported && storageInfo.quota.percentUsed >= STORAGE_WARN_THRESHOLD && (
+                {storageInfo.quota.reliable && storageInfo.quota.percentUsed >= STORAGE_WARN_THRESHOLD && (
                   <div className="flex items-start gap-2 p-3 bg-amber-50 dark:bg-amber-950/30 rounded-lg border border-amber-200 dark:border-amber-800">
                     <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 mt-0.5 flex-shrink-0" />
                     <div className="text-xs text-amber-800 dark:text-amber-200">
