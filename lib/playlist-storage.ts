@@ -1,3 +1,28 @@
+import {
+  artBlobKey,
+  artPointerKey,
+  AUDIO_DB_NAME,
+  AUDIO_DB_VERSION,
+  AUDIO_STORE_NAME,
+  isArtBlob,
+  isArtBlobKey,
+  isArtPointer,
+  isArtPointerKey,
+  isLegacyArt,
+  songIdFromArtPointerKey,
+  type ArtBlobRecord,
+  type ArtPointerRecord,
+  type AudioRecord,
+  type AudioStoreRecord,
+} from "./audio-store-schema"
+import {
+  countOrphans as countStoreOrphans,
+  sweepAudioStore,
+  type OrphanReport,
+  type SweepResult,
+} from "./audio-store-sweep"
+import { assertRoomFor, getQuotaStatus, type QuotaStatus } from "./storage-quota"
+
 interface StoredSong {
   id: string
   title?: string
@@ -25,12 +50,73 @@ interface PlaylistData {
   version: string
 }
 
+export interface StorageInfo {
+  used: number
+  available: number
+  songs: number
+  albumArtCount: number
+  albumArtSize: number
+  quota: QuotaStatus
+}
+
+function promisify<T>(request: IDBRequest<T>): Promise<T> {
+  return new Promise((resolve, reject) => {
+    request.onsuccess = () => resolve(request.result)
+    request.onerror = () => reject(request.error)
+  })
+}
+
+/**
+ * Resolve only once the transaction has actually committed.
+ *
+ * A `put` request firing `onsuccess` is not durability — the transaction can
+ * still abort afterwards (quota, a failed sibling request), and reporting
+ * success before the commit is how callers end up trusting a write that never
+ * landed.
+ */
+function committed(transaction: IDBTransaction): Promise<void> {
+  return new Promise((resolve, reject) => {
+    transaction.oncomplete = () => resolve()
+    transaction.onerror = () =>
+      reject(transaction.error ?? new Error("IndexedDB transaction failed"))
+    transaction.onabort = () =>
+      reject(transaction.error ?? new Error("IndexedDB transaction aborted"))
+  })
+}
+
+/**
+ * Open a transaction together with its commit promise.
+ *
+ * The commit handlers are attached up front: registering them after the last
+ * request has already settled can miss `oncomplete` entirely and hang. The
+ * inert `catch` keeps that pre-registered promise from being reported as an
+ * unhandled rejection during the window before the caller awaits it — the
+ * rejection still surfaces at the real `await done`.
+ */
+function openTransaction(
+  db: IDBDatabase,
+  storeName: string,
+  mode: IDBTransactionMode
+): { store: IDBObjectStore; done: Promise<void> } {
+  const transaction = db.transaction([storeName], mode)
+  const done = committed(transaction)
+  done.catch(() => {})
+  return { store: transaction.objectStore(storeName), done }
+}
+
 export class PlaylistStorage {
-  private static readonly DB_NAME = "enhanced-music-player-db"
-  private static readonly DB_VERSION = 1
-  private static readonly STORE_NAME = "audio-files"
+  private static readonly DB_NAME = AUDIO_DB_NAME
+  private static readonly DB_VERSION = AUDIO_DB_VERSION
+  private static readonly STORE_NAME = AUDIO_STORE_NAME
   private static readonly METADATA_KEY = "playlist-metadata"
   private static readonly VERSION = "1.0"
+
+  /**
+   * Album art is re-embedded into downloaded FLACs and the download itself is
+   * buffered before it lands, so reserve headroom beyond the raw byte count
+   * when deciding whether an incoming file fits.
+   */
+  private static readonly WRITE_OVERHEAD = 1.15
 
   private static db: IDBDatabase | null = null
 
@@ -43,8 +129,18 @@ export class PlaylistStorage {
 
       request.onerror = () => reject(request.error)
       request.onsuccess = () => {
-        this.db = request.result
-        resolve(request.result)
+        const db = request.result
+        // Drop the cached handle if the connection goes away, otherwise every
+        // later call reuses a dead database and fails with InvalidStateError.
+        db.onclose = () => {
+          if (this.db === db) this.db = null
+        }
+        db.onversionchange = () => {
+          db.close()
+          if (this.db === db) this.db = null
+        }
+        this.db = db
+        resolve(db)
       }
 
       request.onupgradeneeded = (event) => {
@@ -56,25 +152,30 @@ export class PlaylistStorage {
     })
   }
 
-  // Store a song file in IndexedDB
+  /**
+   * Store a song file.
+   *
+   * Throws `StorageFullError` when the browser cannot fit it. Callers must
+   * surface that rather than swallowing it — a silent failure here is how the
+   * playlist ends up referencing a file that was never written.
+   */
   static async storeSongFile(songId: string, file: File): Promise<void> {
+    await assertRoomFor(file.size * this.WRITE_OVERHEAD)
+
     const db = await this.initDB()
+    const record: AudioRecord = {
+      id: songId,
+      file,
+      fileName: file.name,
+      fileSize: file.size,
+      fileType: file.type,
+      lastModified: file.lastModified,
+      storedAt: Date.now(),
+    }
+
     const transaction = db.transaction([this.STORE_NAME], "readwrite")
-    const store = transaction.objectStore(this.STORE_NAME)
-
-    return new Promise((resolve, reject) => {
-      const request = store.put({
-        id: songId,
-        file: file,
-        fileName: file.name,
-        fileSize: file.size,
-        fileType: file.type,
-        lastModified: file.lastModified,
-      })
-
-      request.onsuccess = () => resolve()
-      request.onerror = () => reject(request.error)
-    })
+    transaction.objectStore(this.STORE_NAME).put(record)
+    return committed(transaction)
   }
 
   // Retrieve a song file from IndexedDB
@@ -83,41 +184,45 @@ export class PlaylistStorage {
       const db = await this.initDB()
       const transaction = db.transaction([this.STORE_NAME], "readonly")
       const store = transaction.objectStore(this.STORE_NAME)
-
-      return new Promise((resolve, reject) => {
-        const request = store.get(songId)
-
-        request.onsuccess = () => {
-          const result = request.result
-          if (result && result.file) {
-            resolve(result.file)
-          } else {
-            resolve(null)
-          }
-        }
-        request.onerror = () => reject(request.error)
-      })
+      const result = (await promisify(store.get(songId))) as AudioRecord | undefined
+      return result?.file ?? null
     } catch (error) {
       console.error("Error retrieving song file:", error)
       return null
     }
   }
 
-  // Remove a song file from IndexedDB
-  static async removeSongFile(songId: string): Promise<void> {
+  /**
+   * Cheap existence check — reads the key only, never deserialising the record
+   * or its blob. Lets download paths detect an already-stored track without
+   * pulling a 45 MB file into the page.
+   */
+  static async hasSongFile(songId: string): Promise<boolean> {
     try {
       const db = await this.initDB()
-      const transaction = db.transaction([this.STORE_NAME], "readwrite")
+      const transaction = db.transaction([this.STORE_NAME], "readonly")
       const store = transaction.objectStore(this.STORE_NAME)
-
-      return new Promise((resolve, reject) => {
-        const request = store.delete(songId)
-        request.onsuccess = () => resolve()
-        request.onerror = () => reject(request.error)
-      })
+      const key = await promisify(store.getKey(songId))
+      return key !== undefined
     } catch (error) {
-      console.error("Error removing song file:", error)
+      console.error("Error checking for song file:", error)
+      return false
     }
+  }
+
+  /**
+   * Remove a song file.
+   *
+   * Errors propagate on purpose. This used to catch-and-return, which resolved
+   * as success while the blob survived — the caller then dropped the metadata
+   * and left an unreachable 45 MB record behind. That is precisely how the
+   * store grew without bound.
+   */
+  static async removeSongFile(songId: string): Promise<void> {
+    const db = await this.initDB()
+    const transaction = db.transaction([this.STORE_NAME], "readwrite")
+    transaction.objectStore(this.STORE_NAME).delete(songId)
+    return committed(transaction)
   }
 
   // Save playlist metadata to localStorage
@@ -158,35 +263,116 @@ export class PlaylistStorage {
     }
   }
 
-  // Store album art separately for better management
-  static async storeAlbumArt(songId: string, albumArtUrl: string): Promise<string> {
+  private static async hashBlob(blob: Blob): Promise<string | null> {
+    const subtle = typeof crypto !== "undefined" ? crypto.subtle : undefined
+    if (!subtle) return null
+
     try {
-      // Convert blob URL to actual blob data for persistent storage
-      const response = await fetch(albumArtUrl)
-      const blob = await response.blob()
-
-      const db = await this.initDB()
-      const transaction = db.transaction([this.STORE_NAME], "readwrite")
-      const store = transaction.objectStore(this.STORE_NAME)
-
-      return new Promise((resolve, reject) => {
-        const albumArtKey = `${songId}_albumart`
-        const request = store.put({
-          id: albumArtKey,
-          type: "albumart",
-          songId: songId,
-          blob: blob,
-          mimeType: blob.type,
-          size: blob.size,
-          storedAt: Date.now(),
-        })
-
-        request.onsuccess = () => resolve(albumArtKey)
-        request.onerror = () => reject(request.error)
-      })
+      const digest = await subtle.digest("SHA-256", await blob.arrayBuffer())
+      return Array.from(new Uint8Array(digest))
+        .map((byte) => byte.toString(16).padStart(2, "0"))
+        .join("")
     } catch (error) {
-      console.error("Error storing album art:", error)
-      throw error
+      console.error("Error hashing album art:", error)
+      return null
+    }
+  }
+
+  /**
+   * Store album art, content-addressed.
+   *
+   * Every track on an album carries the same cover. Keying the bytes by their
+   * SHA-256 and refcounting means a 12-track album keeps one image instead of
+   * twelve; each song gets a small pointer record instead of its own copy.
+   *
+   * If SubtleCrypto is unavailable (non-secure context) it degrades to the old
+   * inline record — art still works, it just is not deduped.
+   */
+  static async storeAlbumArt(songId: string, albumArtUrl: string): Promise<string> {
+    // Convert blob URL to actual blob data for persistent storage
+    const response = await fetch(albumArtUrl)
+    const blob = await response.blob()
+    const hash = await this.hashBlob(blob)
+
+    const db = await this.initDB()
+    const pointerId = artPointerKey(songId)
+    const now = Date.now()
+
+    // One read-write transaction for the whole read-modify-write. IndexedDB
+    // serialises overlapping transactions on the store, so two concurrent
+    // downloads sharing a cover cannot race the refCount.
+    const { store, done } = openTransaction(db, this.STORE_NAME, "readwrite")
+
+    const existing = (await promisify(store.get(pointerId))) as ArtPointerRecord | undefined
+
+    if (!hash) {
+      const legacy: ArtPointerRecord = {
+        id: pointerId,
+        type: "albumart",
+        songId,
+        blob,
+        mimeType: blob.type,
+        size: blob.size,
+        storedAt: now,
+      }
+      if (existing?.artHash) await this.releaseArtBlob(store, existing.artHash)
+      store.put(legacy)
+      await done
+      return pointerId
+    }
+
+    if (existing?.artHash === hash) {
+      // Same bytes already linked to this song — nothing to write.
+      await done
+      return pointerId
+    }
+
+    // Re-pointing this song at different art releases whatever it held before.
+    if (existing?.artHash) await this.releaseArtBlob(store, existing.artHash)
+
+    const blobId = artBlobKey(hash)
+    const shared = (await promisify(store.get(blobId))) as ArtBlobRecord | undefined
+
+    if (shared) {
+      store.put({ ...shared, refCount: shared.refCount + 1 })
+    } else {
+      const record: ArtBlobRecord = {
+        id: blobId,
+        type: "albumart-blob",
+        blob,
+        mimeType: blob.type,
+        size: blob.size,
+        refCount: 1,
+        storedAt: now,
+      }
+      store.put(record)
+    }
+
+    const pointer: ArtPointerRecord = {
+      id: pointerId,
+      type: "albumart",
+      songId,
+      artHash: hash,
+      mimeType: blob.type,
+      size: blob.size,
+      storedAt: now,
+    }
+    store.put(pointer)
+
+    await done
+    return pointerId
+  }
+
+  /** Drop one reference to shared art, deleting the bytes at zero. */
+  private static async releaseArtBlob(store: IDBObjectStore, hash: string): Promise<void> {
+    const blobId = artBlobKey(hash)
+    const shared = (await promisify(store.get(blobId))) as ArtBlobRecord | undefined
+    if (!shared) return
+
+    if (shared.refCount <= 1) {
+      store.delete(blobId)
+    } else {
+      store.put({ ...shared, refCount: shared.refCount - 1 })
     }
   }
 
@@ -197,67 +383,108 @@ export class PlaylistStorage {
       const transaction = db.transaction([this.STORE_NAME], "readonly")
       const store = transaction.objectStore(this.STORE_NAME)
 
-      return new Promise((resolve, reject) => {
-        const albumArtKey = `${songId}_albumart`
-        const request = store.get(albumArtKey)
+      const pointer = (await promisify(store.get(artPointerKey(songId)))) as
+        | ArtPointerRecord
+        | undefined
+      if (!pointer) return null
 
-        request.onsuccess = () => {
-          const result = request.result
-          if (result && result.blob) {
-            // Create a new blob URL from stored data
-            const url = URL.createObjectURL(result.blob)
-            resolve(url)
-          } else {
-            resolve(null)
-          }
-        }
-        request.onerror = () => reject(request.error)
-      })
+      // Records written before content addressing hold their bytes inline.
+      if (pointer.blob) return URL.createObjectURL(pointer.blob)
+      if (!pointer.artHash) return null
+
+      const shared = (await promisify(store.get(artBlobKey(pointer.artHash)))) as
+        | ArtBlobRecord
+        | undefined
+      return shared?.blob ? URL.createObjectURL(shared.blob) : null
     } catch (error) {
       console.error("Error retrieving album art:", error)
       return null
     }
   }
 
-  // Remove album art for a specific song
+  /**
+   * Remove a song's album art. Errors propagate — see `removeSongFile`.
+   */
   static async removeAlbumArt(songId: string): Promise<void> {
-    try {
-      const db = await this.initDB()
-      const transaction = db.transaction([this.STORE_NAME], "readwrite")
-      const store = transaction.objectStore(this.STORE_NAME)
+    const db = await this.initDB()
+    const { store, done } = openTransaction(db, this.STORE_NAME, "readwrite")
 
-      return new Promise((resolve, reject) => {
-        const albumArtKey = `${songId}_albumart`
-        const request = store.delete(albumArtKey)
-        request.onsuccess = () => resolve()
-        request.onerror = () => reject(request.error)
-      })
-    } catch (error) {
-      console.error("Error removing album art:", error)
+    const pointerId = artPointerKey(songId)
+    const pointer = (await promisify(store.get(pointerId))) as ArtPointerRecord | undefined
+    if (!pointer) {
+      await done
+      return
     }
+
+    store.delete(pointerId)
+    if (pointer.artHash) await this.releaseArtBlob(store, pointer.artHash)
+
+    await done
   }
 
-  // Get all album art entries for cleanup
+  /**
+   * Walk the store once, classifying every record.
+   *
+   * Cursor rather than `getAll()`: this keeps one record in hand at a time
+   * instead of building an array of every record in the library.
+   */
+  private static async scanStore(): Promise<{
+    audio: { count: number; bytes: number }
+    artPointers: ArtPointerRecord[]
+    artBlobs: Map<string, ArtBlobRecord>
+  }> {
+    const db = await this.initDB()
+    const audio = { count: 0, bytes: 0 }
+    const artPointers: ArtPointerRecord[] = []
+    const artBlobs = new Map<string, ArtBlobRecord>()
+
+    await new Promise<void>((resolve, reject) => {
+      const request = db
+        .transaction([this.STORE_NAME], "readonly")
+        .objectStore(this.STORE_NAME)
+        .openCursor()
+
+      request.onsuccess = () => {
+        const cursor = request.result
+        if (!cursor) {
+          resolve()
+          return
+        }
+
+        const record = cursor.value as AudioStoreRecord
+        if (isArtBlob(record)) {
+          artBlobs.set(record.id, record)
+        } else if (isArtPointer(record)) {
+          artPointers.push(record)
+        } else {
+          audio.count++
+          audio.bytes += record.fileSize || record.file?.size || 0
+        }
+
+        cursor.continue()
+      }
+      request.onerror = () => reject(request.error)
+    })
+
+    return { audio, artPointers, artBlobs }
+  }
+
+  /**
+   * Album art entries for the manager UI. `size` is the bytes this song's art
+   * actually occupies: shared covers report their real size, but the cost is
+   * paid once across every song pointing at them.
+   */
   static async getAllAlbumArtEntries(): Promise<Array<{ id: string; songId: string; size: number }>> {
     try {
-      const db = await this.initDB()
-      const transaction = db.transaction([this.STORE_NAME], "readonly")
-      const store = transaction.objectStore(this.STORE_NAME)
+      const { artPointers, artBlobs } = await this.scanStore()
 
-      return new Promise((resolve, reject) => {
-        const request = store.getAll()
-        request.onsuccess = () => {
-          const results = request.result
-          const albumArtEntries = results
-            .filter((item) => item.type === "albumart")
-            .map((item) => ({
-              id: item.id,
-              songId: item.songId,
-              size: item.size || 0,
-            }))
-          resolve(albumArtEntries)
+      return artPointers.map((pointer) => {
+        const shared = pointer.artHash ? artBlobs.get(artBlobKey(pointer.artHash)) : undefined
+        return {
+          id: pointer.id,
+          songId: pointer.songId || songIdFromArtPointerKey(pointer.id),
+          size: shared?.size ?? pointer.size ?? 0,
         }
-        request.onerror = () => reject(request.error)
       })
     } catch (error) {
       console.error("Error getting album art entries:", error)
@@ -265,69 +492,78 @@ export class PlaylistStorage {
     }
   }
 
-  // Clear entire playlist including album art
+  /**
+   * Clear the whole playlist. Errors propagate so the caller does not reset the
+   * UI while the data is still on disk.
+   */
   static async clearPlaylist(): Promise<void> {
+    localStorage.removeItem(this.METADATA_KEY)
+
+    const db = await this.initDB()
+    const transaction = db.transaction([this.STORE_NAME], "readwrite")
+    transaction.objectStore(this.STORE_NAME).clear()
+    return committed(transaction)
+  }
+
+  /**
+   * Storage usage. `albumArtSize` counts each shared cover once — the number
+   * reflects bytes on disk, not the sum of per-song claims.
+   */
+  static async getStorageInfo(): Promise<StorageInfo> {
+    const quota = await getQuotaStatus()
+
     try {
-      // Clear localStorage metadata
-      localStorage.removeItem(this.METADATA_KEY)
+      const { audio, artPointers, artBlobs } = await this.scanStore()
 
-      // Clear IndexedDB files and album art
-      const db = await this.initDB()
-      const transaction = db.transaction([this.STORE_NAME], "readwrite")
-      const store = transaction.objectStore(this.STORE_NAME)
+      let albumArtSize = 0
+      for (const record of artBlobs.values()) albumArtSize += record.size || record.blob?.size || 0
+      for (const pointer of artPointers) {
+        if (isLegacyArt(pointer)) albumArtSize += pointer.size || 0
+      }
 
-      return new Promise((resolve, reject) => {
-        const request = store.clear()
-        request.onsuccess = () => resolve()
-        request.onerror = () => reject(request.error)
-      })
+      const used = audio.bytes + albumArtSize
+      return {
+        used,
+        available: quota.supported ? quota.available : 0,
+        songs: audio.count,
+        albumArtCount: artPointers.length,
+        albumArtSize,
+        quota,
+      }
     } catch (error) {
-      console.error("Error clearing playlist:", error)
+      console.error("Error getting storage info:", error)
+      return { used: 0, available: 0, songs: 0, albumArtCount: 0, albumArtSize: 0, quota }
     }
   }
 
-  // Get storage usage information including album art
-  static async getStorageInfo(): Promise<{
-    used: number
-    available: number
-    songs: number
-    albumArtCount: number
-    albumArtSize: number
-  }> {
+  /**
+   * Delete every record no playlist entry points at.
+   *
+   * `knownSongIds` must come from a metadata load the caller knows succeeded —
+   * see the guard in `sweepAudioStore`.
+   */
+  static async sweepOrphans(knownSongIds: Iterable<string>): Promise<SweepResult> {
+    const db = await this.initDB()
+    return sweepAudioStore(db, new Set(knownSongIds))
+  }
+
+  /** What `sweepOrphans` would reclaim, without deleting anything. */
+  static async countOrphans(knownSongIds: Iterable<string>): Promise<OrphanReport> {
+    const db = await this.initDB()
+    return countStoreOrphans(db, new Set(knownSongIds))
+  }
+
+  /** Every song id that has audio bytes on disk, art records excluded. */
+  static async getStoredSongIds(): Promise<string[]> {
     try {
       const db = await this.initDB()
       const transaction = db.transaction([this.STORE_NAME], "readonly")
       const store = transaction.objectStore(this.STORE_NAME)
-
-      return new Promise((resolve, reject) => {
-        const request = store.getAll()
-        request.onsuccess = () => {
-          const files = request.result
-          const songFiles = files.filter((file) => !file.type || file.type !== "albumart")
-          const albumArtFiles = files.filter((file) => file.type === "albumart")
-
-          const songSize = songFiles.reduce((total, file) => total + (file.fileSize || 0), 0)
-          const albumArtSize = albumArtFiles.reduce((total, file) => total + (file.size || 0), 0)
-          const totalUsed = songSize + albumArtSize
-
-          // Estimate available storage
-          const estimated = navigator.storage?.estimate?.() || Promise.resolve({ quota: 50 * 1024 * 1024 })
-
-          estimated.then((estimate) => {
-            resolve({
-              used: totalUsed,
-              available: (estimate.quota || 50 * 1024 * 1024) - totalUsed,
-              songs: songFiles.length,
-              albumArtCount: albumArtFiles.length,
-              albumArtSize: albumArtSize,
-            })
-          })
-        }
-        request.onerror = () => reject(request.error)
-      })
+      const keys = await promisify(store.getAllKeys())
+      return keys.map(String).filter((key) => !isArtPointerKey(key) && !isArtBlobKey(key))
     } catch (error) {
-      console.error("Error getting storage info:", error)
-      return { used: 0, available: 0, songs: 0, albumArtCount: 0, albumArtSize: 0 }
+      console.error("Error listing stored song ids:", error)
+      return []
     }
   }
 
@@ -353,7 +589,13 @@ export class PlaylistStorage {
       if (file.name === song.fileName && file.size === song.fileSize) {
         validSongs.push(song)
       } else {
-        await this.removeSongFile(song.id)
+        // A failure here must not abort the restore — the song is dropped from
+        // the playlist either way, and the orphan sweep reclaims the record.
+        try {
+          await this.removeSongFile(song.id)
+        } catch (error) {
+          console.error(`Failed to remove mismatched file for ${song.id}:`, error)
+        }
       }
     }
 

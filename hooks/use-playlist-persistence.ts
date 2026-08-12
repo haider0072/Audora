@@ -3,6 +3,7 @@ import { toast } from "@/hooks/use-toast"
 import { StorageManager } from "@/lib/storage"
 import { PlaylistStorage } from "@/lib/playlist-storage"
 import { AlbumArtCache } from "@/lib/album-art-cache"
+import { requestPersistentStorage, formatBytes } from "@/lib/storage-quota"
 import type { Song } from "@/components/enhanced-playlist"
 import type { EqualizerBand } from "@/components/refined-equalizer"
 import { isValidPreset, type EqPreset } from "@/lib/eq-presets"
@@ -39,6 +40,30 @@ export interface UsePlaylistPersistenceReturn {
 }
 
 /**
+ * Reclaim IndexedDB records no playlist entry points at.
+ *
+ * Fire-and-forget: this is maintenance, and nothing in the restore depends on
+ * its outcome. An empty id list means playlist metadata did not load, in which
+ * case every record would look unreachable — `sweepOrphans` refuses that input,
+ * and skipping the call here keeps the intent visible at the call site too.
+ */
+function runOrphanSweep(knownSongIds: string[]): void {
+  if (knownSongIds.length === 0) return
+
+  PlaylistStorage.sweepOrphans(knownSongIds)
+    .then((result) => {
+      if (result.removedRecords === 0) return
+      toast({
+        title: "Storage reclaimed",
+        description: `Removed ${result.removedRecords} unreachable file(s), freeing ${formatBytes(result.bytesReclaimed)}.`,
+      })
+    })
+    .catch((error) => {
+      console.error("Orphan sweep failed:", error)
+    })
+}
+
+/**
  * Custom hook for persisting playlist data to IndexedDB and localStorage
  *
  * Handles:
@@ -60,8 +85,22 @@ export function usePlaylistPersistence(
    * Restore playlist from storage on mount
    */
   const restorePlaylist = useCallback(async () => {
+    // Captured inside the try, consumed by the sweep in the finally.
+    let knownSongIds: string[] = []
+
     try {
       setIsRestoringPlaylist(true)
+
+      // Ask the browser to treat the library as persistent. Without it the
+      // whole offline library sits in a best-effort bucket the browser may
+      // clear on its own once the disk gets tight — no prompt, no warning.
+      requestPersistentStorage()
+        .then((granted) => {
+          console.info(`Persistent storage ${granted ? "granted" : "not granted"}`)
+        })
+        .catch((error) => {
+          console.error("Persistent storage request failed:", error)
+        })
 
       const savedData = StorageManager.loadData()
       const settings: Partial<PlaylistPersistenceData> = {}
@@ -86,6 +125,12 @@ export function usePlaylistPersistence(
 
       // Load playlist metadata
       const playlistData = PlaylistStorage.loadPlaylistMetadata()
+
+      // Hand the sweep the ids from metadata rather than the post-validation
+      // list: a superset is the safe direction, it can only mean fewer records
+      // are judged unreachable. Left empty when metadata failed to load, which
+      // is what keeps the sweep from running in that state — see runOrphanSweep.
+      knownSongIds = playlistData?.songs.map((song) => song.id) ?? []
 
       if (playlistData && playlistData.songs.length > 0) {
         const validSongs = await PlaylistStorage.validateStoredFiles(playlistData.songs)
@@ -158,6 +203,11 @@ export function usePlaylistPersistence(
       setIsRestoringPlaylist(false)
 
       return { songs: [], currentSong: null, settings: {} }
+    } finally {
+      // Deliberately after every restore path. The sweep holds a readwrite
+      // transaction across a full scan of the store, which would queue behind
+      // — and therefore delay — the reads that restore is doing.
+      runOrphanSweep(knownSongIds)
     }
   }, [])
 
