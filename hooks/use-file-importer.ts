@@ -3,6 +3,7 @@ import { toast } from "@/hooks/use-toast"
 import { MetadataExtractor } from "@/lib/metadata-extractor"
 import { PlaylistStorage } from "@/lib/playlist-storage"
 import { AlbumArtCache } from "@/lib/album-art-cache"
+import { StorageFullError, formatBytes } from "@/lib/storage-quota"
 import type { Song } from "@/components/enhanced-playlist"
 
 export interface UseFileImporterOptions {
@@ -80,6 +81,8 @@ export function useFileImporter(options: UseFileImporterOptions): UseFileImporte
       const newSongs: Song[] = []
       const duplicates: string[] = []
       const errors: string[] = []
+      let storageFull = false
+      let storageError: StorageFullError | undefined
       const existingIds = new Set(songs.map((s) => s.id))
       // Secondary content fingerprint: catches the case where the same audio
       // already lives in the library under a different songId scheme (e.g.
@@ -93,6 +96,9 @@ export function useFileImporter(options: UseFileImporterOptions): UseFileImporte
 
       // Process files in batches
       for (let i = 0; i < validFiles.length; i += BATCH_SIZE) {
+        // Stop processing if storage is full
+        if (storageFull) break
+
         const batch = validFiles.slice(i, i + BATCH_SIZE)
 
         const batchPromises = batch.map(async (file, batchIndex) => {
@@ -126,13 +132,22 @@ export function useFileImporter(options: UseFileImporterOptions): UseFileImporte
 
             return song
           } catch (error) {
-            console.error(`Error processing ${file.name}:`, error)
-            errors.push(file.name)
-            // The song is being dropped — release the album-art object URL the
-            // metadata extractor created, or it leaks (nothing else owns it).
+            // The song is dropped on every path below, so release the album-art
+            // object URL the metadata extractor created here rather than in each
+            // branch — nothing else owns it, and a storage-full import would
+            // otherwise leak one URL per remaining file.
             if (albumArtUrl?.startsWith("blob:")) {
               URL.revokeObjectURL(albumArtUrl)
             }
+
+            if (error instanceof StorageFullError) {
+              storageFull = true
+              storageError = error
+              return null
+            }
+
+            console.error(`Error processing ${file.name}:`, error)
+            errors.push(file.name)
             return null
           }
         })
@@ -142,20 +157,28 @@ export function useFileImporter(options: UseFileImporterOptions): UseFileImporte
       }
 
       // Show results
-      if (newSongs.length > 0) {
-        onSongsAdded?.(newSongs)
-        toast({ title: `Added ${newSongs.length} new song(s).` })
-      }
-
-      if (duplicates.length > 0) {
-        toast({ title: `Ignored ${duplicates.length} duplicate(s).` })
-      }
-
-      if (errors.length > 0) {
+      if (storageError) {
         toast({
-          title: `Failed to process ${errors.length} file(s).`,
+          title: "Storage full",
+          description: `Needed ${formatBytes(storageError.needed)}, but only ${formatBytes(storageError.available)} available.`,
           variant: "destructive"
         })
+      } else {
+        if (newSongs.length > 0) {
+          onSongsAdded?.(newSongs)
+          toast({ title: `Added ${newSongs.length} new song(s).` })
+        }
+
+        if (duplicates.length > 0) {
+          toast({ title: `Ignored ${duplicates.length} duplicate(s).` })
+        }
+
+        if (errors.length > 0) {
+          toast({
+            title: `Failed to process ${errors.length} file(s).`,
+            variant: "destructive"
+          })
+        }
       }
 
       setIsLoadingSongs(false)

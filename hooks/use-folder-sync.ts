@@ -31,6 +31,25 @@ const generateSongId = (file: File): string => {
 }
 
 /**
+ * Was this song imported from disk, as opposed to downloaded?
+ *
+ * Answered by reproducing the import id from the song's own file rather than by
+ * pattern-matching the string: an id only round-trips if it was minted by
+ * `generateSongId`. Downloads (`tidal-<id>`, `dab-<id>`) can never satisfy it.
+ *
+ * This gate exists to prevent data loss. The obvious "songs not in this folder"
+ * filter also selects every download and every song from every other folder,
+ * because none of their ids appear in the picked folder's file list — acting on
+ * that set would delete the user's entire library.
+ *
+ * Known limit: a song imported from a *different* folder still qualifies, since
+ * nothing records which folder a song came from. That is why the result is only
+ * ever offered to the user for confirmation and never acted on automatically.
+ */
+const isFolderImport = (song: Song): boolean =>
+  !!song.file && song.id === generateSongId(song.file)
+
+/**
  * Custom hook for syncing a folder with the playlist
  *
  * Features:
@@ -101,10 +120,10 @@ export function useFolderSync(options: UseFolderSyncOptions): UseFolderSyncRetur
         (f) => !existingIds.has(generateSongId(f)) && !existingSizes.has(f.size)
       )
 
-      // Find removed files (in playlist but not in folder)
-      // Only consider songs that were from this folder (matching pattern)
+      // Imported songs that are no longer in the folder. Downloads are excluded
+      // by isFolderImport — see the data-loss note on that helper.
       const removedIds = songs
-        .filter((s) => !newFileIds.has(s.id))
+        .filter((s) => !newFileIds.has(s.id) && isFolderImport(s))
         .map((s) => s.id)
 
       const newSongs: Song[] = []
@@ -155,8 +174,8 @@ export function useFolderSync(options: UseFolderSyncOptions): UseFolderSyncRetur
         results.push(`${newSongs.length} new song(s) added`)
       }
 
-      if (removedIds.length > 0 && onSongsRemoved) {
-        // Don't auto-remove, just notify user
+      if (removedIds.length > 0) {
+        onSongsRemoved?.(removedIds)
         results.push(`${removedIds.length} song(s) no longer in folder`)
       }
 

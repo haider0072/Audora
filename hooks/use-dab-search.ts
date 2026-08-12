@@ -6,6 +6,7 @@ import { DabService } from "@/lib/dab-service"
 import { MetadataExtractor } from "@/lib/metadata-extractor"
 import { PlaylistStorage } from "@/lib/playlist-storage"
 import { AlbumArtCache } from "@/lib/album-art-cache"
+import { hasRoomFor, StorageFullError, formatBytes } from "@/lib/storage-quota"
 import type { Song } from "@/components/enhanced-playlist"
 import type {
   DabTrack,
@@ -239,6 +240,8 @@ export function useDabSearch(options: UseDabSearchOptions) {
       const controller = new AbortController()
       abortControllers.current.set(track.id, controller)
 
+      let createdArtUrl: string | null = null
+
       try {
         const streamUrl = DabService.getStreamUrl(track.id, quality)
         const res = await fetch(streamUrl, { signal: controller.signal })
@@ -248,6 +251,25 @@ export function useDabSearch(options: UseDabSearchOptions) {
         }
 
         const contentLength = Number(res.headers.get("content-length") || 0)
+
+        // Pre-flight quota check: refuse before streaming body
+        if (contentLength > 0) {
+          const roomCheck = await hasRoomFor(contentLength)
+          if (!roomCheck.ok) {
+            controller.abort()
+            const shortfall = formatBytes(roomCheck.shortfall)
+            updateDownload(track.id, {
+              status: "error",
+              error: `Storage full: need ${shortfall} more`,
+            })
+            toast({
+              title: `Storage full: need ${shortfall}`,
+              variant: "destructive",
+            })
+            return
+          }
+        }
+
         const reader = res.body?.getReader()
         if (!reader) throw new Error("No response body")
 
@@ -325,6 +347,7 @@ export function useDabSearch(options: UseDabSearchOptions) {
             if (artRes.ok) {
               const artBlob = await artRes.blob()
               const artUrl = URL.createObjectURL(artBlob)
+              createdArtUrl = artUrl
               song.albumArt = artUrl
               await PlaylistStorage.storeAlbumArt(songId, artUrl)
               await AlbumArtCache.preloadAlbumArt(songId, artUrl)
@@ -337,14 +360,36 @@ export function useDabSearch(options: UseDabSearchOptions) {
         // Store audio file in IndexedDB
         await PlaylistStorage.storeSongFile(songId, file)
 
-        // Add to playlist
+        // Add to playlist. Ownership of the art object URL transfers with the
+        // song here, so stop tracking it for cleanup — the success path keeps
+        // it alive deliberately, since song.albumArt points at it.
         onSongDownloaded(song)
+        createdArtUrl = null
 
         updateDownload(track.id, { status: "complete" })
         toast({ title: `Downloaded: ${track.title}` })
       } catch (err) {
+        // Revoke album art URL if one was created but download failed
+        if (createdArtUrl) {
+          URL.revokeObjectURL(createdArtUrl)
+        }
+
         if (err instanceof Error && err.name === "AbortError") {
           updateDownload(track.id, { status: "cancelled" })
+          return
+        }
+
+        if (err instanceof StorageFullError) {
+          const shortfall = formatBytes(err.needed - err.available)
+          console.error(`Download error for ${track.title}: storage full (need ${shortfall}):`, err)
+          updateDownload(track.id, {
+            status: "error",
+            error: `Storage full: need ${shortfall}`,
+          })
+          toast({
+            title: `Storage full: need ${shortfall}`,
+            variant: "destructive",
+          })
           return
         }
 
@@ -364,6 +409,55 @@ export function useDabSearch(options: UseDabSearchOptions) {
     [quality, onSongDownloaded, updateDownload]
   )
 
+  /**
+   * Bring a track that is already on disk back into the playlist.
+   *
+   * Audio can outlive its playlist entry — metadata cleared, a restore
+   * interrupted, an import that never finished. Re-fetching bytes we already
+   * hold is pure waste, and refusing outright would strand the user with a
+   * track they own but cannot add.
+   */
+  const restoreStoredTrack = useCallback(
+    async (songId: string, track: DabTrack): Promise<boolean> => {
+      const file = await PlaylistStorage.getSongFile(songId)
+      if (!file) return false
+
+      let metadata
+      try {
+        metadata = await MetadataExtractor.extractMetadata(file)
+      } catch {
+        metadata = {
+          title: track.title,
+          artist: track.artist,
+          album: track.albumTitle,
+          genre: track.genre,
+          duration: track.duration,
+          format: "FLAC",
+          fileSize: file.size,
+        }
+      }
+
+      const albumArt = (await PlaylistStorage.getAlbumArt(songId)) ?? undefined
+      if (albumArt) await AlbumArtCache.preloadAlbumArt(songId, albumArt)
+
+      onSongDownloaded({
+        ...metadata,
+        id: songId,
+        title: track.title,
+        artist: track.artist,
+        album: track.albumTitle,
+        genre: track.genre || metadata.genre,
+        file,
+        fileSize: file.size,
+        url: "",
+        albumArt,
+      })
+
+      return true
+    },
+    [onSongDownloaded]
+  )
+
   // Download a single track
   const downloadTrack = useCallback(
     async (track: DabTrack) => {
@@ -371,6 +465,17 @@ export function useDabSearch(options: UseDabSearchOptions) {
       if (isInLibrary(track.id)) {
         toast({ title: "Already in library" })
         return
+      }
+
+      // React state can disagree with what is actually stored. Recover the
+      // existing bytes rather than paying for them twice; fall through to a
+      // real download if the record turns out to be unusable.
+      const songId = `dab-${track.id}`
+      if (await PlaylistStorage.hasSongFile(songId)) {
+        if (await restoreStoredTrack(songId, track)) {
+          toast({ title: `Restored from storage: ${track.title}` })
+          return
+        }
       }
 
       // Check if already downloading
@@ -398,7 +503,7 @@ export function useDabSearch(options: UseDabSearchOptions) {
       downloadQueue.current.push(track)
       processQueue()
     },
-    [isInLibrary, downloads, processQueue]
+    [isInLibrary, downloads, processQueue, restoreStoredTrack]
   )
 
   // Download entire album

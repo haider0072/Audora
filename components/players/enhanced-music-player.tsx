@@ -7,6 +7,7 @@ import { Slider } from "@/components/ui/slider"
 import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
 import { toast } from "@/hooks/use-toast"
+import { ToastAction } from "@/components/ui/toast"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import {
   Play, Pause, SkipBack, SkipForward,
@@ -230,6 +231,23 @@ export default function EnhancedMusicPlayer() {
           setForceRefreshTrigger(prev => prev + 1)
         }, 100)
       }
+    },
+    onSongsRemoved: (removedIds) => {
+      const count = removedIds.length
+      toast({
+        title: `${count} song(s) no longer in folder`,
+        description: "These songs were removed from the sync folder. Remove them from your library?",
+        action: (
+          <ToastAction
+            altText="Remove songs"
+            onClick={() => {
+              removedIds.forEach((id) => removeSong(id))
+            }}
+          >
+            Remove
+          </ToastAction>
+        ),
+      })
     },
   })
 

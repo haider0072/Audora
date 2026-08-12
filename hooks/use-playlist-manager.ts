@@ -270,8 +270,32 @@ export function usePlaylistManager(options: UsePlaylistManagerOptions = {}): Use
    */
   const removeSong = useCallback(
     async (songId: string) => {
-      await PlaylistStorage.removeSongFile(songId)
-      await PlaylistStorage.removeAlbumArt(songId)
+      // Attempt to remove the song file from storage
+      try {
+        await PlaylistStorage.removeSongFile(songId)
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Unknown error"
+        toast({
+          title: "Could not remove song",
+          description: message,
+          variant: "destructive"
+        })
+        return
+      }
+
+      // Album art removal is best-effort — don't fail the entire removal if it throws
+      try {
+        await PlaylistStorage.removeAlbumArt(songId)
+      } catch (error) {
+        console.error(`Failed to remove album art for ${songId}:`, error)
+      }
+
+      // Revoke the song's blob: URL if it exists
+      const songToRemove = songs.find((s) => s.id === songId)
+      if (songToRemove?.albumArt?.startsWith("blob:")) {
+        URL.revokeObjectURL(songToRemove.albumArt)
+      }
+
       AlbumArtCache.removeCachedAlbumArt(songId)
 
       setSongs((prev) => {
@@ -300,24 +324,38 @@ export function usePlaylistManager(options: UsePlaylistManagerOptions = {}): Use
 
       toast({ title: "Song removed" })
     },
-    [currentSong, shuffleMode, onPlaylistChange, onCurrentSongRemoved]
+    [currentSong, shuffleMode, songs, onPlaylistChange, onCurrentSongRemoved]
   )
 
   /**
    * Reset the entire playlist
    */
   const resetPlaylist = useCallback(async () => {
-    // Revoke all object URLs
+    // Clear storage first. Resetting the UI while the bytes are still on disk
+    // would leave every record unreachable — the exact way orphans are made.
+    try {
+      await PlaylistStorage.clearPlaylist()
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown error"
+      toast({
+        title: "Could not clear playlist",
+        description: message,
+        variant: "destructive",
+      })
+      return
+    }
+
+    // Only now discard the in-memory copies. Clearing the art cache before the
+    // storage call would strip covers off a playlist that is still intact when
+    // that call fails.
+    AlbumArtCache.clearCache()
+
     songs.forEach((song) => {
       if (song.url) URL.revokeObjectURL(song.url)
       if (song.albumArt && song.albumArt.startsWith("blob:")) {
         URL.revokeObjectURL(song.albumArt)
       }
     })
-
-    // Clear cache and storage
-    AlbumArtCache.clearCache()
-    await PlaylistStorage.clearPlaylist()
 
     // Reset all state
     setSongs([])
