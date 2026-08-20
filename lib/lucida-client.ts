@@ -209,6 +209,48 @@ function dedupeBy<T>(items: T[], keyFn: (item: T) => string): T[] {
   return out
 }
 
+// Shape returned by the katze worker's /api/fetch/metadata endpoint. This is
+// the same data the lucida.to frontend loads when you paste a URL — it lets us
+// resolve a bare streaming URL into a fully-populated track without going
+// through search.
+export interface LucidaMetadata {
+  success: boolean
+  type?: string // "track" | "album" | ...
+  title?: string
+  id?: string
+  url?: string
+  trackNumber?: number
+  discNumber?: number
+  isrc?: string
+  durationMs?: number
+  coverArtwork?: LucidaCoverArtwork[]
+  releaseDate?: string
+  artists?: LucidaArtist[]
+  album?: LucidaAlbumStub
+  genres?: string[]
+  copyright?: string
+  explicit?: boolean
+  error?: string
+}
+
+// Resolve a bare streaming URL (Amazon / Qobuz / Tidal / Deezer / etc.) into
+// its metadata. Used by the "paste a link" download flow.
+export async function fetchLucidaMetadata(url: string): Promise<LucidaMetadata> {
+  const res = await lucidaFetch(
+    `/api/fetch/metadata?url=${encodeURIComponent(url)}`
+  )
+
+  if (!res.ok) {
+    throw new Error(`Lucida metadata failed: ${res.status}`)
+  }
+
+  const data = (await res.json()) as LucidaMetadata
+  if (!data.success) {
+    throw new Error(data.error || "Lucida returned no metadata for this URL")
+  }
+  return data
+}
+
 export async function initLucidaDownload(
   url: string,
   opts: { country?: string; metadata?: boolean; private?: boolean } = {}

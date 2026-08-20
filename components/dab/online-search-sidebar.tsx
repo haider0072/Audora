@@ -1,7 +1,7 @@
 "use client"
 
 import { useCallback, useState } from "react"
-import { Search, WifiOff, Loader2 } from "lucide-react"
+import { Search, WifiOff, Loader2, Link2, X } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { SearchTypeTabs } from "./search-type-tabs"
@@ -50,6 +50,83 @@ function SourceToggle({
           </button>
         )
       })}
+    </div>
+  )
+}
+
+// Paste-a-link download. Collapsed to a small trigger by default; expands to an
+// input so users can grab a track that didn't show up in search (e.g. paste a
+// direct Amazon Music track URL).
+function PasteUrlBar({
+  onSubmit,
+  isResolving,
+}: {
+  onSubmit: (url: string) => Promise<boolean>
+  isResolving: boolean
+}) {
+  const [open, setOpen] = useState(false)
+  const [url, setUrl] = useState("")
+
+  const submit = useCallback(async () => {
+    if (!url.trim() || isResolving) return
+    const ok = await onSubmit(url)
+    if (ok) {
+      setUrl("")
+      setOpen(false)
+    }
+  }, [url, isResolving, onSubmit])
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="flex items-center gap-1.5 px-2 py-1 text-[11px] font-medium text-white/50 hover:text-white/80 transition-colors"
+      >
+        <Link2 className="h-3.5 w-3.5" />
+        Paste a link
+      </button>
+    )
+  }
+
+  return (
+    <div className="flex gap-2">
+      <div className="relative flex-1">
+        <Link2 className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-white/40" />
+        <Input
+          autoFocus
+          value={url}
+          onChange={(e) => setUrl(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault()
+              submit()
+            } else if (e.key === "Escape") {
+              setOpen(false)
+            }
+          }}
+          placeholder="Paste Amazon / Qobuz track link..."
+          className="h-9 pl-8 pr-8 text-xs"
+        />
+        {url && (
+          <button
+            type="button"
+            onClick={() => setUrl("")}
+            className="absolute right-2 top-1/2 -translate-y-1/2 text-white/40 hover:text-white/70"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        )}
+      </div>
+      <Button
+        type="button"
+        size="sm"
+        className="h-9 flex-shrink-0"
+        onClick={submit}
+        disabled={isResolving || !url.trim()}
+      >
+        {isResolving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Get"}
+      </Button>
     </div>
   )
 }
@@ -149,6 +226,7 @@ export function OnlineSearchSidebar({ dab, hideSearch = false }: OnlineSearchSid
           </form>
           <SourceToggle value={dab.searchSource} onChange={dab.setSearchSource} />
           <SearchTypeTabs value={dab.searchType} onChange={dab.setSearchType} />
+          <PasteUrlBar onSubmit={dab.downloadFromUrl} isResolving={dab.isResolvingUrl} />
         </div>
       )}
       {/* Search type tabs shown even when header has search */}
@@ -156,6 +234,7 @@ export function OnlineSearchSidebar({ dab, hideSearch = false }: OnlineSearchSid
         <div className="flex-shrink-0 pb-3 space-y-2">
           <SourceToggle value={dab.searchSource} onChange={dab.setSearchSource} />
           <SearchTypeTabs value={dab.searchType} onChange={dab.setSearchType} />
+          <PasteUrlBar onSubmit={dab.downloadFromUrl} isResolving={dab.isResolvingUrl} />
         </div>
       )}
 

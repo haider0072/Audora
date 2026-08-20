@@ -2,6 +2,7 @@ import { TidalCache } from "./tidal-cache"
 import type {
   TidalSearchResult,
   TidalAlbum,
+  TidalTrack,
   TidalDiscographyResult,
 } from "./tidal-types"
 
@@ -144,6 +145,19 @@ export class TidalService {
         return null
       }
     })
+  }
+
+  // Resolve a pasted streaming URL (Amazon / Qobuz / Tidal / Deezer / etc.)
+  // into a fully-populated track that the normal download flow can consume.
+  // Throws with a user-facing message on failure so the caller can surface it.
+  static async resolveUrl(url: string): Promise<TidalTrack> {
+    const res = await fetch(`/api/tidal/resolve?url=${encodeURIComponent(url)}`)
+    const data = await res.json().catch(() => ({}))
+
+    if (!res.ok || !data.track) {
+      throw new Error(data.error || "Could not resolve this link")
+    }
+    return data.track as TidalTrack
   }
 
   // Stream URL (proxied through our API)
