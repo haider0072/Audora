@@ -78,6 +78,10 @@ export function useTidalSearch(options: UseTidalSearchOptions) {
   const downloadQueue = useRef<TidalTrack[]>([])
   const activeDownloads = useRef(0)
 
+  // Paste-a-link resolve state (separate from `downloads` because resolution
+  // happens before we have a track ID to key the download map by).
+  const [isResolvingUrl, setIsResolvingUrl] = useState(false)
+
   // Quality preference
   const [quality, setQuality] = useState<TidalQuality>("HI_RES_LOSSLESS")
 
@@ -531,6 +535,45 @@ export function useTidalSearch(options: UseTidalSearchOptions) {
     [isInLibrary, downloads, processQueue]
   )
 
+  // Download from a pasted streaming URL (Amazon / Qobuz / Tidal / Deezer /
+  // etc.). Resolves the link to a full track, then hands off to the normal
+  // download queue so progress, art-embed, IndexedDB and playlist all behave
+  // identically to a search-result download.
+  const downloadFromUrl = useCallback(
+    async (rawUrl: string): Promise<boolean> => {
+      const url = rawUrl.trim()
+      if (!url) return false
+
+      if (!/^https?:\/\//i.test(url)) {
+        toast({ title: "Enter a valid link (http/https)", variant: "destructive" })
+        return false
+      }
+
+      setIsResolvingUrl(true)
+      try {
+        const track = await TidalService.resolveUrl(url)
+
+        if (isInLibrary(track.id)) {
+          toast({ title: "Already in library" })
+          return false
+        }
+
+        downloadTrack(track)
+        toast({ title: `Added: ${track.title}` })
+        return true
+      } catch (err) {
+        toast({
+          title: err instanceof Error ? err.message : "Could not resolve this link",
+          variant: "destructive",
+        })
+        return false
+      } finally {
+        setIsResolvingUrl(false)
+      }
+    },
+    [isInLibrary, downloadTrack]
+  )
+
   // Download entire album
   const downloadAlbum = useCallback(
     async (album: TidalAlbum) => {
@@ -606,6 +649,8 @@ export function useTidalSearch(options: UseTidalSearchOptions) {
     // Downloads
     downloads,
     downloadTrack,
+    downloadFromUrl,
+    isResolvingUrl,
     downloadAlbum,
     cancelDownload,
     activeDownloadCount,
