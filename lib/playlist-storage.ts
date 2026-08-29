@@ -222,6 +222,56 @@ export class PlaylistStorage {
   }
 
   /**
+   * File identity (name + size) for the given song ids, without retaining any
+   * audio blob.
+   *
+   * A cursor walk still materialises one record at a time, but each is released
+   * as soon as the next arrives — peak cost is a single track, not the library.
+   * The alternative, `get()` per id, is the same per-record cost with an extra
+   * round trip each, and the previous code's mistake was keeping what it read.
+   */
+  private static async readFileIdentities(
+    songIds: string[]
+  ): Promise<Map<string, { fileName: string; fileSize: number }>> {
+    const wanted = new Set(songIds)
+    const identities = new Map<string, { fileName: string; fileSize: number }>()
+    if (wanted.size === 0) return identities
+
+    try {
+      const db = await this.initDB()
+      const transaction = db.transaction([this.STORE_NAME], "readonly")
+      const request = transaction.objectStore(this.STORE_NAME).openCursor()
+
+      await new Promise<void>((resolve, reject) => {
+        request.onsuccess = () => {
+          const cursor = request.result
+          if (!cursor) {
+            resolve()
+            return
+          }
+
+          const record = cursor.value as AudioRecord | undefined
+          if (record && wanted.has(record.id)) {
+            identities.set(record.id, {
+              // Records predating the flat columns fall back to the blob's own
+              // fields; the blob is not retained past this statement.
+              fileName: record.fileName ?? record.file?.name ?? "",
+              fileSize: record.fileSize || record.file?.size || 0,
+            })
+          }
+
+          cursor.continue()
+        }
+        request.onerror = () => reject(request.error)
+      })
+    } catch (error) {
+      console.error("Error reading stored file identities:", error)
+    }
+
+    return identities
+  }
+
+  /**
    * Remove a song file.
    *
    * Errors propagate on purpose. This used to catch-and-return, which resolved
@@ -601,11 +651,17 @@ export class PlaylistStorage {
   static async validateStoredFiles(songs: StoredSong[]): Promise<StoredSong[]> {
     const validSongs: StoredSong[] = []
 
-    for (const song of songs) {
-      const file = await this.getSongFile(song.id)
-      if (!file) continue
+    // Identity is compared against the record's own fileName/fileSize columns,
+    // never against the File blob. Reading the blob here pulled the entire
+    // library into memory just to answer a question the metadata already
+    // answers — on a large FLAC library that alone was gigabytes per load.
+    const stored = await this.readFileIdentities(songs.map((song) => song.id))
 
-      if (file.name === song.fileName && file.size === song.fileSize) {
+    for (const song of songs) {
+      const identity = stored.get(song.id)
+      if (!identity) continue
+
+      if (identity.fileName === song.fileName && identity.fileSize === song.fileSize) {
         validSongs.push(song)
       } else {
         // A failure here must not abort the restore — the song is dropped from

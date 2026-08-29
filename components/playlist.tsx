@@ -8,7 +8,8 @@ import type { AudioMetadata } from "@/lib/metadata-extractor"
 
 interface Song extends AudioMetadata {
   id: string
-  file: File
+  /** Absent for library entries not currently loaded — see enhanced-playlist. */
+  file?: File
   url: string
 }
 

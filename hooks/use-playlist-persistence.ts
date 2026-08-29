@@ -136,39 +136,25 @@ export function usePlaylistPersistence(
         const validSongs = await PlaylistStorage.validateStoredFiles(playlistData.songs)
 
         if (validSongs.length > 0) {
-          // Restore songs from IndexedDB in parallel batches
-          const BATCH_SIZE = 10
-          const restoredSongs: Song[] = []
+          // Restore metadata only — never the audio bytes.
+          //
+          // Loading every File here is what made a large library cost gigabytes
+          // of RAM at startup: a 200-track FLAC library is ~7 GB of blobs the
+          // page then holds for its whole lifetime, to play one song. Songs now
+          // carry their identity flat and fetch their bytes from IndexedDB at
+          // the moment they are selected (see `loadSongFile`).
+          //
+          // Album art is deliberately left as the stored marker here too: the
+          // art blob URLs are minted lazily by AlbumArtCache for the handful of
+          // rows actually on screen, instead of one live URL per library entry.
+          const restoredSongs: Song[] = validSongs.map((songMetadata) => {
+            const artist =
+              songMetadata.artists && songMetadata.artists.length > 0
+                ? songMetadata.artists[0]
+                : songMetadata.artist
 
-          for (let i = 0; i < validSongs.length; i += BATCH_SIZE) {
-            const batch = validSongs.slice(i, i + BATCH_SIZE)
-            const results = await Promise.all(
-              batch.map(async (songMetadata) => {
-                const file = await PlaylistStorage.getSongFile(songMetadata.id)
-                if (!file) return null
-
-                let albumArt = songMetadata.albumArt
-
-                if (songMetadata.albumArt && songMetadata.albumArt.startsWith("blob:")) {
-                  const restoredAlbumArt = await PlaylistStorage.getAlbumArt(songMetadata.id)
-                  if (restoredAlbumArt) {
-                    albumArt = restoredAlbumArt
-                    await AlbumArtCache.preloadAlbumArt(songMetadata.id, restoredAlbumArt)
-                  } else {
-                    albumArt = undefined
-                  }
-                }
-
-                const artist =
-                  songMetadata.artists && songMetadata.artists.length > 0
-                    ? songMetadata.artists[0]
-                    : songMetadata.artist
-
-                return { ...songMetadata, artist, file, url: "", albumArt } as Song
-              })
-            )
-            restoredSongs.push(...results.filter((s): s is Song => s !== null))
-          }
+            return { ...songMetadata, artist, url: "" } as Song
+          })
 
           if (restoredSongs.length > 0) {
             toast({
@@ -221,14 +207,18 @@ export function usePlaylistPersistence(
       normalizationEnabled, preampDb,
     } = data
 
-    // Serialize songs (exclude File objects). The file-identity fields
-    // (name/size/lastModified) MUST come from song.file rather than the
-    // Song's flat metadata — the metadata snapshot is taken on the raw
-    // downloaded blob, but song.file is later replaced with the art-
-    // embedded blob whose size is larger. Using the metadata `fileSize`
-    // here would put a stale value in localStorage and validateStoredFiles
-    // would then drop the IndexedDB entry as "mismatched" on the next
-    // reload, exactly causing the "songs vanish after refresh" bug.
+    // Serialize songs (exclude File objects).
+    //
+    // File identity (name/size/lastModified) is read from song.file when it is
+    // present, because a downloaded song's flat metadata is snapshotted on the
+    // raw blob while song.file is later swapped for the art-embedded blob — the
+    // larger, and correct, one. Writing the stale size made validateStoredFiles
+    // drop the record as mismatched on the next load: the "songs vanish after
+    // refresh" bug.
+    //
+    // Most songs no longer carry a File at all (see restorePlaylist), so the
+    // flat fields are the fallback rather than a legacy path. They are written
+    // back onto the Song at load time precisely so this round-trips.
     const serializableSongs = songs.map((song) => ({
       id: song.id,
       title: song.title,
@@ -246,9 +236,9 @@ export function usePlaylistPersistence(
       format: song.format,
       loudnessLUFS: song.loudnessLUFS,
       gainCorrection: song.gainCorrection,
-      fileName: song.file ? song.file.name : "",
-      fileLastModified: song.file ? song.file.lastModified : 0,
-      fileType: song.file ? song.file.type : "",
+      fileName: song.file ? song.file.name : (song.fileName ?? ""),
+      fileLastModified: song.file ? song.file.lastModified : (song.fileLastModified ?? 0),
+      fileType: song.file ? song.file.type : (song.fileType ?? ""),
     }))
 
     // Save playlist metadata (canonical songs store — see restorePlaylist)

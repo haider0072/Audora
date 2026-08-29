@@ -338,6 +338,11 @@ export function useDabSearch(options: UseDabSearchOptions) {
           genre: track.genre || metadata.genre,
           file,
           url: "",
+          // Mirrored flat so identity survives once the File is dropped.
+          fileName: file.name,
+          fileSize: file.size,
+          fileLastModified: file.lastModified,
+          fileType: file.type,
         }
 
         // Handle album art from DAB

@@ -30,6 +30,7 @@ import { OnlineSearchSidebar } from "@/components/dab/online-search-sidebar"
 
 import type { EqualizerBand } from "@/components/refined-equalizer"
 import { formatTime, waitForCanPlay } from "@/lib/utils"
+import { loadSongFile } from "@/lib/song-file"
 
 /** Auto-advance crossfade (song ends on its own). 0 = gapless, no overlap. */
 const CROSSFADE_AUTO_SECONDS = 0
@@ -308,15 +309,8 @@ export default function MobileMusicPlayer() {
 
       if (restoredSongs.length > 0) {
         setSongs(restoredSongs)
-        if (current) {
-          setCurrentSong(current)
-          if (audioRef.current) {
-            const audioUrl = URL.createObjectURL(current.file)
-            setCurrentSong({ ...current, url: audioUrl })
-            audioRef.current.src = audioUrl
-            audioRef.current.load()
-          }
-        }
+        // Shown from metadata only; bytes are fetched on the first play press.
+        if (current) setCurrentSong(current)
       }
     })
   }, [])
@@ -355,11 +349,24 @@ export default function MobileMusicPlayer() {
 
     pendingPreloadRef.current = null
 
+    // Fetch the audio bytes for this track. Everything below needs a real
+    // File; the library itself holds none (see `Song.file`).
+    const songFile = await loadSongFile(song)
+    if (abort.signal.aborted) return
+    if (!songFile) {
+      toast({
+        title: "Track unavailable",
+        description: `"${song.title || song.fileName || "This track"}" is no longer in storage.`,
+        variant: "destructive",
+      })
+      return
+    }
+
     // Lazy loudness analysis — runs in background on first play. Skipped
     // entirely while normalization is off: no point decoding a whole FLAC
     // into RAM for a correction that would not be applied.
-    if (normalizationEnabled && song.loudnessLUFS == null && song.file) {
-      LoudnessAnalyzer.analyze(song.file).then((loudness) => {
+    if (normalizationEnabled && song.loudnessLUFS == null) {
+      LoudnessAnalyzer.analyze(songFile).then((loudness) => {
         setSongs((prev) =>
           prev.map((s) =>
             s.id === song.id
@@ -379,7 +386,7 @@ export default function MobileMusicPlayer() {
     // inactive element instead of a hard reload. Returns false (→ normal load)
     // when crossfade is off or nothing is currently playing.
     applyNormalization(song.gainCorrection ?? 0)
-    const faded = await crossfadeTo(song.file, abort.signal)
+    const faded = await crossfadeTo(songFile, abort.signal)
     if (abort.signal.aborted) return
     if (faded) {
       if (currentSong?.url) URL.revokeObjectURL(currentSong.url)
@@ -411,7 +418,7 @@ export default function MobileMusicPlayer() {
         audioRef.current.pause()
         audioRef.current.currentTime = 0
 
-        const audioUrl = URL.createObjectURL(song.file)
+        const audioUrl = URL.createObjectURL(songFile)
         const updatedSong = { ...song, url: audioUrl }
         setCurrentSong(updatedSong)
         audioRef.current.src = audioUrl
@@ -452,10 +459,20 @@ export default function MobileMusicPlayer() {
   const togglePlayPause = async () => {
     if (!currentSong) return
 
-    // Check if audio element is properly initialized (e.g. after restore)
-    if (audioRef.current && !audioRef.current.src && currentSong.file) {
+    // First press after a restore: the song was shown from metadata alone, so
+    // its bytes are fetched here rather than at startup.
+    if (audioRef.current && !audioRef.current.src) {
+      const file = await loadSongFile(currentSong)
+      if (!file) {
+        toast({
+          title: "Track unavailable",
+          description: `"${currentSong.title || currentSong.fileName || "This track"}" is no longer in storage.`,
+          variant: "destructive",
+        })
+        return
+      }
       resetGaplessState() // ensure we're on primary
-      const audioUrl = URL.createObjectURL(currentSong.file)
+      const audioUrl = URL.createObjectURL(file)
       const updatedSong = { ...currentSong, url: audioUrl }
       setCurrentSong(updatedSong)
       audioRef.current.src = audioUrl
@@ -489,10 +506,16 @@ export default function MobileMusicPlayer() {
   // Keep nearEndHandlerRef pointing to the latest handler (preloads next song for gapless)
   nearEndHandlerRef.current = () => {
     const nextSong = getNextSong()
-    if (nextSong) {
-      pendingPreloadRef.current = nextSong
-      preloadNextSong(nextSong.file)
-    }
+    if (!nextSong) return
+    pendingPreloadRef.current = nextSong
+    // Best-effort: a missing record just means no gapless swap, and selectSong
+    // reports it properly when the track is actually reached.
+    loadSongFile(nextSong)
+      .then((file) => {
+        // The user may have skipped on while this was in flight.
+        if (file && pendingPreloadRef.current?.id === nextSong.id) preloadNextSong(file)
+      })
+      .catch(() => { /* non-critical */ })
   }
 
   const skipToPrevious = () => {

@@ -90,7 +90,7 @@ export function useFileImporter(options: UseFileImporterOptions): UseFileImporte
       // file → same byte count.
       const existingSizes = new Set(
         songs
-          .map((s) => s.file?.size)
+          .map((s) => s.file?.size ?? s.fileSize)
           .filter((size): size is number => typeof size === "number" && size > 0)
       )
 
@@ -120,7 +120,17 @@ export function useFileImporter(options: UseFileImporterOptions): UseFileImporte
             albumArtUrl = metadata.albumArt
             // Loudness analysis deferred to first playback (uses OfflineAudioContext
             // which gets throttled in background tabs, blocking import)
-            const song: Song = { ...metadata, id: songId, file, url: "" }
+            const song: Song = {
+              ...metadata,
+              id: songId,
+              file,
+              url: "",
+              // Mirrored flat so identity survives once the File is dropped.
+              fileName: file.name,
+              fileSize: file.size,
+              fileLastModified: file.lastModified,
+              fileType: file.type,
+            }
 
             // Store in IndexedDB
             await PlaylistStorage.storeSongFile(songId, file)
