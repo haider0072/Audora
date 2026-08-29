@@ -425,6 +425,12 @@ export function useTidalSearch(options: UseTidalSearchOptions) {
           genre: track.genre || metadata.genre,
           file,
           url: "",
+          // Mirrored flat so identity survives once the File is dropped.
+          // Rewritten below if art embedding replaces the File.
+          fileName: file.name,
+          fileSize: file.size,
+          fileLastModified: file.lastModified,
+          fileType: file.type,
         }
 
         // Fetch album art and embed metadata + art into FLAC
@@ -487,9 +493,14 @@ export function useTidalSearch(options: UseTidalSearchOptions) {
           ? new File([finalBlob], fileName, { type: contentType, lastModified: Date.now() })
           : file
         song.file = fileWithArt
-        // Keep the displayable metadata field in step with the actual File
-        // so any consumer reading song.fileSize sees the embedded size.
+        // Keep the flat identity in step with the actual File: the embedded
+        // blob is larger, and this is the copy that outlives song.file. A
+        // stale size here makes validateStoredFiles drop the record on the
+        // next load — the "songs vanish after refresh" bug.
         song.fileSize = fileWithArt.size
+        song.fileName = fileWithArt.name
+        song.fileLastModified = fileWithArt.lastModified
+        song.fileType = fileWithArt.type
         await PlaylistStorage.storeSongFile(songId, fileWithArt)
 
         // Add to playlist. Ownership of the art object URL transfers with the

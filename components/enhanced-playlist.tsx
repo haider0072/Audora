@@ -24,8 +24,21 @@ import {
 
 interface Song extends AudioMetadata {
   id: string
-  file: File
+  /**
+   * The decoded audio, present only while this song is the active/preloaded
+   * track. The library deliberately does NOT hold every File in memory — a
+   * 200-track FLAC library would be several GB of resident blobs. Restored
+   * songs carry metadata only and load their bytes from IndexedDB on demand
+   * (see `loadSongFile`). Freshly imported songs keep the File for the rest
+   * of the import turn, which is why identity checks must prefer the flat
+   * `fileName`/`fileSize`/`fileLastModified` fields over `file`.
+   */
+  file?: File
   url: string
+  /** File identity, mirrored flat so it survives without the File object. */
+  fileName?: string
+  fileLastModified?: number
+  fileType?: string
 }
 
 export interface PlaylistScrollTarget {

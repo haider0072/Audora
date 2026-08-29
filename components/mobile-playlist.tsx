@@ -29,7 +29,8 @@ interface Song {
   albumArt?: string
   fileSize?: number
   format?: string
-  file: File
+  /** Absent for library entries not currently loaded — see enhanced-playlist. */
+  file?: File
   url: string
   artists?: string[] // Added for grouping
 }

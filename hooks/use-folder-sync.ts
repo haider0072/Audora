@@ -46,8 +46,13 @@ const generateSongId = (file: File): string => {
  * nothing records which folder a song came from. That is why the result is only
  * ever offered to the user for confirmation and never acted on automatically.
  */
-const isFolderImport = (song: Song): boolean =>
-  !!song.file && song.id === generateSongId(song.file)
+const isFolderImport = (song: Song): boolean => {
+  // Rebuilt from the song's flat identity fields, not from song.file: the
+  // library holds no File objects, so keying off `file` would classify every
+  // restored song as a download and quietly disable removal detection.
+  if (!song.fileName || !song.fileSize || song.fileLastModified == null) return false
+  return song.id === `${song.fileName}-${song.fileSize}-${song.fileLastModified}`
+}
 
 /**
  * Custom hook for syncing a folder with the playlist
@@ -111,7 +116,7 @@ export function useFolderSync(options: UseFolderSyncOptions): UseFolderSyncRetur
       // songs.
       const existingSizes = new Set(
         songs
-          .map((s) => s.file?.size)
+          .map((s) => s.file?.size ?? s.fileSize)
           .filter((size): size is number => typeof size === "number" && size > 0)
       )
 
@@ -144,7 +149,17 @@ export function useFolderSync(options: UseFolderSyncOptions): UseFolderSyncRetur
 
             try {
               const metadata = await MetadataExtractor.extractMetadata(file)
-              const song: Song = { ...metadata, id: songId, file, url: "" }
+              const song: Song = {
+              ...metadata,
+              id: songId,
+              file,
+              url: "",
+              // Mirrored flat so identity survives once the File is dropped.
+              fileName: file.name,
+              fileSize: file.size,
+              fileLastModified: file.lastModified,
+              fileType: file.type,
+            }
 
               await PlaylistStorage.storeSongFile(songId, file)
 

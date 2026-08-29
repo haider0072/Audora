@@ -1,3 +1,5 @@
+import { PlaylistStorage } from "./playlist-storage"
+
 interface CachedAlbumArt {
   url: string
   blob: Blob
@@ -53,6 +55,21 @@ export class AlbumArtCache {
     }
   }
 
+  /**
+   * Is this blob URL still backed by a blob in this document?
+   *
+   * A revoked or foreign-session URL rejects immediately; a live one resolves
+   * from memory without touching the network.
+   */
+  private static async isBlobUrlAlive(url: string): Promise<boolean> {
+    try {
+      const response = await fetch(url)
+      return response.ok
+    } catch {
+      return false
+    }
+  }
+
   private static async loadAlbumArtInternal(songId: string, albumArtUrl: string): Promise<string | null> {
     try {
       // Mark as loading in cache
@@ -62,10 +79,35 @@ export class AlbumArtCache {
       }
 
       if (albumArtUrl.startsWith("blob:")) {
-        // Blob URLs are already local — fetch can fail due to service worker interference.
-        // Use the existing blob URL directly without re-fetching.
+        // A blob URL is only meaningful inside the session that minted it. The
+        // library persists these strings, so after a reload the stored value
+        // names a URL this document never created — caching it as-is renders a
+        // permanently broken image. Resolving from IndexedDB instead is what
+        // lets the restore skip minting a live URL per library entry.
+        //
+        // Same-session URLs are still valid and must not be re-fetched from the
+        // store, so liveness is probed rather than assumed.
+        const live = await this.isBlobUrlAlive(albumArtUrl)
+        if (live) {
+          const cacheEntry: CachedAlbumArt = {
+            url: albumArtUrl,
+            blob: new Blob(),
+            lastAccessed: Date.now(),
+            songId,
+            size: 0,
+            refCount: 1,
+            isStable: true,
+            isLoading: false,
+          }
+          this.cache.set(songId, cacheEntry)
+          return albumArtUrl
+        }
+
+        const restored = await PlaylistStorage.getAlbumArt(songId)
+        if (!restored) return null
+
         const cacheEntry: CachedAlbumArt = {
-          url: albumArtUrl,
+          url: restored,
           blob: new Blob(),
           lastAccessed: Date.now(),
           songId,
@@ -75,7 +117,8 @@ export class AlbumArtCache {
           isLoading: false,
         }
         this.cache.set(songId, cacheEntry)
-        return albumArtUrl
+        this.maybeCleanup()
+        return restored
       }
 
       // Fetch and cache the album art
