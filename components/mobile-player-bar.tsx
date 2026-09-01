@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge"
 import { Play, Pause, SkipBack, SkipForward, Settings, Mic, Share2, Music, Volume2, VolumeX, Youtube, Sparkles, User } from "lucide-react"
 import { formatTime } from "@/lib/utils"
 import { usePlaybackTime } from "@/hooks/use-playback-time"
+import { AlbumArtDisplay } from "@/components/album-art-display"
 
 /**
  * Progress strip, split out so the position subscription re-renders this alone
@@ -134,25 +135,20 @@ export function MobilePlayerBar({
         <div className="flex items-center gap-3">
           {/* Album Art */}
           <div className="relative flex-shrink-0">
-            <div
-              className={`w-12 h-12 rounded-lg bg-muted flex items-center justify-center overflow-hidden transition-all duration-300 ${
+            {/* Goes through AlbumArtDisplay rather than a raw <img>: art is
+                stored as a reference, and resolving one to a URL is the cache's
+                job. A raw src would render the reference verbatim. */}
+            <AlbumArtDisplay
+              songId={currentSong.id}
+              albumArt={currentSong.albumArt}
+              title={`${currentSong.title} album art`}
+              size="small"
+              rounded="rounded-lg"
+              isTransitioning={isTransitioning}
+              className={`transition-all duration-300 ${
                 isTransitioning ? "scale-95 opacity-70" : "scale-100 opacity-100"
               }`}
-            >
-              {currentSong.albumArt ? (
-                <img
-                  src={currentSong.albumArt || "/placeholder.svg"}
-                  alt={`${currentSong.title} album art`}
-                  className="w-full h-full object-cover"
-                  onError={(e) => {
-                    const target = e.target as HTMLImageElement
-                    target.style.display = "none"
-                  }}
-                />
-              ) : (
-                <Music className="w-6 h-6 text-muted-foreground" />
-              )}
-            </div>
+            />
           </div>
 
           {/* Song Info */}

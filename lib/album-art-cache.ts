@@ -1,8 +1,15 @@
+import { PlaylistStorage } from "@/lib/playlist-storage"
+import { isStoredArtRef, songIdFromArtRef } from "@/lib/album-art-ref"
+
 interface CachedAlbumArt {
   url: string
-  blob: Blob
   lastAccessed: number
   songId: string
+  /**
+   * Bytes this entry is responsible for, used by the size cap. Zero means "not
+   * known", which is the case for a `blob:` URL adopted from elsewhere — its
+   * owner created it and we cannot size it without reading it back.
+   */
   size: number
   refCount: number
   isStable: boolean
@@ -53,6 +60,36 @@ export class AlbumArtCache {
     }
   }
 
+  /** Record an entry and let the caps act on it. */
+  private static store(songId: string, url: string, size: number): string {
+    this.cache.set(songId, {
+      url,
+      lastAccessed: Date.now(),
+      songId,
+      size,
+      refCount: 1,
+      isStable: true,
+      isLoading: false,
+    })
+    this.maybeCleanup()
+    return url
+  }
+
+  /**
+   * Resolve a stored-art reference into an object URL, created here and now.
+   *
+   * This is the path that keeps the library's art out of memory until it is
+   * wanted: the reference is what gets held and persisted, and the URL — with
+   * the blob it pins — exists only while the entry survives the caps.
+   */
+  private static async loadStoredArt(songId: string, ref: string): Promise<string | null> {
+    const storedFor = songIdFromArtRef(ref) ?? songId
+    const blob = await PlaylistStorage.getAlbumArtBlob(storedFor)
+    if (!blob) return null
+
+    return this.store(songId, URL.createObjectURL(blob), blob.size)
+  }
+
   private static async loadAlbumArtInternal(songId: string, albumArtUrl: string): Promise<string | null> {
     try {
       // Mark as loading in cache
@@ -61,21 +98,15 @@ export class AlbumArtCache {
         existingCached.isLoading = true
       }
 
+      if (isStoredArtRef(albumArtUrl)) {
+        return await this.loadStoredArt(songId, albumArtUrl)
+      }
+
       if (albumArtUrl.startsWith("blob:")) {
         // Blob URLs are already local — fetch can fail due to service worker interference.
-        // Use the existing blob URL directly without re-fetching.
-        const cacheEntry: CachedAlbumArt = {
-          url: albumArtUrl,
-          blob: new Blob(),
-          lastAccessed: Date.now(),
-          songId,
-          size: 0,
-          refCount: 1,
-          isStable: true,
-          isLoading: false,
-        }
-        this.cache.set(songId, cacheEntry)
-        return albumArtUrl
+        // Use the existing blob URL directly without re-fetching. Its size is
+        // unknown to us, so this entry is held to account by the entry cap only.
+        return this.store(songId, albumArtUrl, 0)
       }
 
       // Fetch and cache the album art
@@ -86,26 +117,7 @@ export class AlbumArtCache {
 
       const blob = await response.blob()
 
-      // Create a persistent URL
-      const url = URL.createObjectURL(blob)
-
-      // Add to cache
-      const cacheEntry: CachedAlbumArt = {
-        url,
-        blob,
-        lastAccessed: Date.now(),
-        songId,
-        size: blob.size,
-        refCount: 1,
-        isStable: true,
-        isLoading: false,
-      }
-
-      this.cache.set(songId, cacheEntry)
-
-      this.maybeCleanup()
-
-      return url
+      return this.store(songId, URL.createObjectURL(blob), blob.size)
     } catch (error) {
       console.error(`Error preloading album art for song ${songId}:`, error)
 
@@ -143,6 +155,20 @@ export class AlbumArtCache {
     }
   }
 
+  /**
+   * Warm an entry without claiming a display reference.
+   *
+   * Speculative loading must not pin what it loads. `preloadAlbumArt` hands
+   * back a reference for the caller to release when it stops displaying the
+   * art; nothing displays a warmed entry, so nobody would ever release it, and
+   * a permanently non-zero refCount makes the entry ineligible for eviction —
+   * the caps silently stop applying to everything ever warmed.
+   */
+  static async warmAlbumArt(songId: string, albumArtUrl?: string): Promise<void> {
+    const url = await this.preloadAlbumArt(songId, albumArtUrl)
+    if (url) this.releaseAlbumArt(songId)
+  }
+
   // Preload album art for multiple songs in parallel
   static async preloadMultiple(songs: Array<{ id: string; albumArt?: string }>): Promise<void> {
     if (!this.isBrowser()) return
@@ -154,7 +180,7 @@ export class AlbumArtCache {
     // Load in parallel — preloadAlbumArt already deduplicates via loadingPromises
     await Promise.all(
       songsToPreload.map((song) =>
-        this.preloadAlbumArt(song.id, song.albumArt).catch(() => {})
+        this.warmAlbumArt(song.id, song.albumArt).catch(() => {})
       )
     )
   }

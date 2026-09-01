@@ -5,7 +5,7 @@ import { toast } from "@/hooks/use-toast"
 import { TidalService, type SearchSource } from "@/lib/tidal-service"
 import { MetadataExtractor } from "@/lib/metadata-extractor"
 import { PlaylistStorage } from "@/lib/playlist-storage"
-import { AlbumArtCache } from "@/lib/album-art-cache"
+import { storedArtRef } from "@/lib/album-art-ref"
 import { embedFlacMetadata } from "@/lib/flac-art-embedder"
 import { hasRoomFor, StorageFullError, formatBytes } from "@/lib/storage-quota"
 import type { Song } from "@/components/enhanced-playlist"
@@ -439,9 +439,12 @@ export function useTidalSearch(options: UseTidalSearchOptions) {
               artBlob = await artRes.blob()
               const artObjUrl = URL.createObjectURL(artBlob)
               createdArtUrl = artObjUrl
-              song.albumArt = artObjUrl
               await PlaylistStorage.storeAlbumArt(songId, artObjUrl)
-              await AlbumArtCache.preloadAlbumArt(songId, artObjUrl)
+              // See the matching note in the DAB path: the URL was only a
+              // vehicle for the bytes, and a reference is what the song keeps.
+              song.albumArt = storedArtRef(songId)
+              URL.revokeObjectURL(artObjUrl)
+              createdArtUrl = null
             }
           } catch {
             // Continue without album art
@@ -492,11 +495,7 @@ export function useTidalSearch(options: UseTidalSearchOptions) {
         song.fileSize = fileWithArt.size
         await PlaylistStorage.storeSongFile(songId, fileWithArt)
 
-        // Add to playlist. Ownership of the art object URL transfers with the
-        // song here, so stop tracking it for cleanup — the success path keeps
-        // it alive deliberately, since song.albumArt points at it.
         onSongDownloaded(song)
-        createdArtUrl = null
 
         updateDownload(track.id, { status: "complete" })
         toast({ title: `Downloaded: ${track.title}` })
@@ -570,8 +569,9 @@ export function useTidalSearch(options: UseTidalSearchOptions) {
         }
       }
 
-      const albumArt = (await PlaylistStorage.getAlbumArt(songId)) ?? undefined
-      if (albumArt) await AlbumArtCache.preloadAlbumArt(songId, albumArt)
+      // Referenced, not resolved: an object URL here would outlive the moment
+      // it was needed and pin its blob until the page went away.
+      const albumArt = storedArtRef(songId)
 
       onSongDownloaded({
         ...metadata,

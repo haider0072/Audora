@@ -18,6 +18,7 @@ jest.mock('@/lib/playlist-storage', () => ({
 jest.mock('@/lib/album-art-cache', () => ({
   AlbumArtCache: {
     removeCachedAlbumArt: jest.fn(),
+    invalidateCachedAlbumArt: jest.fn(),
     clearCache: jest.fn(),
   },
 }))

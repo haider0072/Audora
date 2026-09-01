@@ -437,7 +437,7 @@ describe("PlaylistStorage", () => {
   })
 
   describe("Album art - legacy inline art backward compatibility", () => {
-    it("getAlbumArt works for legacy inline art record", async () => {
+    it("getAlbumArtBlob works for legacy inline art record", async () => {
       const db = await PlaylistStorage.initDB()
 
       // Mock URL.createObjectURL to return a blob: URL
@@ -465,15 +465,17 @@ describe("PlaylistStorage", () => {
         transaction.onerror = () => reject(transaction.error)
       })
 
-      // getAlbumArt should still work
-      const artUrl = await PlaylistStorage.getAlbumArt("legacy_song")
-      expect(artUrl).not.toBeNull()
-      expect(artUrl).toMatch(/^blob:/)
+      // The point is that the inline pointer is still followed rather than
+      // being treated as art-less. Blob identity cannot be asserted here: the
+      // structuredClone polyfill at the top of this file round-trips through
+      // JSON, so what comes back out of fake-indexeddb is no longer a Blob.
+      const art = await PlaylistStorage.getAlbumArtBlob("legacy_song")
+      expect(art).not.toBeNull()
     })
 
-    it("getAlbumArt returns null for nonexistent art", async () => {
-      const artUrl = await PlaylistStorage.getAlbumArt("nonexistent_song")
-      expect(artUrl).toBeNull()
+    it("getAlbumArtBlob returns null for nonexistent art", async () => {
+      const art = await PlaylistStorage.getAlbumArtBlob("nonexistent_song")
+      expect(art).toBeNull()
     })
 
     it("removes legacy art correctly", async () => {
@@ -505,8 +507,8 @@ describe("PlaylistStorage", () => {
       await PlaylistStorage.removeAlbumArt("legacy_song")
 
       // Verify it's gone
-      const artUrl = await PlaylistStorage.getAlbumArt("legacy_song")
-      expect(artUrl).toBeNull()
+      const art = await PlaylistStorage.getAlbumArtBlob("legacy_song")
+      expect(art).toBeNull()
     })
   })
 

@@ -300,7 +300,10 @@ export function usePlaylistManager(options: UsePlaylistManagerOptions = {}): Use
         URL.revokeObjectURL(songToRemove.albumArt)
       }
 
-      AlbumArtCache.removeCachedAlbumArt(songId)
+      // Unconditional: the art has just been deleted from storage, so a cached
+      // entry for it is stale whether or not a row is still holding a
+      // reference. `removeCachedAlbumArt` would decline in exactly that case.
+      AlbumArtCache.invalidateCachedAlbumArt(songId)
 
       setSongs((prev) => {
         const newSongs = prev.filter((s) => s.id !== songId)

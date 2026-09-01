@@ -16,11 +16,20 @@ Object.defineProperty(window, 'matchMedia', {
   })),
 })
 
-// Mock IntersectionObserver
+// Mock IntersectionObserver.
+//
+// Reports everything it is given as intersecting. jsdom has no layout, so the
+// honest answer is unknowable, and "visible" is the useful default: components
+// that gate work on visibility then behave in tests as they do on a screen the
+// user is actually looking at. A silent no-op would leave them waiting forever.
 global.IntersectionObserver = class IntersectionObserver {
-  constructor() {}
+  constructor(callback) {
+    this.callback = callback
+  }
   disconnect() {}
-  observe() {}
+  observe(target) {
+    this.callback([{ target, isIntersecting: true, intersectionRatio: 1 }], this)
+  }
   takeRecords() {
     return []
   }

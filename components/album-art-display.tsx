@@ -4,6 +4,13 @@ import { useState, useEffect, useLayoutEffect, useRef, useCallback } from "react
 import { Music } from "lucide-react"
 import { AlbumArtCache } from "@/lib/album-art-cache"
 
+/**
+ * How far outside the viewport art is still worth holding. Wide enough that a
+ * normal scroll finds the art already there, narrow enough that a long library
+ * keeps only a working set of it in memory.
+ */
+const NEAR_VIEWPORT_MARGIN = "600px"
+
 interface AlbumArtDisplayProps {
   songId?: string
   albumArt?: string
@@ -13,6 +20,8 @@ interface AlbumArtDisplayProps {
   style?: React.CSSProperties
   size?: "small" | "medium" | "large"
   showFallback?: boolean
+  /** Corner rounding, so a caller with its own clip can match it. */
+  rounded?: string
 }
 
 export function AlbumArtDisplay({
@@ -24,6 +33,7 @@ export function AlbumArtDisplay({
   style,
   size = "large",
   showFallback = true,
+  rounded = "rounded-2xl",
 }: AlbumArtDisplayProps) {
   const [currentImageUrl, setCurrentImageUrl] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
@@ -41,6 +51,17 @@ export function AlbumArtDisplay({
   // URL that already failed for the current song. Asking for it again fails
   // identically, so the fallback stands until the song or its art changes.
   const failedUrlRef = useRef<string | null>(null)
+  // Identifies the art currently being asked for, so a failure is forgotten
+  // when — and only when — the subject actually changes. Scrolling in and out
+  // of view must not count, or a dead URL becomes retryable on every pass.
+  const artKeyRef = useRef<string | null>(null)
+
+  const containerRef = useRef<HTMLDivElement>(null)
+  // null until the observer reports, because "not known yet" and "known to be
+  // off screen" call for opposite actions: the first should wait, the second
+  // should release. Starting at false made every slot release the art it had
+  // just picked up and immediately ask for it again.
+  const [isNearViewport, setIsNearViewport] = useState<boolean | null>(null)
 
   /** Keep the ref mirror in step with the state it shadows. */
   const applyImageUrl = useCallback((url: string | null) => {
@@ -67,6 +88,33 @@ export function AlbumArtDisplay({
       }
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps -- mount-only init
+
+  /**
+   * Track whether this slot is worth holding art for.
+   *
+   * Every song in the library renders one of these, so without this gate the
+   * whole library's art is resolved and held at once — hundreds of object URLs,
+   * each pinning its blob, none of them on screen.
+   */
+  useEffect(() => {
+    if (!isMounted) return
+
+    const element = containerRef.current
+    if (!element || typeof IntersectionObserver === "undefined") {
+      setIsNearViewport(true)
+      return
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) setIsNearViewport(entry.isIntersecting)
+      },
+      { rootMargin: NEAR_VIEWPORT_MARGIN },
+    )
+    observer.observe(element)
+
+    return () => observer.disconnect()
+  }, [isMounted])
 
   // Cleanup function to release album art reference
   const cleanupCurrentImage = useCallback(() => {
@@ -153,19 +201,54 @@ export function AlbumArtDisplay({
    * as the window stayed open. A failure is now terminal for that URL.
    */
   useEffect(() => {
-    if (!isMounted || !songId || !albumArt) {
+    // Not mounted yet is a "wait", not a "tear down". The mount layout effect
+    // has already adopted any cached art by this point, and the first pass of
+    // this effect still sees the pre-mount render — treating that as "no art"
+    // threw the adoption away and asked for it all over again.
+    if (!isMounted) return
+
+    if (!songId || !albumArt) {
       cleanupCurrentImage()
       applyImageUrl(null)
       setHasError(false)
       setIsLoading(false)
       currentSongIdRef.current = undefined
+      artKeyRef.current = null
       failedUrlRef.current = null
       isLoadingRef.current = false
       return
     }
 
-    // A new song (or new art for the same one) deserves a fresh attempt.
-    failedUrlRef.current = null
+    // A new song, or new art for the same one, deserves a fresh attempt.
+    const artKey = `${songId}::${albumArt}`
+    if (artKeyRef.current !== artKey) {
+      artKeyRef.current = artKey
+      failedUrlRef.current = null
+    }
+
+    // Visibility not yet reported — hold still rather than tear down art that
+    // may be about to be shown.
+    if (isNearViewport === null) return
+
+    // Far from the viewport: give the art back so the cache can reclaim it.
+    // The reference is what keeps an entry pinned, so holding one for a slot
+    // nobody can see is what stops the caps from ever evicting anything.
+    if (!isNearViewport) {
+      if (currentImageUrlRef.current) {
+        cleanupCurrentImage()
+        applyImageUrl(null)
+        currentSongIdRef.current = undefined
+      }
+      // Abandon any load in flight. Leaving the guard set means a scroll out
+      // and straight back finds the loader still "busy" and skips silently,
+      // leaving the slot empty until something else happens to change.
+      if (loadingTimeoutRef.current) {
+        clearTimeout(loadingTimeoutRef.current)
+      }
+      isLoadingRef.current = false
+      setIsLoading(false)
+      return
+    }
 
     // Only load if we don't have this image already
     if (currentSongIdRef.current !== songId || !currentImageUrlRef.current) {
@@ -174,7 +257,7 @@ export function AlbumArtDisplay({
       // Just mark as stable if we already have the right image
       AlbumArtCache.markAsStable(songId)
     }
-  }, [songId, albumArt, isMounted, loadAlbumArt, cleanupCurrentImage, applyImageUrl])
+  }, [songId, albumArt, isMounted, isNearViewport, loadAlbumArt, cleanupCurrentImage, applyImageUrl])
 
   // Cleanup on unmount
   useEffect(() => {
@@ -223,8 +306,8 @@ export function AlbumArtDisplay({
   if (!isMounted) {
     // Return a simple placeholder during SSR
     return (
-      <div className={`${sizeClasses[size]} ${className}`}>
-        <div className="w-full h-full rounded-2xl bg-muted flex items-center justify-center">
+      <div ref={containerRef} className={`${sizeClasses[size]} ${className}`}>
+        <div className={`w-full h-full ${rounded} bg-muted flex items-center justify-center`}>
           {showFallback && <Music className="w-1/3 h-1/3 text-muted-foreground" />}
         </div>
       </div>
@@ -232,11 +315,11 @@ export function AlbumArtDisplay({
   }
 
   return (
-    <div className={`relative ${sizeClasses[size]} ${className}`} style={style}>
+    <div ref={containerRef} className={`relative ${sizeClasses[size]} ${className}`} style={style}>
       {/* Background/Fallback */}
       <div
         className={`
-          absolute inset-0 rounded-2xl flex items-center justify-center
+          absolute inset-0 ${rounded} flex items-center justify-center
           transition-opacity duration-200 ease-out
           ${currentImageUrl && !hasError ? "opacity-0" : "opacity-100"}
           ${showFallback ? "bg-muted" : "bg-transparent"}
@@ -252,7 +335,7 @@ export function AlbumArtDisplay({
           src={currentImageUrl || "/placeholder.svg"}
           alt={title}
           className={`
-            absolute inset-0 w-full h-full object-cover rounded-2xl
+            absolute inset-0 w-full h-full object-cover ${rounded}
             transition-all duration-200 ease-out
             ${isTransitioning ? "scale-95 opacity-80" : "scale-100 opacity-100"}
           `}
@@ -265,7 +348,7 @@ export function AlbumArtDisplay({
 
       {/* Loading Indicator - only show when actually loading */}
       {isLoading && !currentImageUrl && (
-        <div className="absolute inset-0 flex items-center justify-center bg-muted/20 rounded-2xl">
+        <div className={`absolute inset-0 flex items-center justify-center bg-muted/20 ${rounded}`}>
           <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />
         </div>
       )}
