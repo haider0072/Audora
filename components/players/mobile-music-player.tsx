@@ -30,6 +30,7 @@ import { OnlineSearchSidebar } from "@/components/dab/online-search-sidebar"
 
 import type { EqualizerBand } from "@/components/refined-equalizer"
 import { formatTime, waitForCanPlay } from "@/lib/utils"
+import { resetPlaybackTime } from "@/lib/playback-time-store"
 
 /** Auto-advance crossfade (song ends on its own). 0 = gapless, no overlap. */
 const CROSSFADE_AUTO_SECONDS = 0
@@ -71,7 +72,7 @@ export default function MobileMusicPlayer() {
   const [activeEqPresetId, setActiveEqPresetId] = useState<string | undefined>(undefined)
 
   const {
-    isPlaying, setIsPlaying, currentTime, setCurrentTime,
+    isPlaying, setIsPlaying,
     duration, setDuration, volume, setVolume, isMuted,
     filterNodes, audioContextRef, playPromiseRef, gainNodeRef,
     initializeAudioContext, play, pause, seek,
@@ -103,7 +104,7 @@ export default function MobileMusicPlayer() {
     onPlaylistReset: () => {
       pause()
       if (audioRef.current) audioRef.current.src = ""
-      setCurrentTime(0)
+      resetPlaybackTime()
       setDuration(0)
     },
   })
@@ -190,11 +191,6 @@ export default function MobileMusicPlayer() {
   })
 
   const { isInitialized, isRestoringPlaylist, restorePlaylist, savePlaylist } = usePlaylistPersistence()
-
-  // Calculate current time in milliseconds for lyrics sync
-  const currentTimeMs = useMemo(() => {
-    return Math.round(currentTime * 1000)
-  }, [currentTime])
 
   // Filtered songs for search
   const filteredSongs = useMemo(() => {
@@ -500,9 +496,15 @@ export default function MobileMusicPlayer() {
     if (prevSong) selectSong(prevSong, false)
   }
 
-  const handleSeek = (value: number[]) => {
+  const handleSeek = useCallback((value: number[]) => {
     seek(value[0])
-  }
+  }, [seek])
+
+  // Stable identity keeps the memo() on the playlist rows effective — see the
+  // matching note in the desktop player.
+  const handleSongSelect = useCallback((song: Song) => {
+    selectSong(song, false)
+  }, [selectSong])
 
 
 
@@ -516,7 +518,7 @@ export default function MobileMusicPlayer() {
         audioRef.current.pause()
         audioRef.current.currentTime = 0
         setIsPlaying(false)
-        setCurrentTime(0)
+        resetPlaybackTime()
       }
     },
     onVolumeAdjust: adjustVolume,
@@ -609,7 +611,7 @@ export default function MobileMusicPlayer() {
             groupedSongs={groupedSongs}
             currentSong={currentSong}
             viewMode={viewMode}
-            onSongSelect={(song) => selectSong(song, false)}
+            onSongSelect={handleSongSelect}
             onSongRemove={removeSong}
             onSongPlayNext={playNext}
             isLoading={isLoadingSongs || isRestoringPlaylist}
@@ -621,7 +623,6 @@ export default function MobileMusicPlayer() {
         <MobilePlayerBar
           currentSong={currentSong}
           isPlaying={isPlaying}
-          currentTime={currentTime}
           duration={duration}
           onPlayPause={togglePlayPause}
           onSkipPrevious={skipToPrevious}
@@ -662,7 +663,6 @@ export default function MobileMusicPlayer() {
           isOpen={showLyrics}
           onOpenChange={setShowLyrics}
           currentSong={currentSong}
-          currentTimeMs={currentTimeMs}
           isPlaying={isPlaying}
           forceRefresh={forceRefreshTrigger}
         />

@@ -35,6 +35,8 @@ import { AlbumArtCache } from "@/lib/album-art-cache"
 import { LoudnessAnalyzer } from "@/lib/loudness-analyzer"
 import { getAllPresets, type EqPreset } from "@/lib/eq-presets"
 import { formatTime, waitForCanPlay } from "@/lib/utils"
+import { resetPlaybackTime } from "@/lib/playback-time-store"
+import { usePlaybackTime } from "@/hooks/use-playback-time"
 import { AddMusicControls } from "@/components/add-music-control"
 import { FullscreenPlayer } from "@/components/fullscreen-player"
 
@@ -55,6 +57,39 @@ const ArtistInfoDisplay = lazy(() =>
 const CROSSFADE_AUTO_SECONDS = 0
 /** Manual track-change crossfade (Next/Prev/pick) — short & snappy. */
 const CROSSFADE_MANUAL_SECONDS = 0.4
+
+/**
+ * Seek bar, split out so that subscribing to the playback position re-renders
+ * this strip alone. Reading the position in the player component instead would
+ * put the whole tree below it — playlist included — back into the render path
+ * on every tick, which is what this store exists to prevent.
+ */
+function PlayerSeekBar({
+  duration,
+  onSeek,
+}: {
+  duration: number
+  onSeek: (value: number[]) => void
+}) {
+  const currentTime = usePlaybackTime()
+
+  return (
+    <div className="space-y-1">
+      <Slider
+        value={[currentTime]}
+        max={duration}
+        step={1}
+        onValueChange={onSeek}
+        className="w-full [&>span:first-child]:h-1.5 [&>span:first-child]:bg-white/10 [&>span:first-child]:backdrop-blur-md [&_[role=slider]]:h-3.5 [&_[role=slider]]:w-3.5"
+        aria-label="Seek position"
+      />
+      <div className="flex justify-between text-xs text-muted-foreground">
+        <span>{formatTime(currentTime)}</span>
+        <span>{formatTime(duration)}</span>
+      </div>
+    </div>
+  )
+}
 
 export default function EnhancedMusicPlayer() {
   const [currentBitrate, setCurrentBitrate] = useState<number | undefined>()
@@ -110,7 +145,7 @@ export default function EnhancedMusicPlayer() {
   const [activeEqPresetId, setActiveEqPresetId] = useState<string | undefined>(undefined)
 
   const {
-    isPlaying, setIsPlaying, currentTime, setCurrentTime,
+    isPlaying, setIsPlaying,
     duration, setDuration, volume, setVolume, isMuted,
     filterNodes, audioContextRef, playPromiseRef, gainNodeRef,
     initializeAudioContext, play, pause, seek,
@@ -142,7 +177,7 @@ export default function EnhancedMusicPlayer() {
     onPlaylistReset: () => {
       pause()
       if (audioRef.current) audioRef.current.src = ""
-      setCurrentTime(0)
+      resetPlaybackTime()
       setDuration(0)
     },
   })
@@ -471,16 +506,21 @@ export default function EnhancedMusicPlayer() {
     if (prevSong) selectSong(prevSong, false)
   }
 
-  const handleSeek = (value: number[]) => {
+  const handleSeek = useCallback((value: number[]) => {
     seek(value[0])
-  }
+  }, [seek])
+
+  // Stable identity matters: an inline arrow here changes on every render and
+  // defeats the memo() on every playlist row, which is the whole reason the
+  // rows were re-rendering in bulk.
+  const handleSongSelect = useCallback((song: Song) => {
+    selectSong(song, false)
+  }, [selectSong])
 
   const formatBitrate = (bitrate?: number) => {
     if (!bitrate) return "Unknown"
     return bitrate >= 1000 ? `${(bitrate / 1000).toFixed(1)}M` : `${Math.round(bitrate)}k`
   }
-
-  const currentTimeMs = useMemo(() => Math.round(currentTime * 1000), [currentTime])
 
   useMediaControls({
     currentSong, isPlaying, songs, audioRef,
@@ -492,7 +532,7 @@ export default function EnhancedMusicPlayer() {
         audioRef.current.pause()
         audioRef.current.currentTime = 0
         setIsPlaying(false)
-        setCurrentTime(0)
+        resetPlaybackTime()
       }
     },
     onVolumeAdjust: adjustVolume,
@@ -670,7 +710,6 @@ export default function EnhancedMusicPlayer() {
                   isVisible={true}
                   onClose={() => setActiveView("player")}
                   currentSong={currentSong}
-                  currentTimeMs={currentTime * 1000}
                   forceRefresh={forceRefreshTrigger}
                 />
               </Suspense>
@@ -758,22 +797,7 @@ export default function EnhancedMusicPlayer() {
                     {/* Controls — right after song info, not pushed to bottom */}
                     <div className="flex-shrink-0 space-y-2">
                       {/* Seek bar */}
-                      {duration > 0 && (
-                        <div className="space-y-1">
-                          <Slider
-                            value={[currentTime]}
-                            max={duration}
-                            step={1}
-                            onValueChange={handleSeek}
-                            className="w-full [&>span:first-child]:h-1.5 [&>span:first-child]:bg-white/10 [&>span:first-child]:backdrop-blur-md [&_[role=slider]]:h-3.5 [&_[role=slider]]:w-3.5"
-                            aria-label="Seek position"
-                          />
-                          <div className="flex justify-between text-xs text-muted-foreground">
-                            <span>{formatTime(currentTime)}</span>
-                            <span>{formatTime(duration)}</span>
-                          </div>
-                        </div>
-                      )}
+                      {duration > 0 && <PlayerSeekBar duration={duration} onSeek={handleSeek} />}
 
                       {/* Transport: shuffle, prev, play, next */}
                       <div className="flex items-center justify-center gap-6">
@@ -863,7 +887,7 @@ export default function EnhancedMusicPlayer() {
             <EnhancedPlaylist
               songs={songs}
               currentSong={currentSong}
-              onSongSelect={(song) => selectSong(song, false)}
+              onSongSelect={handleSongSelect}
               onSongRemove={removeSong}
               onSongPlayNext={playNext}
               isLoading={isLoadingSongs || isRestoringPlaylist}
@@ -886,7 +910,6 @@ export default function EnhancedMusicPlayer() {
         onClose={() => setIsFullscreen(false)}
         currentSong={currentSong}
         isPlaying={isPlaying}
-        currentTime={currentTime}
         duration={duration}
         volume={volume}
         isMuted={isMuted}
@@ -903,7 +926,7 @@ export default function EnhancedMusicPlayer() {
         onVolumeChange={changeVolume}
         onToggleMute={toggleMute}
         onToggleShuffle={toggleShuffle}
-        onSongSelect={(song) => selectSong(song, false)}
+        onSongSelect={handleSongSelect}
         onSongRemove={removeSong}
         onSongPlayNext={playNext}
         onShowEqualizer={() => setShowEqualizer(true)}

@@ -6,18 +6,18 @@ import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { LyricsService, type LyricsData } from "@/lib/lyrics-service"
 import { Loader2, Mic, X, RefreshCw } from "lucide-react"
+import { usePlaybackTime } from "@/hooks/use-playback-time"
 import type { Song } from "@/components/enhanced-playlist"
 
 interface MobileLyricsDisplayProps {
   isOpen: boolean
   onOpenChange: (isOpen: boolean) => void
   currentSong: Song | null
-  currentTimeMs: number
   isPlaying: boolean
   forceRefresh?: number
 }
 
-export function MobileLyricsDisplay({ isOpen, onOpenChange, currentSong, currentTimeMs, forceRefresh }: MobileLyricsDisplayProps) {
+export function MobileLyricsDisplay({ isOpen, onOpenChange, currentSong, forceRefresh }: MobileLyricsDisplayProps) {
   const [lyricsData, setLyricsData] = useState<LyricsData | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -25,7 +25,8 @@ export function MobileLyricsDisplay({ isOpen, onOpenChange, currentSong, current
 
   const scrollAreaRef = useRef<HTMLDivElement>(null)
   const activeLineRef = useRef<HTMLParagraphElement>(null)
-  const currentTimeInSeconds = currentTimeMs / 1000
+  // See LyricsDisplay: subscribed here so the position never travels as a prop.
+  const currentTimeInSeconds = usePlaybackTime()
 
   const fetchLyricsForSong = async (song: Song) => {
     if (!song || !song.artist || !song.title || !song.duration) {

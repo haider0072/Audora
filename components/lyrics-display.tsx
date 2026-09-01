@@ -6,13 +6,13 @@ import { useState, useEffect, useRef, memo } from "react"
 import { Button } from "@/components/ui/button"
 import { LyricsService, type LyricsData, type LyricLine } from "@/lib/lyrics-service"
 import { Loader2, Mic, X, RefreshCw } from "lucide-react"
+import { usePlaybackTime } from "@/hooks/use-playback-time"
 import type { Song } from "./enhanced-playlist"
 
 interface LyricsDisplayProps {
   isVisible: boolean
   onClose: () => void
   currentSong: Song | null
-  currentTimeMs: number
   forceRefresh?: number
 }
 
@@ -48,7 +48,7 @@ const MemoizedLyricLine = memo(
 )
 MemoizedLyricLine.displayName = "MemoizedLyricLine"
 
-export function LyricsDisplay({ isVisible, onClose, currentSong, currentTimeMs, forceRefresh }: LyricsDisplayProps) {
+export function LyricsDisplay({ isVisible, onClose, currentSong, forceRefresh }: LyricsDisplayProps) {
   const [lyricsData, setLyricsData] = useState<LyricsData | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -56,7 +56,10 @@ export function LyricsDisplay({ isVisible, onClose, currentSong, currentTimeMs, 
 
   const activeLineRef = useRef<HTMLParagraphElement>(null)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
-  const currentTimeInSeconds = currentTimeMs / 1000
+  // Subscribed here rather than passed down: line highlighting needs every
+  // position tick, and taking it as a prop would force the whole player tree to
+  // re-render at that rate just to hand it over.
+  const currentTimeInSeconds = usePlaybackTime()
 
   const fetchLyricsForSong = async (song: Song) => {
     if (!song || !song.artist || !song.title || !song.duration) {
