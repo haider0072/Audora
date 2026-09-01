@@ -280,6 +280,30 @@ export class AlbumArtCache {
     }
   }
 
+  /**
+   * Drop an entry whose URL no longer resolves, regardless of refCount.
+   *
+   * `removeCachedAlbumArt` deliberately refuses while something still holds a
+   * reference, which is exactly the situation when a displayed image fails to
+   * load: the component holding the reference is the one that just discovered
+   * the URL is dead. Without an unconditional path the cache keeps handing the
+   * same unreachable URL back to every later lookup.
+   */
+  static invalidateCachedAlbumArt(songId: string): void {
+    if (!this.isBrowser()) return
+
+    const cached = this.cache.get(songId)
+    if (!cached) return
+
+    try {
+      URL.revokeObjectURL(cached.url)
+    } catch (error) {
+      console.error("Error revoking URL:", error)
+    }
+    this.cache.delete(songId)
+    this.loadingPromises.delete(songId)
+  }
+
   // Remove specific song from cache (only if not in use)
   static removeCachedAlbumArt(songId: string): void {
     if (!this.isBrowser()) return

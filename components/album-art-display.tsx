@@ -34,6 +34,19 @@ export function AlbumArtDisplay({
   const loadingTimeoutRef = useRef<NodeJS.Timeout | undefined>(undefined)
   const imageRef = useRef<HTMLImageElement>(null)
   const isLoadingRef = useRef(false) // Prevent concurrent loading
+  // Mirror of currentImageUrl. The loader reads it through this ref rather than
+  // closing over the state so that its identity stays stable — see the note on
+  // the load effect below.
+  const currentImageUrlRef = useRef<string | null>(null)
+  // URL that already failed for the current song. Asking for it again fails
+  // identically, so the fallback stands until the song or its art changes.
+  const failedUrlRef = useRef<string | null>(null)
+
+  /** Keep the ref mirror in step with the state it shadows. */
+  const applyImageUrl = useCallback((url: string | null) => {
+    currentImageUrlRef.current = url
+    setCurrentImageUrl(url)
+  }, [])
 
   const sizeClasses = {
     small: "w-12 h-12",
@@ -48,7 +61,7 @@ export function AlbumArtDisplay({
     if (songId && albumArt) {
       const cachedUrl = AlbumArtCache.getCachedAlbumArt(songId)
       if (cachedUrl) {
-        setCurrentImageUrl(cachedUrl)
+        applyImageUrl(cachedUrl)
         currentSongIdRef.current = songId
         AlbumArtCache.markAsStable(songId)
       }
@@ -69,7 +82,7 @@ export function AlbumArtDisplay({
       if (isLoadingRef.current) return
 
       // Don't reload if it's the same song and we already have a URL
-      if (currentSongIdRef.current === targetSongId && currentImageUrl && !hasError) {
+      if (currentSongIdRef.current === targetSongId && currentImageUrlRef.current) {
         AlbumArtCache.markAsStable(targetSongId)
         return
       }
@@ -82,7 +95,7 @@ export function AlbumArtDisplay({
       }
 
       // Only show loading for new images, not when switching between existing ones
-      if (!currentImageUrl || currentSongIdRef.current !== targetSongId) {
+      if (!currentImageUrlRef.current || currentSongIdRef.current !== targetSongId) {
         setIsLoading(true)
       }
       setHasError(false)
@@ -96,12 +109,19 @@ export function AlbumArtDisplay({
           cachedUrl = await AlbumArtCache.preloadAlbumArt(targetSongId, targetAlbumArt)
         }
 
+        // A URL that already failed for this song will fail again. Settling on
+        // the fallback is the terminal state until the song or its art changes.
+        if (cachedUrl && cachedUrl === failedUrlRef.current) {
+          setHasError(true)
+          return
+        }
+
         // Only update if this is still the target song (prevent race conditions)
         if (cachedUrl && targetSongId === songId) {
           // Release previous reference
           cleanupCurrentImage()
 
-          setCurrentImageUrl(cachedUrl)
+          applyImageUrl(cachedUrl)
           currentSongIdRef.current = targetSongId
 
           // Mark as stable since it's being displayed
@@ -120,29 +140,41 @@ export function AlbumArtDisplay({
         }, 100)
       }
     },
-    [songId, currentImageUrl, hasError, cleanupCurrentImage],
+    [songId, cleanupCurrentImage, applyImageUrl],
   )
 
-  // Main effect for loading album art - only trigger when necessary
+  /**
+   * Load whenever the song or its art changes — and only then.
+   *
+   * `hasError` and `currentImageUrl` are deliberately absent from the
+   * dependencies. While they were listed, a failing <img> set `hasError`, which
+   * re-armed this effect, which cleared `hasError` and asked the cache for the
+   * same unreachable URL, which failed again: a retry loop that ran for as long
+   * as the window stayed open. A failure is now terminal for that URL.
+   */
   useEffect(() => {
     if (!isMounted || !songId || !albumArt) {
       cleanupCurrentImage()
-      setCurrentImageUrl(null)
+      applyImageUrl(null)
       setHasError(false)
       setIsLoading(false)
       currentSongIdRef.current = undefined
+      failedUrlRef.current = null
       isLoadingRef.current = false
       return
     }
 
+    // A new song (or new art for the same one) deserves a fresh attempt.
+    failedUrlRef.current = null
+
     // Only load if we don't have this image already
-    if (currentSongIdRef.current !== songId || !currentImageUrl || hasError) {
+    if (currentSongIdRef.current !== songId || !currentImageUrlRef.current) {
       loadAlbumArt(songId, albumArt)
     } else {
       // Just mark as stable if we already have the right image
       AlbumArtCache.markAsStable(songId)
     }
-  }, [songId, albumArt, isMounted, loadAlbumArt, currentImageUrl, hasError])
+  }, [songId, albumArt, isMounted, loadAlbumArt, cleanupCurrentImage, applyImageUrl])
 
   // Cleanup on unmount
   useEffect(() => {
@@ -155,9 +187,21 @@ export function AlbumArtDisplay({
     }
   }, [cleanupCurrentImage])
 
-  // Handle image load errors
+  /**
+   * Settle on the fallback and remember the URL that failed, so nothing asks
+   * for it again while this song is displayed.
+   *
+   * The cache entry goes too: it is what handed this URL over, and it would
+   * keep handing it to every later lookup. `removeCachedAlbumArt` will not do
+   * it here — this component still holds the reference it is reporting on —
+   * hence the unconditional invalidation.
+   */
   const handleImageError = useCallback(() => {
     console.warn(`Failed to load album art for song: ${songId}`)
+    failedUrlRef.current = currentImageUrlRef.current
+    if (songId) {
+      AlbumArtCache.invalidateCachedAlbumArt(songId)
+    }
     setHasError(true)
     setIsLoading(false)
     isLoadingRef.current = false
@@ -165,6 +209,7 @@ export function AlbumArtDisplay({
 
   // Handle image load success
   const handleImageLoad = useCallback(() => {
+    failedUrlRef.current = null
     setHasError(false)
     setIsLoading(false)
     isLoadingRef.current = false
