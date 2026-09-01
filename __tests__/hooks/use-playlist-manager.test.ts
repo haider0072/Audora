@@ -35,6 +35,20 @@ function makeSong(overrides: Partial<Song> = {}): Song {
   } as Song
 }
 
+/**
+ * Songs in a deliberately jumbled upload order. Grouped view renders them as
+ * artist -> album year -> track number, i.e.
+ * alpha-early-1, alpha-early-2, alpha-later-1, beta-1.
+ */
+function groupedViewSongs(): Song[] {
+  return [
+    makeSong({ id: 'beta-1', artist: 'Beta', album: 'Solo', year: '2005', trackNumber: '1' }),
+    makeSong({ id: 'alpha-later-1', artist: 'Alpha', album: 'Later', year: '2010', trackNumber: '1' }),
+    makeSong({ id: 'alpha-early-2', artist: 'Alpha', album: 'Early', year: '2001', trackNumber: '2' }),
+    makeSong({ id: 'alpha-early-1', artist: 'Alpha', album: 'Early', year: '2001', trackNumber: '1' }),
+  ]
+}
+
 describe('usePlaylistManager', () => {
   beforeEach(() => {
     jest.clearAllMocks()
@@ -145,6 +159,36 @@ describe('usePlaylistManager', () => {
       const { result } = renderHook(() => usePlaylistManager())
       expect(result.current.getNextSong()).toBeNull()
     })
+
+    it('follows the on-screen order in grouped view, not upload order', () => {
+      const { result } = renderHook(() => usePlaylistManager())
+      // Uploaded jumbled; grouped view renders these as
+      // Alpha/Early #1, Alpha/Early #2, Alpha/Later #1, Beta/Solo #1
+      const songs = groupedViewSongs()
+
+      act(() => {
+        result.current.setSongs(songs)
+        result.current.setCurrentSong(songs[3]) // Alpha / Early / track 1
+      })
+
+      expect(result.current.getNextSong()?.id).toBe('alpha-early-2')
+
+      act(() => { result.current.setCurrentSong(songs[2]) }) // Alpha / Early / track 2
+
+      expect(result.current.getNextSong()?.id).toBe('alpha-later-1')
+    })
+
+    it('wraps from the last on-screen song to the first in grouped view', () => {
+      const { result } = renderHook(() => usePlaylistManager())
+      const songs = groupedViewSongs()
+
+      act(() => {
+        result.current.setSongs(songs)
+        result.current.setCurrentSong(songs[0]) // Beta / Solo — last on screen
+      })
+
+      expect(result.current.getNextSong()?.id).toBe('alpha-early-1')
+    })
   })
 
   describe('getPreviousSong — sequential mode', () => {
@@ -165,6 +209,18 @@ describe('usePlaylistManager', () => {
     it('returns null for empty playlist', () => {
       const { result } = renderHook(() => usePlaylistManager())
       expect(result.current.getPreviousSong()).toBeNull()
+    })
+
+    it('follows the on-screen order in grouped view, not upload order', () => {
+      const { result } = renderHook(() => usePlaylistManager())
+      const songs = groupedViewSongs()
+
+      act(() => {
+        result.current.setSongs(songs)
+        result.current.setCurrentSong(songs[1]) // Alpha / Later / track 1
+      })
+
+      expect(result.current.getPreviousSong()?.id).toBe('alpha-early-2')
     })
   })
 
@@ -242,13 +298,13 @@ describe('usePlaylistManager', () => {
   })
 
   describe('getCurrentPlaylist', () => {
-    it('returns songs in grouped mode (insertion order)', () => {
+    it('returns sorted songs in grouped mode, not insertion order', () => {
       const { result } = renderHook(() => usePlaylistManager())
       const songs = [makeSong({ id: 'b' }), makeSong({ id: 'a' })]
 
       act(() => { result.current.setSongs(songs) })
 
-      expect(result.current.getCurrentPlaylist().map(s => s.id)).toEqual(['b', 'a'])
+      expect(result.current.getCurrentPlaylist().map(s => s.id)).toEqual(['a', 'b'])
     })
 
     it('returns sorted songs in list mode', () => {
