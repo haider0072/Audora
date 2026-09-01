@@ -2,6 +2,7 @@ import { useRef, useState, useCallback, useEffect } from "react"
 import type { EqualizerBand } from "@/components/refined-equalizer"
 import { PEAKING_Q } from "@/hooks/use-equalizer-manager"
 import { cancelRamps, dbToGain, rampToValue, volumeToGain } from "@/lib/audio-params"
+import { setPlaybackTime } from "@/lib/playback-time-store"
 import { waitForCanPlay } from "@/lib/utils"
 
 export interface UseAudioEngineOptions {
@@ -41,7 +42,6 @@ export interface UseAudioEngineReturn {
 
   // State
   isPlaying: boolean
-  currentTime: number
   duration: number
   volume: number[]
   isMuted: boolean
@@ -49,7 +49,6 @@ export interface UseAudioEngineReturn {
 
   // Actions
   setIsPlaying: (playing: boolean) => void
-  setCurrentTime: (time: number) => void
   setDuration: (duration: number) => void
   setVolume: (volume: number[]) => void
   setIsMuted: (muted: boolean) => void
@@ -163,7 +162,9 @@ export function useAudioEngine(options: UseAudioEngineOptions): UseAudioEngineRe
 
   // State
   const [isPlaying, setIsPlaying] = useState(false)
-  const [currentTime, setCurrentTime] = useState(0)
+  // Playback position deliberately does NOT live here — it changes ~4x/sec and
+  // would re-render every consumer of this hook along with it. See
+  // `lib/playback-time-store` and read it with `usePlaybackTime`.
   const [duration, setDuration] = useState(0)
   const [volume, setVolume] = useState([80])
   const [isMuted, setIsMuted] = useState(false)
@@ -869,7 +870,7 @@ export function useAudioEngine(options: UseAudioEngineOptions): UseAudioEngineRe
       if (!isActive) return
 
       const time = audio.currentTime
-      setCurrentTime(time)
+      setPlaybackTime(time)
       onTimeUpdate?.(time)
 
       if (!(audio.duration > 0)) return
@@ -964,7 +965,6 @@ export function useAudioEngine(options: UseAudioEngineOptions): UseAudioEngineRe
 
     // State
     isPlaying,
-    currentTime,
     duration,
     volume,
     isMuted,
@@ -972,7 +972,6 @@ export function useAudioEngine(options: UseAudioEngineOptions): UseAudioEngineRe
 
     // Actions
     setIsPlaying,
-    setCurrentTime,
     setDuration,
     setVolume,
     setIsMuted,

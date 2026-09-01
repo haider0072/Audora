@@ -11,14 +11,43 @@ import { AlbumArtDisplay } from "./album-art-display"
 import { AlbumArtBackground } from "./album-art-background"
 import { EnhancedPlaylist, type Song } from "./enhanced-playlist"
 import { formatTime } from "@/lib/utils"
+import { usePlaybackTime } from "@/hooks/use-playback-time"
 import { useState, useEffect, useLayoutEffect, useCallback, useRef } from "react"
+
+/**
+ * Seek row, split out so that subscribing to the playback position re-renders
+ * this strip alone rather than the entire fullscreen player around it.
+ */
+function FullscreenSeekBar({
+  duration,
+  onSeek,
+}: {
+  duration: number
+  onSeek: (value: number[]) => void
+}) {
+  const currentTime = usePlaybackTime()
+
+  return (
+    <div className="flex items-center gap-2 w-full">
+      <span className="text-[11px] text-white/40 w-10 text-right tabular-nums">{formatTime(currentTime)}</span>
+      <Slider
+        value={[currentTime]}
+        max={duration || 1}
+        step={1}
+        onValueChange={onSeek}
+        className="flex-1 [&>span:first-child]:h-1 [&_[role=slider]]:h-3 [&_[role=slider]]:w-3 [&_[role=slider]]:opacity-0 [&_[role=slider]]:transition-all [&_[role=slider]]:duration-200 hover:[&_[role=slider]]:opacity-100"
+        aria-label="Seek"
+      />
+      <span className="text-[11px] text-white/40 w-10 tabular-nums">{formatTime(duration)}</span>
+    </div>
+  )
+}
 
 interface FullscreenPlayerProps {
   isOpen: boolean
   onClose: () => void
   currentSong: Song | null
   isPlaying: boolean
-  currentTime: number
   duration: number
   volume: number[]
   isMuted: boolean
@@ -51,7 +80,6 @@ export function FullscreenPlayer({
   onClose,
   currentSong,
   isPlaying,
-  currentTime,
   duration,
   volume,
   isMuted,
@@ -341,18 +369,7 @@ export function FullscreenPlayer({
             <div className="w-7" /> {/* spacer to balance shuffle */}
           </div>
           {/* Seekbar */}
-          <div className="flex items-center gap-2 w-full">
-            <span className="text-[11px] text-white/40 w-10 text-right tabular-nums">{formatTime(currentTime)}</span>
-            <Slider
-              value={[currentTime]}
-              max={duration || 1}
-              step={1}
-              onValueChange={onSeek}
-              className="flex-1 [&>span:first-child]:h-1 [&_[role=slider]]:h-3 [&_[role=slider]]:w-3 [&_[role=slider]]:opacity-0 [&_[role=slider]]:transition-all [&_[role=slider]]:duration-200 hover:[&_[role=slider]]:opacity-100"
-              aria-label="Seek"
-            />
-            <span className="text-[11px] text-white/40 w-10 tabular-nums">{formatTime(duration)}</span>
-          </div>
+          <FullscreenSeekBar duration={duration} onSeek={onSeek} />
         </div>
 
         {/* Right: Utility buttons + Volume */}

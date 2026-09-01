@@ -6,6 +6,40 @@ import { Slider } from "@/components/ui/slider"
 import { Badge } from "@/components/ui/badge"
 import { Play, Pause, SkipBack, SkipForward, Settings, Mic, Share2, Music, Volume2, VolumeX, Youtube, Sparkles, User } from "lucide-react"
 import { formatTime } from "@/lib/utils"
+import { usePlaybackTime } from "@/hooks/use-playback-time"
+
+/**
+ * Progress strip, split out so the position subscription re-renders this alone
+ * instead of the whole player bar and its controls.
+ */
+function MobileProgressBar({
+  duration,
+  onSeek,
+  isTransitioning,
+}: {
+  duration: number
+  onSeek: (value: number[]) => void
+  isTransitioning?: boolean
+}) {
+  const currentTime = usePlaybackTime()
+
+  return (
+    <div className="px-4 pt-2">
+      <Slider
+        value={[currentTime]}
+        max={duration || 100}
+        step={1}
+        onValueChange={onSeek}
+        className="w-full h-1"
+        disabled={!duration || isTransitioning}
+      />
+      <div className="flex justify-between text-xs text-muted-foreground mt-1">
+        <span>{formatTime(currentTime)}</span>
+        <span>{formatTime(duration)}</span>
+      </div>
+    </div>
+  )
+}
 
 interface Song {
   id: string
@@ -21,7 +55,6 @@ interface Song {
 interface MobilePlayerBarProps {
   currentSong: Song | null
   isPlaying: boolean
-  currentTime: number
   duration: number
   onPlayPause: () => void
   onSkipPrevious: () => void
@@ -39,7 +72,6 @@ interface MobilePlayerBarProps {
 export function MobilePlayerBar({
   currentSong,
   isPlaying,
-  currentTime,
   duration,
   onPlayPause,
   onSkipPrevious,
@@ -95,20 +127,7 @@ export function MobilePlayerBar({
   return (
     <div className="fixed bottom-0 left-0 right-0 bg-background/95 backdrop-blur-md border-t border-border safe-area-pb">
       {/* Progress Bar */}
-      <div className="px-4 pt-2">
-        <Slider
-          value={[currentTime]}
-          max={duration || 100}
-          step={1}
-          onValueChange={onSeek}
-          className="w-full h-1"
-          disabled={!duration || isTransitioning}
-        />
-        <div className="flex justify-between text-xs text-muted-foreground mt-1">
-          <span>{formatTime(currentTime)}</span>
-          <span>{formatTime(duration)}</span>
-        </div>
-      </div>
+      <MobileProgressBar duration={duration} onSeek={onSeek} isTransitioning={isTransitioning} />
 
       {/* Main Player Controls */}
       <div className="px-4 py-3">
