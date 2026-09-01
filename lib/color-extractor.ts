@@ -6,7 +6,10 @@ export class ColorExtractor {
   private static initCanvas() {
     if (!this.canvas && typeof window !== "undefined") {
       this.canvas = document.createElement("canvas")
-      this.ctx = this.canvas.getContext("2d")
+      // This canvas exists purely to be read back from — one getImageData per
+      // track change. Without the hint the browser keeps it on the GPU and each
+      // read costs a readback, which it warns about after a few tracks.
+      this.ctx = this.canvas.getContext("2d", { willReadFrequently: true })
     }
   }
 
