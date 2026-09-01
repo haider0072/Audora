@@ -120,12 +120,16 @@ export function usePlaylistManager(options: UsePlaylistManagerOptions = {}): Use
   }, [songs])
 
   /**
-   * Get the current playlist based on view mode
+   * The playback order — always the order the user is looking at.
+   *
+   * Both views render the same sequence: list view maps `sortedSongs` directly,
+   * and grouped view rebuilds it as artist -> album year -> track number, which
+   * is what `sortedSongs` already sorts by. Grouped view used to fall back to
+   * the raw `songs` array (upload order), so next/previous stepped through a
+   * sequence that had nothing to do with the screen and read as stuck-on
+   * shuffle.
    */
-  const getCurrentPlaylist = useCallback(
-    () => (viewMode === "list" ? sortedSongs : songs),
-    [viewMode, sortedSongs, songs]
-  )
+  const getCurrentPlaylist = useCallback(() => sortedSongs, [sortedSongs])
 
   /**
    * Generate a shuffled queue excluding the current song
