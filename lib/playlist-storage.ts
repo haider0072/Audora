@@ -396,8 +396,15 @@ export class PlaylistStorage {
     }
   }
 
-  // Retrieve album art and create a new blob URL
-  static async getAlbumArt(songId: string): Promise<string | null> {
+  /**
+   * Retrieve the stored album art bytes.
+   *
+   * Prefer this over `getAlbumArt` — handing back the blob lets the caller
+   * decide whether an object URL is warranted, and lets it record the real byte
+   * size. `getAlbumArt` creates a URL whether or not anything displays it, and
+   * a URL nobody revokes keeps its blob in memory for the life of the page.
+   */
+  static async getAlbumArtBlob(songId: string): Promise<Blob | null> {
     try {
       const db = await this.initDB()
       const transaction = db.transaction([this.STORE_NAME], "readonly")
@@ -409,13 +416,13 @@ export class PlaylistStorage {
       if (!pointer) return null
 
       // Records written before content addressing hold their bytes inline.
-      if (pointer.blob) return URL.createObjectURL(pointer.blob)
+      if (pointer.blob) return pointer.blob
       if (!pointer.artHash) return null
 
       const shared = (await promisify(store.get(artBlobKey(pointer.artHash)))) as
         | ArtBlobRecord
         | undefined
-      return shared?.blob ? URL.createObjectURL(shared.blob) : null
+      return shared?.blob ?? null
     } catch (error) {
       console.error("Error retrieving album art:", error)
       return null

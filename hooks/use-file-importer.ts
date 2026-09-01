@@ -2,7 +2,7 @@ import { useState, useRef, useCallback } from "react"
 import { toast } from "@/hooks/use-toast"
 import { MetadataExtractor } from "@/lib/metadata-extractor"
 import { PlaylistStorage } from "@/lib/playlist-storage"
-import { AlbumArtCache } from "@/lib/album-art-cache"
+import { storedArtRef } from "@/lib/album-art-ref"
 import { StorageFullError } from "@/lib/storage-quota"
 import type { Song } from "@/components/enhanced-playlist"
 
@@ -127,7 +127,13 @@ export function useFileImporter(options: UseFileImporterOptions): UseFileImporte
 
             if (metadata.albumArt) {
               await PlaylistStorage.storeAlbumArt(songId, metadata.albumArt)
-              await AlbumArtCache.preloadAlbumArt(songId, metadata.albumArt)
+              // The extractor's object URL was only a vehicle for the bytes.
+              // The song keeps a reference instead, so an import of a thousand
+              // files leaves a thousand references behind rather than a
+              // thousand live URLs, each pinning its blob.
+              song.albumArt = storedArtRef(songId)
+              URL.revokeObjectURL(metadata.albumArt)
+              albumArtUrl = undefined
             }
 
             return song

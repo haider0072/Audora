@@ -1,4 +1,17 @@
 import { AlbumArtCache } from '@/lib/album-art-cache'
+import { PlaylistStorage } from '@/lib/playlist-storage'
+import { storedArtRef } from '@/lib/album-art-ref'
+
+jest.mock('@/lib/playlist-storage', () => ({
+  PlaylistStorage: { getAlbumArtBlob: jest.fn() },
+}))
+
+const storage = PlaylistStorage as jest.Mocked<typeof PlaylistStorage>
+
+/** Only `size` is read off the blob, so there is no point allocating bytes. */
+function blobOfSize(size: number): Blob {
+  return { size } as Blob
+}
 
 // jsdom ships neither of these; the cache calls both.
 beforeAll(() => {
@@ -51,6 +64,81 @@ describe('AlbumArtCache', () => {
 
       expect(AlbumArtCache.getCachedAlbumArt('song-1')).toBeNull()
       expect(AlbumArtCache.getCachedAlbumArt('song-2')).toBe('blob:two')
+    })
+  })
+
+  describe('stored art references', () => {
+    it('resolves a reference into a URL only when asked', async () => {
+      storage.getAlbumArtBlob.mockResolvedValue(blobOfSize(1234))
+
+      const url = await AlbumArtCache.preloadAlbumArt('song-1', storedArtRef('song-1'))
+
+      expect(storage.getAlbumArtBlob).toHaveBeenCalledWith('song-1')
+      expect(url).toBe('blob:created')
+    })
+
+    it('records the real byte size, which is what the size cap acts on', async () => {
+      storage.getAlbumArtBlob.mockResolvedValue(blobOfSize(4096))
+
+      await AlbumArtCache.preloadAlbumArt('song-1', storedArtRef('song-1'))
+
+      expect(AlbumArtCache.getCacheStats().totalSize).toBe(4096)
+    })
+
+    it('reports nothing for a song with no stored art', async () => {
+      storage.getAlbumArtBlob.mockResolvedValue(null)
+
+      const url = await AlbumArtCache.preloadAlbumArt('song-1', storedArtRef('song-1'))
+
+      expect(url).toBeNull()
+    })
+  })
+
+  describe('warmAlbumArt', () => {
+    it('does not hold a reference — nothing displays a warmed entry', async () => {
+      storage.getAlbumArtBlob.mockResolvedValue(blobOfSize(10))
+
+      await AlbumArtCache.warmAlbumArt('song-1', storedArtRef('song-1'))
+      // Only an entry nobody references can be removed, so this succeeding is
+      // the observable proof that warming left refCount at zero. A pinned
+      // entry is one the caps can never evict.
+      AlbumArtCache.removeCachedAlbumArt('song-1')
+
+      expect(AlbumArtCache.getCacheStats().entryCount).toBe(0)
+    })
+
+    it('still caches what it warmed', async () => {
+      storage.getAlbumArtBlob.mockResolvedValue(blobOfSize(10))
+
+      await AlbumArtCache.warmAlbumArt('song-1', storedArtRef('song-1'))
+
+      expect(AlbumArtCache.getCacheStats().entryCount).toBe(1)
+    })
+  })
+
+  describe('size cap', () => {
+    it('evicts unreferenced entries once the byte budget is exceeded', async () => {
+      // 100MB is the cap; three 40MB entries cannot all stay.
+      const fortyMB = 40 * 1024 * 1024
+      storage.getAlbumArtBlob.mockResolvedValue(blobOfSize(fortyMB))
+
+      await AlbumArtCache.warmAlbumArt('song-1', storedArtRef('song-1'))
+      await AlbumArtCache.warmAlbumArt('song-2', storedArtRef('song-2'))
+      await AlbumArtCache.warmAlbumArt('song-3', storedArtRef('song-3'))
+
+      expect(AlbumArtCache.getCacheStats().totalSize).toBeLessThanOrEqual(100 * 1024 * 1024)
+    })
+
+    it('keeps entries that are still referenced', async () => {
+      const fortyMB = 40 * 1024 * 1024
+      storage.getAlbumArtBlob.mockResolvedValue(blobOfSize(fortyMB))
+
+      // preload, not warm: these are being displayed.
+      await AlbumArtCache.preloadAlbumArt('song-1', storedArtRef('song-1'))
+      await AlbumArtCache.preloadAlbumArt('song-2', storedArtRef('song-2'))
+      await AlbumArtCache.preloadAlbumArt('song-3', storedArtRef('song-3'))
+
+      expect(AlbumArtCache.getCacheStats().entryCount).toBe(3)
     })
   })
 

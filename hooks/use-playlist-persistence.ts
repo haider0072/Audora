@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react"
 import { toast } from "@/hooks/use-toast"
 import { StorageManager } from "@/lib/storage"
 import { PlaylistStorage } from "@/lib/playlist-storage"
-import { AlbumArtCache } from "@/lib/album-art-cache"
+import { isStoredArtRef, storedArtRef } from "@/lib/album-art-ref"
 import { requestPersistentStorage, formatBytes } from "@/lib/storage-quota"
 import type { Song } from "@/components/enhanced-playlist"
 import type { EqualizerBand } from "@/components/refined-equalizer"
@@ -147,16 +147,20 @@ export function usePlaylistPersistence(
                 const file = await PlaylistStorage.getSongFile(songMetadata.id)
                 if (!file) return null
 
+                // Art is referenced, never resolved, here. Restore used to read
+                // every song's art out of IndexedDB and mint an object URL for
+                // it — one per song in the library, each pinning its blob for
+                // the life of the page, for art that mostly never appears on
+                // screen. A reference costs nothing and is resolved by whatever
+                // is about to display it.
+                //
+                // A stored `blob:` URL is a leftover from that era: it was dead
+                // the moment the page it belonged to went away, and only ever
+                // meant "this song has art".
                 let albumArt = songMetadata.albumArt
 
-                if (songMetadata.albumArt && songMetadata.albumArt.startsWith("blob:")) {
-                  const restoredAlbumArt = await PlaylistStorage.getAlbumArt(songMetadata.id)
-                  if (restoredAlbumArt) {
-                    albumArt = restoredAlbumArt
-                    await AlbumArtCache.preloadAlbumArt(songMetadata.id, restoredAlbumArt)
-                  } else {
-                    albumArt = undefined
-                  }
+                if (albumArt && (albumArt.startsWith("blob:") || isStoredArtRef(albumArt))) {
+                  albumArt = storedArtRef(songMetadata.id)
                 }
 
                 const artist =
