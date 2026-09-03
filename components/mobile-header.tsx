@@ -1,16 +1,26 @@
 "use client"
 import { Button } from "@/components/ui/button"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
-import { Music, Plus, FolderOpen, Upload } from "lucide-react"
+import { Music, Plus, FolderOpen, Upload, MonitorSpeaker } from "lucide-react"
 import { ThemeToggle } from "./theme-toggle"
 
 interface MobileHeaderProps {
   onFileUpload: () => void
   onFolderUpload: () => void
   isLoading?: boolean
+  /** Opens the two-device playback panel. */
+  onOpenSync?: () => void
+  /** Highlights the entry point while a session is connected. */
+  syncActive?: boolean
 }
 
-export function MobileHeader({ onFileUpload, onFolderUpload, isLoading = false }: MobileHeaderProps) {
+export function MobileHeader({
+  onFileUpload,
+  onFolderUpload,
+  isLoading = false,
+  onOpenSync,
+  syncActive = false,
+}: MobileHeaderProps) {
   return (
     <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <div className="container flex h-14 items-center justify-between px-4">
@@ -41,6 +51,18 @@ export function MobileHeader({ onFileUpload, onFolderUpload, isLoading = false }
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
+
+          {onOpenSync ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              className={`h-9 w-9 p-0 ${syncActive ? "text-primary" : ""}`}
+              onClick={onOpenSync}
+              aria-label="Play on two devices"
+            >
+              <MonitorSpeaker className="w-4 h-4" />
+            </Button>
+          ) : null}
 
           {/* Theme Toggle */}
           <ThemeToggle />

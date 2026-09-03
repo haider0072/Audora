@@ -27,6 +27,11 @@ import { MobileYouTubeVideoPlayer } from "@/components/mobile-youtube-video-play
 import { MobileSongInsights } from "@/components/mobile-song-insights"
 import { MobileArtistInfo } from "@/components/mobile-artist-info"
 import { OnlineSearchSidebar } from "@/components/dab/online-search-sidebar"
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet"
+import { SyncPanel } from "@/components/sync-panel"
+import { useDeviceSync } from "@/hooks/use-device-sync"
+import type { SyncPlaybackAdapter } from "@/hooks/use-sync-playback"
+import { findTrackByKey, trackLabel, trackSyncKey } from "@/lib/sync/song-match"
 
 import type { EqualizerBand } from "@/components/refined-equalizer"
 import { formatTime, waitForCanPlay } from "@/lib/utils"
@@ -41,12 +46,16 @@ export default function MobileMusicPlayer() {
   const [searchQuery, setSearchQuery] = useState("")
   const [isTransitioning, setIsTransitioning] = useState(false)
   const [sidebarMode, setSidebarMode] = useState<"library" | "online">("library")
+  const [showSync, setShowSync] = useState(false)
 
   const audioRef = useRef<HTMLAudioElement>(null)
   const secondaryAudioRef = useRef<HTMLAudioElement>(null)
   const skipToNextRef = useRef<() => void>(() => {})
   const selectSongAbortRef = useRef<AbortController | null>(null)
   const pendingPreloadRef = useRef<Song | null>(null)
+  // Mirrors the sync role for the auto-advance guard below, which is defined
+  // before the session exists.
+  const isFollowingRef = useRef(false)
 
   // Stable onEnded callback using ref — THIS FIXES THE STALE CLOSURE BUG
   const handleEnded = useCallback(() => {
@@ -79,6 +88,7 @@ export default function MobileMusicPlayer() {
     changeVolume, toggleMute, adjustVolume, applyNormalization,
     setNormalizationEnabled: engineSetNormalizationEnabled,
     setPreamp: engineSetPreamp,
+    setPlaybackRate, getPosition,
     preloadNextSong, swapToPreloaded, resetGaplessState, isPreloaded, crossfadeTo,
   } = useAudioEngine({
     audioRef,
@@ -445,35 +455,50 @@ export default function MobileMusicPlayer() {
   }, [currentSong, notifySongSelected, initializeAudioContext, preloadUpcomingSongs, setIsPlaying, setCurrentSong, isPreloaded, swapToPreloaded, resetGaplessState, applyNormalization, crossfadeTo, normalizationEnabled])
 
 
+  /**
+   * Put the current song into the primary element when nothing is loaded.
+   * After a restored session the playlist holds a song but no element has a
+   * source yet, so anything that starts playback has to cover that case —
+   * the play button and, in a sync session, the follower.
+   */
+  const ensureSourceLoaded = useCallback(async () => {
+    const audio = audioRef.current
+    if (!audio || audio.src || !currentSong?.file) return
+
+    resetGaplessState() // ensure we're on primary
+    const audioUrl = URL.createObjectURL(currentSong.file)
+    setCurrentSong({ ...currentSong, url: audioUrl })
+    audio.src = audioUrl
+    audio.load()
+    await waitForCanPlay(audio)
+  }, [currentSong, resetGaplessState, setCurrentSong])
+
+  const startPlayback = useCallback(async () => {
+    await ensureSourceLoaded()
+    initializeAudioContext()
+    try {
+      await play()
+    } catch (error) {
+      console.error("Error playing audio:", error)
+      setIsPlaying(false)
+      toast({ title: "Playback error", description: "Unable to play the selected song.", variant: "destructive" })
+    }
+  }, [ensureSourceLoaded, initializeAudioContext, play, setIsPlaying])
+
   const togglePlayPause = async () => {
     if (!currentSong) return
-
-    // Check if audio element is properly initialized (e.g. after restore)
-    if (audioRef.current && !audioRef.current.src && currentSong.file) {
-      resetGaplessState() // ensure we're on primary
-      const audioUrl = URL.createObjectURL(currentSong.file)
-      const updatedSong = { ...currentSong, url: audioUrl }
-      setCurrentSong(updatedSong)
-      audioRef.current.src = audioUrl
-      audioRef.current.load()
-      await waitForCanPlay(audioRef.current)
-    }
 
     if (isPlaying) {
       pause()
     } else {
-      initializeAudioContext()
-      try {
-        await play()
-      } catch (error) {
-        console.error("Error playing audio:", error)
-        setIsPlaying(false)
-        toast({ title: "Playback error", description: "Unable to play the selected song.", variant: "destructive" })
-      }
+      await startPlayback()
     }
   }
 
   const skipToNext = () => {
+    // A follower takes track changes from the host. Advancing on its own would
+    // race the host's own advance and leave the two devices on different songs.
+    if (isFollowingRef.current) return
     const nextSong = getNextSong()
     if (nextSong) selectSong(nextSong, true)
   }
@@ -496,15 +521,53 @@ export default function MobileMusicPlayer() {
     if (prevSong) selectSong(prevSong, false)
   }
 
-  const handleSeek = useCallback((value: number[]) => {
-    seek(value[0])
-  }, [seek])
-
   // Stable identity keeps the memo() on the playlist rows effective — see the
   // matching note in the desktop player.
   const handleSongSelect = useCallback((song: Song) => {
     selectSong(song, false)
   }, [selectSong])
+
+  // --- Multi-device sync --------------------------------------------------
+
+  /** The seam between this player and the sync engine; see the desktop shell. */
+  const syncAdapter = useMemo<SyncPlaybackAdapter>(() => ({
+    getTrackKey: () => trackSyncKey(currentSong),
+    getTrackLabel: () => trackLabel(currentSong),
+    getPosition,
+    isPlaying: () => isPlaying,
+    getOutputLatency: () => audioContextRef.current?.outputLatency ?? 0,
+    selectTrackByKey: async (key) => {
+      const song = findTrackByKey(songs, key)
+      if (!song) return false
+      await selectSong(song, false)
+      return true
+    },
+    // Autoplay policy is satisfied: joining or hosting is a tap, and that
+    // activation covers the document for the rest of the session.
+    play: () => { void startPlayback() },
+    pause,
+    seek,
+    setRate: setPlaybackRate,
+  }), [currentSong, songs, isPlaying, getPosition, audioContextRef, selectSong, startPlayback, pause, seek, setPlaybackRate])
+
+  const sync = useDeviceSync({ adapter: syncAdapter })
+  const { isConnected: syncConnected, role: syncRole, broadcast: syncBroadcast } = sync
+  const isHosting = syncConnected && syncRole === "host"
+
+  useEffect(() => {
+    isFollowingRef.current = sync.isFollowing
+  }, [sync.isFollowing])
+
+  // Announce transport changes once React has committed them.
+  useEffect(() => {
+    if (isHosting) syncBroadcast()
+  }, [isPlaying, currentSong?.id, isHosting, syncBroadcast])
+
+  const handleSeek = useCallback((value: number[]) => {
+    seek(value[0])
+    // Seeks are not visible to the effect above, so they announce themselves.
+    if (isHosting) syncBroadcast()
+  }, [seek, isHosting, syncBroadcast])
 
 
 
@@ -581,6 +644,8 @@ export default function MobileMusicPlayer() {
           onFileUpload={() => fileInputRef.current?.click()}
           onFolderUpload={() => folderInputRef.current?.click()}
           isLoading={isLoadingSongs || isRestoringPlaylist}
+          onOpenSync={() => setShowSync(true)}
+          syncActive={syncConnected}
         />
 
         {/* Playlist Controls */}
@@ -635,6 +700,19 @@ export default function MobileMusicPlayer() {
           onArtistClick={() => setShowArtist(true)}
           isTransitioning={isTransitioning}
         />
+
+        {/* Two-device playback — its own sheet so the live readout only
+            subscribes while it is open. */}
+        <Sheet open={showSync} onOpenChange={setShowSync}>
+          <SheetContent side="bottom" className="max-h-[85vh] overflow-y-auto">
+            <SheetHeader>
+              <SheetTitle>Two-device playback</SheetTitle>
+            </SheetHeader>
+            <div className="pt-4">
+              <SyncPanel sync={sync} />
+            </div>
+          </SheetContent>
+        </Sheet>
 
         {/* Equalizer Sheet */}
         <MobileEqualizerSheet

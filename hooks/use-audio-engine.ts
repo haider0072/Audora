@@ -66,6 +66,15 @@ export interface UseAudioEngineReturn {
   setNormalizationEnabled: (enabled: boolean) => void
   setPreamp: (db: number) => void
 
+  /**
+   * Nudge playback speed, used only by multi-device sync to hold two machines
+   * together. 1 is normal speed. See the implementation for why this resamples
+   * rather than time-stretches.
+   */
+  setPlaybackRate: (rate: number) => void
+  /** Current position of whichever element is live, in seconds. */
+  getPosition: () => number
+
   // Gapless methods
   preloadNextSong: (file: File) => Promise<boolean>
   swapToPreloaded: (durationSec?: number) => boolean
@@ -83,6 +92,13 @@ const PRELOAD_THRESHOLD_SECONDS = 3
 const PAUSE_FADE_SECONDS = 0.4
 /** Headroom (seconds) added on top of crossfade for preloading the next track. */
 const CROSSFADE_PRELOAD_HEADROOM = 2
+
+/**
+ * Hard bounds on the sync drift trim. Far wider than the correction policy
+ * ever asks for — this only stops a nonsense value from reaching the element.
+ */
+const MIN_ENGINE_RATE = 0.95
+const MAX_ENGINE_RATE = 1.05
 
 // Equal-power crossfade curves (cos/sin) — keep constant perceived loudness
 // across the blend instead of the ~-6dB dip a linear crossfade leaves at the
@@ -159,6 +175,8 @@ export function useAudioEngine(options: UseAudioEngineOptions): UseAudioEngineRe
   const pendingCrossfadeStopRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   // Mirror of the latest user volume (0-100) for ramp targets without stale closures.
   const volumeRef = useRef(80)
+  // Sync drift trim. Stays at exactly 1 unless a sync session is correcting.
+  const playbackRateRef = useRef(1)
 
   // State
   const [isPlaying, setIsPlaying] = useState(false)
@@ -197,6 +215,27 @@ export function useAudioEngine(options: UseAudioEngineOptions): UseAudioEngineRe
     return activeElementRef.current === "primary"
       ? secondaryMixGainRef.current
       : primaryMixGainRef.current
+  }, [])
+
+  /**
+   * Apply the current sync trim to an element.
+   *
+   * `preservesPitch` is turned off deliberately. Left on, the browser holds
+   * pitch with a time-stretcher — a phase vocoder whose artifacts are exactly
+   * the kind of smearing this player exists to avoid. Off, the rate change is
+   * a plain resample: the trims sync uses top out at 0.2%, about 3.5 cents,
+   * which no one hears, and the signal path stays clean.
+   *
+   * Applied per element rather than once, because a gapless swap moves
+   * playback to the other element and the trim has to follow it.
+   */
+  const applyRateTo = useCallback((audio: HTMLAudioElement | null) => {
+    if (!audio) return
+    // Still prefixed in older WebKit; harmless where the standard name exists.
+    const element = audio as HTMLAudioElement & { webkitPreservesPitch?: boolean }
+    element.preservesPitch = false
+    element.webkitPreservesPitch = false
+    audio.playbackRate = playbackRateRef.current
   }, [])
 
   // Keep volumeRef in sync so gain-ramp targets never use a stale value.
@@ -459,6 +498,9 @@ export function useAudioEngine(options: UseAudioEngineOptions): UseAudioEngineRe
       gainNodeRef.current.gain.value = volumeToGain(volumeRef.current)
     }
 
+    // Loading a source resets the element's rate to its default, so any active
+    // sync trim has to be reapplied to the track taking over.
+    applyRateTo(inactiveAudio)
     inactiveAudio.play().catch(() => {})
 
     // Default to the auto-advance length; manual changes pass a shorter one.
@@ -506,7 +548,7 @@ export function useAudioEngine(options: UseAudioEngineOptions): UseAudioEngineRe
     crossfadeStartedRef.current = false
 
     return true
-  }, [getActiveAudio, getInactiveAudio, getActiveMixGain, getInactiveMixGain, finalizeCrossfade])
+  }, [getActiveAudio, getInactiveAudio, getActiveMixGain, getInactiveMixGain, finalizeCrossfade, applyRateTo])
 
   /**
    * Crossfade into an arbitrary file (manual "Next", or any non-preloaded
@@ -641,6 +683,9 @@ export function useAudioEngine(options: UseAudioEngineOptions): UseAudioEngineRe
         await audioContextRef.current.resume()
       }
 
+      // A source load resets the element rate, so reassert any sync trim
+      // before the first samples go out.
+      applyRateTo(audio)
       playPromiseRef.current = audio.play()
       await playPromiseRef.current
       setIsPlaying(true)
@@ -666,7 +711,7 @@ export function useAudioEngine(options: UseAudioEngineOptions): UseAudioEngineRe
       }
       setIsPlaying(false)
     }
-  }, [getActiveAudio, finalizeCrossfade])
+  }, [getActiveAudio, finalizeCrossfade, applyRateTo])
 
   /**
    * Pause audio playback with a short fade-out (anti-click). The element is
@@ -719,6 +764,24 @@ export function useAudioEngine(options: UseAudioEngineOptions): UseAudioEngineRe
       audio.currentTime = time
     }
   }, [getActiveAudio, finalizeCrossfade])
+
+  /**
+   * Set the drift trim. Clamped well inside anything audible — the correction
+   * policy in `lib/sync/protocol` decides the real magnitude, and this is only
+   * a guard against a bad value reaching the element.
+   */
+  const setPlaybackRate = useCallback((rate: number) => {
+    if (!Number.isFinite(rate)) return
+    const clamped = Math.min(MAX_ENGINE_RATE, Math.max(MIN_ENGINE_RATE, rate))
+    if (clamped === playbackRateRef.current) return
+    playbackRateRef.current = clamped
+    applyRateTo(getActiveAudio())
+  }, [applyRateTo, getActiveAudio])
+
+  /** Position of the live element, in seconds. */
+  const getPosition = useCallback(() => {
+    return getActiveAudio()?.currentTime ?? 0
+  }, [getActiveAudio])
 
   /**
    * Change volume and update audio nodes.
@@ -988,6 +1051,8 @@ export function useAudioEngine(options: UseAudioEngineOptions): UseAudioEngineRe
     applyNormalization,
     setNormalizationEnabled,
     setPreamp,
+    setPlaybackRate,
+    getPosition,
 
     // Gapless methods
     preloadNextSong,

@@ -25,6 +25,13 @@ const envSchema = z.object({
   DAB_EMAIL: z.string().email('DAB email must be valid').optional(),
   DAB_PASSWORD: z.string().min(1, 'DAB password is required').optional(),
 
+  // Device sync pairing store. Either naming convention is accepted: Upstash's
+  // own, or the KV_* pair injected by Vercel's Marketplace integration.
+  UPSTASH_REDIS_REST_URL: z.string().url('Upstash REST URL must be valid').optional(),
+  UPSTASH_REDIS_REST_TOKEN: z.string().min(1, 'Upstash REST token is required').optional(),
+  KV_REST_API_URL: z.string().url('KV REST URL must be valid').optional(),
+  KV_REST_API_TOKEN: z.string().min(1, 'KV REST token is required').optional(),
+
   // Node Environment
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
 })
@@ -52,6 +59,10 @@ export function validateEnv(): EnvValidationResult {
     SPOTIFY_CLIENT_SECRET: process.env.SPOTIFY_CLIENT_SECRET,
     DAB_EMAIL: process.env.DAB_EMAIL,
     DAB_PASSWORD: process.env.DAB_PASSWORD,
+    UPSTASH_REDIS_REST_URL: process.env.UPSTASH_REDIS_REST_URL,
+    UPSTASH_REDIS_REST_TOKEN: process.env.UPSTASH_REDIS_REST_TOKEN,
+    KV_REST_API_URL: process.env.KV_REST_API_URL,
+    KV_REST_API_TOKEN: process.env.KV_REST_API_TOKEN,
     NODE_ENV: process.env.NODE_ENV as 'development' | 'production' | 'test' | undefined,
   }
 
@@ -69,6 +80,12 @@ export function validateEnv(): EnvValidationResult {
 
   if (!env.DAB_EMAIL || !env.DAB_PASSWORD) {
     warnings.push('DAB Music credentials not configured - online search & download will require manual login')
+  }
+
+  const syncStoreUrl = env.UPSTASH_REDIS_REST_URL || env.KV_REST_API_URL
+  const syncStoreToken = env.UPSTASH_REDIS_REST_TOKEN || env.KV_REST_API_TOKEN
+  if (!syncStoreUrl || !syncStoreToken) {
+    warnings.push('Redis store not configured - two-device playback will not be able to pair')
   }
 
   if (!result.success) {
@@ -108,7 +125,7 @@ export function getEnv(): Env {
 /**
  * Checks if a specific feature is configured
  */
-export function isFeatureEnabled(feature: 'youtube' | 'ai-insights' | 'dab-music'): boolean {
+export function isFeatureEnabled(feature: 'youtube' | 'ai-insights' | 'dab-music' | 'device-sync'): boolean {
   const env = getEnv()
 
   switch (feature) {
@@ -128,6 +145,11 @@ export function isFeatureEnabled(feature: 'youtube' | 'ai-insights' | 'dab-music
         env.DAB_EMAIL.length > 0 &&
         env.DAB_PASSWORD &&
         env.DAB_PASSWORD.length > 0
+      )
+    case 'device-sync':
+      return !!(
+        (env.UPSTASH_REDIS_REST_URL || env.KV_REST_API_URL) &&
+        (env.UPSTASH_REDIS_REST_TOKEN || env.KV_REST_API_TOKEN)
       )
     default:
       return false
