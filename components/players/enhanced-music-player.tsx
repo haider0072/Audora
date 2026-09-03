@@ -12,7 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import {
   Play, Pause, SkipBack, SkipForward,
   Volume2, VolumeX, Settings, Mic, Youtube, Sparkles, Shuffle, Maximize2, User,
-  Search, Music, List, Globe, Library,
+  Search, Music, List, Globe, Library, MonitorSpeaker,
 } from "lucide-react"
 
 import Image from "next/image"
@@ -39,6 +39,10 @@ import { resetPlaybackTime } from "@/lib/playback-time-store"
 import { usePlaybackTime } from "@/hooks/use-playback-time"
 import { AddMusicControls } from "@/components/add-music-control"
 import { FullscreenPlayer } from "@/components/fullscreen-player"
+import { SyncPanel } from "@/components/sync-panel"
+import { useDeviceSync } from "@/hooks/use-device-sync"
+import type { SyncPlaybackAdapter } from "@/hooks/use-sync-playback"
+import { findTrackByKey, trackLabel, trackSyncKey } from "@/lib/sync/song-match"
 
 const LyricsDisplay = lazy(() =>
   import("@/components/lyrics-display").then(mod => ({ default: mod.LyricsDisplay }))
@@ -99,6 +103,7 @@ export default function EnhancedMusicPlayer() {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [albumArtSourceRect, setAlbumArtSourceRect] = useState<DOMRect | null>(null);
   const [sidebarMode, setSidebarMode] = useState<"library" | "online">("library");
+  const [showSync, setShowSync] = useState(false);
   const [searchQuery, setSearchQuery] = useState("")
   const [playlistScrollTarget, setPlaylistScrollTarget] = useState<PlaylistScrollTarget | null>(null)
 
@@ -120,6 +125,9 @@ export default function EnhancedMusicPlayer() {
   const skipToNextRef = useRef<() => void>(() => {})
   const selectSongAbortRef = useRef<AbortController | null>(null)
   const pendingPreloadRef = useRef<Song | null>(null)
+  // Mirrors the sync role for the auto-advance guard below, which is defined
+  // before the session exists.
+  const isFollowingRef = useRef(false)
 
   // Stable onEnded callback using ref — THIS FIXES THE STALE CLOSURE BUG
   const handleEnded = useCallback(() => {
@@ -152,6 +160,7 @@ export default function EnhancedMusicPlayer() {
     changeVolume, toggleMute, adjustVolume, applyNormalization,
     setNormalizationEnabled: engineSetNormalizationEnabled,
     setPreamp: engineSetPreamp,
+    setPlaybackRate, getPosition,
     preloadNextSong, swapToPreloaded, resetGaplessState, isPreloaded, crossfadeTo,
   } = useAudioEngine({
     audioRef,
@@ -443,6 +452,38 @@ export default function EnhancedMusicPlayer() {
     [currentSong, notifySongSelected, initializeAudioContext, preloadUpcomingSongs, isPreloaded, swapToPreloaded, resetGaplessState, applyNormalization, crossfadeTo, normalizationEnabled],
   )
   
+  /**
+   * Put the current song into the primary element when nothing is loaded.
+   * After a restored session the playlist holds a song but no element has a
+   * source yet, so anything that starts playback has to cover that case —
+   * the play button and, in a sync session, the follower.
+   */
+  const ensureSourceLoaded = useCallback(async () => {
+    const audio = audioRef.current
+    if (!audio || audio.src || !currentSong?.file) return
+
+    resetGaplessState() // ensure we're on primary
+    const audioUrl = URL.createObjectURL(currentSong.file)
+    setCurrentSong({ ...currentSong, url: audioUrl })
+    audio.src = audioUrl
+    audio.load()
+    await waitForCanPlay(audio)
+  }, [currentSong, resetGaplessState, setCurrentSong])
+
+  const startPlayback = useCallback(async () => {
+    await ensureSourceLoaded()
+    try {
+      initializeAudioContext()
+      await play()
+    } catch (error) {
+      if ((error as DOMException).name !== "AbortError") {
+        console.error("Error playing audio:", error)
+        toast({ title: "Playback Error", variant: "destructive" })
+      }
+      setIsPlaying(false)
+    }
+  }, [ensureSourceLoaded, initializeAudioContext, play, setIsPlaying])
+
   const togglePlayPause = async () => {
     if (!currentSong) return
 
@@ -456,34 +497,17 @@ export default function EnhancedMusicPlayer() {
       }
     }
 
-    // Check if audio element is properly initialized (e.g. after restore)
-    if (audioRef.current && !audioRef.current.src && currentSong.file) {
-      resetGaplessState() // ensure we're on primary
-      const audioUrl = URL.createObjectURL(currentSong.file)
-      const updatedSong = { ...currentSong, url: audioUrl }
-      setCurrentSong(updatedSong)
-      audioRef.current.src = audioUrl
-      audioRef.current.load()
-      await waitForCanPlay(audioRef.current)
-    }
-
     if (isPlaying) {
       pause()
     } else {
-      try {
-        initializeAudioContext()
-        await play()
-      } catch (error) {
-        if ((error as DOMException).name !== "AbortError") {
-          console.error("Error playing audio:", error)
-          toast({ title: "Playback Error", variant: "destructive" })
-        }
-        setIsPlaying(false)
-      }
+      await startPlayback()
     }
   }
 
   const skipToNext = () => {
+    // A follower takes track changes from the host. Advancing on its own would
+    // race the host's own advance and leave the two devices on different songs.
+    if (isFollowingRef.current) return
     const nextSong = getNextSong()
     if (nextSong) selectSong(nextSong, true)
   }
@@ -506,16 +530,61 @@ export default function EnhancedMusicPlayer() {
     if (prevSong) selectSong(prevSong, false)
   }
 
-  const handleSeek = useCallback((value: number[]) => {
-    seek(value[0])
-  }, [seek])
-
   // Stable identity matters: an inline arrow here changes on every render and
   // defeats the memo() on every playlist row, which is the whole reason the
   // rows were re-rendering in bulk.
   const handleSongSelect = useCallback((song: Song) => {
     selectSong(song, false)
   }, [selectSong])
+
+  // --- Multi-device sync --------------------------------------------------
+
+  /**
+   * The seam between this player and the sync engine. Everything the engine
+   * needs to observe or drive goes through here, which is what keeps the
+   * synchronization logic free of player internals and usable by the mobile
+   * shell too.
+   */
+  const syncAdapter = useMemo<SyncPlaybackAdapter>(() => ({
+    getTrackKey: () => trackSyncKey(currentSong),
+    getTrackLabel: () => trackLabel(currentSong),
+    getPosition,
+    isPlaying: () => isPlaying,
+    getOutputLatency: () => audioContextRef.current?.outputLatency ?? 0,
+    selectTrackByKey: async (key) => {
+      const song = findTrackByKey(songs, key)
+      if (!song) return false
+      await selectSong(song, false)
+      return true
+    },
+    // Autoplay policy is satisfied: joining or hosting is a click, and that
+    // activation covers the document for the rest of the session.
+    play: () => { void startPlayback() },
+    pause,
+    seek,
+    setRate: setPlaybackRate,
+  }), [currentSong, songs, isPlaying, getPosition, audioContextRef, selectSong, startPlayback, pause, seek, setPlaybackRate])
+
+  const sync = useDeviceSync({ adapter: syncAdapter })
+  const { isConnected: syncConnected, role: syncRole, broadcast: syncBroadcast } = sync
+  const isHosting = syncConnected && syncRole === "host"
+
+  useEffect(() => {
+    isFollowingRef.current = sync.isFollowing
+  }, [sync.isFollowing])
+
+  // Announce transport changes once React has committed them. Broadcasting at
+  // each call site instead would report the state being replaced rather than
+  // the one that took effect.
+  useEffect(() => {
+    if (isHosting) syncBroadcast()
+  }, [isPlaying, currentSong?.id, isHosting, syncBroadcast])
+
+  const handleSeek = useCallback((value: number[]) => {
+    seek(value[0])
+    // Seeks are not visible to the effect above, so they announce themselves.
+    if (isHosting) syncBroadcast()
+  }, [seek, isHosting, syncBroadcast])
 
   const formatBitrate = (bitrate?: number) => {
     if (!bitrate) return "Unknown"
@@ -834,6 +903,15 @@ export default function EnhancedMusicPlayer() {
                           <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={() => setShowEqualizer(true)} aria-label="Equalizer settings">
                             <Settings className="w-3.5 h-3.5" />
                           </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className={`h-8 w-8 p-0 ${syncConnected ? "text-primary" : ""}`}
+                            onClick={() => setShowSync(true)}
+                            aria-label="Play on two devices"
+                          >
+                            <MonitorSpeaker className="w-3.5 h-3.5" />
+                          </Button>
                           <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={() => setActiveView("lyrics")} disabled={!currentSong} aria-label="Show lyrics">
                             <Mic className="w-3.5 h-3.5" />
                           </Button>
@@ -878,6 +956,14 @@ export default function EnhancedMusicPlayer() {
                       onPresetSave={handlePresetSave}
                       onPresetDelete={handlePresetDelete}
                     />
+                  </DialogContent>
+                </Dialog>
+                <Dialog open={showSync} onOpenChange={setShowSync}>
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>Two-device playback</DialogTitle>
+                    </DialogHeader>
+                    <SyncPanel sync={sync} />
                   </DialogContent>
                 </Dialog>
               </>
