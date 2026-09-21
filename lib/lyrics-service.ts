@@ -1,15 +1,62 @@
 export interface LyricLine {
   time: number // time in seconds
   text: string
+  translation?: string // English translation, only set for non-English lines
 }
 
 export interface LyricsData {
   synced: LyricLine[] | null
   plain: string | null
+  plainLines?: LyricLine[] // plain lyrics split per line, set once translated
 }
 
 export class LyricsService {
   private static readonly API_BASE_URL = "https://lrclib.net/api"
+
+  /**
+   * Adds English translations to lyrics that aren't already in English.
+   * @returns A translated copy of the lyrics, or null if nothing needed translating.
+   */
+  public static async withTranslations(data: LyricsData): Promise<LyricsData | null> {
+    const hasSynced = !!data.synced && data.synced.length > 0
+    const lines: LyricLine[] = hasSynced
+      ? data.synced!
+      : (data.plain ?? "").split("\n").map((text) => ({ time: 0, text: text.trim() }))
+
+    // Only lines with actual words are worth sending (skips "♪" and blanks)
+    const targets = lines.map((line, index) => ({ line, index })).filter(({ line }) => /\p{L}/u.test(line.text))
+    if (targets.length === 0) return null
+
+    try {
+      const response = await fetch("/api/lyrics/translate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ lines: targets.map(({ line }) => line.text) }),
+      })
+      if (!response.ok) return null
+
+      const result: { language: string | null; translations: (string | null)[] } = await response.json()
+      // English lines come back as null, so an all-English song yields no translations
+      if (!Array.isArray(result.translations)) return null
+
+      const normalize = (text: string) => text.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "")
+      const translated = [...lines]
+      let count = 0
+      targets.forEach(({ line, index }, i) => {
+        const translation = result.translations[i]
+        // An unchanged line was already English (common in mixed-language songs)
+        if (!translation || normalize(translation) === normalize(line.text)) return
+        translated[index] = { ...line, translation }
+        count++
+      })
+      if (count === 0) return null
+
+      return hasSynced ? { ...data, synced: translated } : { ...data, plainLines: translated }
+    } catch (error) {
+      console.error("Error translating lyrics:", error)
+      return null
+    }
+  }
 
   /**
    * Fetches lyrics from Lrclib, matching by query and duration.

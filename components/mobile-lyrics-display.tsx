@@ -25,6 +25,7 @@ export function MobileLyricsDisplay({ isOpen, onOpenChange, currentSong, forceRe
 
   const scrollAreaRef = useRef<HTMLDivElement>(null)
   const activeLineRef = useRef<HTMLParagraphElement>(null)
+  const latestFetchSongIdRef = useRef<string | null>(null)
   // See LyricsDisplay: subscribed here so the position never travels as a prop.
   const currentTimeInSeconds = usePlaybackTime()
 
@@ -38,18 +39,25 @@ export function MobileLyricsDisplay({ isOpen, onOpenChange, currentSong, forceRe
     setError(null)
     setLyricsData(null)
     setLastFetchedSongId(song.id)
+    latestFetchSongIdRef.current = song.id
 
     try {
       const data = await LyricsService.fetchLyrics(song.artist, song.title, song.duration)
+      if (latestFetchSongIdRef.current !== song.id) return
+
       if (data && (data.synced || data.plain)) {
         setLyricsData(data)
+        // Show the lyrics right away; translations fill in underneath when ready
+        LyricsService.withTranslations(data).then((translated) => {
+          if (translated && latestFetchSongIdRef.current === song.id) setLyricsData(translated)
+        })
       } else {
         setError("No lyrics found for this song.")
       }
     } catch (e: any) {
       setError(e.message || "An error occurred while fetching lyrics.")
     } finally {
-      setIsLoading(false)
+      if (latestFetchSongIdRef.current === song.id) setIsLoading(false)
     }
   }
 
@@ -83,7 +91,7 @@ export function MobileLyricsDisplay({ isOpen, onOpenChange, currentSong, forceRe
         scrollContainer.scrollTo({ top: scrollTop, behavior: "smooth" })
       }
     }
-  }, [currentLineIndex])
+  }, [currentLineIndex, lyricsData])
 
   const handleRetry = () => {
     if (currentSong) {
@@ -125,18 +133,36 @@ export function MobileLyricsDisplay({ isOpen, onOpenChange, currentSong, forceRe
               <p
                 key={`${line.time}-${index}`}
                 ref={isCurrent ? activeLineRef : null}
-                className={`transition-all duration-300 ease-in-out text-xl font-semibold px-2 py-1 w-full max-w-full break-words text-center leading-relaxed ${
+                className={`transition-all duration-300 ease-in-out px-2 py-1 w-full max-w-full break-words text-center leading-relaxed ${
                   isCurrent
-                    ? "text-white scale-105 opacity-100"
+                    ? "text-white text-2xl font-bold opacity-100"
                     : isAfterCurrent
-                      ? "text-white/70 opacity-55 blur-[1.2px] scale-100"
-                      : "text-white/70 opacity-35 scale-95"
+                      ? "text-white/70 text-xl font-semibold opacity-55 blur-[1.2px] scale-100"
+                      : "text-white/70 text-xl font-semibold opacity-35 scale-95"
                 }`}
               >
                 {line.text}
+                {line.translation && (
+                  <span className={`block font-normal leading-snug opacity-80 ${isCurrent ? "text-base" : "text-sm"}`}>
+                    {line.translation}
+                  </span>
+                )}
               </p>
             )
           })}
+        </div>
+      )
+    }
+
+    if (lyricsData?.plainLines) {
+      return (
+        <div className="text-md text-center leading-relaxed break-words">
+          {lyricsData.plainLines.map((line, index) => (
+            <p key={index} className="min-h-[1.625em]">
+              {line.text}
+              {line.translation && <span className="block text-sm opacity-70 mb-2">{line.translation}</span>}
+            </p>
+          ))}
         </div>
       )
     }

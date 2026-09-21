@@ -33,16 +33,21 @@ const MemoizedLyricLine = memo(
     <p
       ref={refProp}
       className={`
-        transition-all duration-300 ease-in-out text-2xl font-semibold px-2 py-1
+        transition-all duration-300 ease-in-out px-2 py-1
         w-full max-w-full break-words text-center leading-relaxed
         ${isCurrent
-          ? "text-white scale-105 opacity-100"
+          ? "text-white text-3xl font-bold opacity-100"
           : isAfterCurrent
-            ? "text-white/70 opacity-55 blur-[1.2px] scale-100"
-            : "text-white/70 opacity-35 scale-95"}
+            ? "text-white/70 text-2xl font-semibold opacity-55 blur-[1.2px] scale-100"
+            : "text-white/70 text-2xl font-semibold opacity-35 scale-95"}
       `}
     >
       {line.text}
+      {line.translation && (
+        <span className={`block font-normal leading-snug opacity-80 ${isCurrent ? "text-lg" : "text-base"}`}>
+          {line.translation}
+        </span>
+      )}
     </p>
   ),
 )
@@ -56,6 +61,7 @@ export function LyricsDisplay({ isVisible, onClose, currentSong, forceRefresh }:
 
   const activeLineRef = useRef<HTMLParagraphElement>(null)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
+  const latestFetchSongIdRef = useRef<string | null>(null)
   // Subscribed here rather than passed down: line highlighting needs every
   // position tick, and taking it as a prop would force the whole player tree to
   // re-render at that rate just to hand it over.
@@ -71,12 +77,18 @@ export function LyricsDisplay({ isVisible, onClose, currentSong, forceRefresh }:
     setError(null)
     setLyricsData(null)
     setLastFetchedSongId(song.id)
+    latestFetchSongIdRef.current = song.id
 
     try {
       const data = await LyricsService.fetchLyrics(song.artist, song.title, song.duration)
+      if (latestFetchSongIdRef.current !== song.id) return
 
       if (data && (data.synced || data.plain)) {
         setLyricsData(data)
+        // Show the lyrics right away; translations fill in underneath when ready
+        LyricsService.withTranslations(data).then((translated) => {
+          if (translated && latestFetchSongIdRef.current === song.id) setLyricsData(translated)
+        })
       } else {
         setError("No lyrics found for this song.")
       }
@@ -84,7 +96,7 @@ export function LyricsDisplay({ isVisible, onClose, currentSong, forceRefresh }:
       setError(e.message || "An error occurred while fetching lyrics.")
       console.error(e)
     } finally {
-      setIsLoading(false)
+      if (latestFetchSongIdRef.current === song.id) setIsLoading(false)
     }
   }
 
@@ -117,7 +129,7 @@ export function LyricsDisplay({ isVisible, onClose, currentSong, forceRefresh }:
       const scrollTop = lineTop - containerHeight / 2 + lineHeight / 2
       container.scrollTo({ top: scrollTop, behavior: "smooth" })
     }
-  }, [currentLineIndex])
+  }, [currentLineIndex, lyricsData])
 
   const handleRetry = () => {
     if (currentSong) {
@@ -166,6 +178,19 @@ export function LyricsDisplay({ isVisible, onClose, currentSong, forceRefresh }:
               />
             )
           })}
+        </div>
+      )
+    }
+
+    if (lyricsData?.plainLines) {
+      return (
+        <div className="text-lg text-center leading-relaxed w-full max-w-full break-words">
+          {lyricsData.plainLines.map((line, index) => (
+            <p key={index} className="min-h-[1.625em]">
+              {line.text}
+              {line.translation && <span className="block text-base opacity-70 mb-2">{line.translation}</span>}
+            </p>
+          ))}
         </div>
       )
     }
