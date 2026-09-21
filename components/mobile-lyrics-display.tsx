@@ -85,7 +85,11 @@ export function MobileLyricsDisplay({ isOpen, onOpenChange, currentSong, forceRe
     if (activeLineRef.current && scrollAreaRef.current) {
       const scrollContainer = scrollAreaRef.current.querySelector("div")
       if (scrollContainer) {
-        const lineTop = activeLineRef.current.offsetTop
+        // See LyricsDisplay: offsetTop isn't relative to the scroll container.
+        const lineTop =
+          activeLineRef.current.getBoundingClientRect().top -
+          scrollContainer.getBoundingClientRect().top +
+          scrollContainer.scrollTop
         const containerHeight = scrollContainer.clientHeight
         const scrollTop = lineTop - containerHeight / 2 + activeLineRef.current.clientHeight / 2
         scrollContainer.scrollTo({ top: scrollTop, behavior: "smooth" })

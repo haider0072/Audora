@@ -76,7 +76,9 @@ export class LyricsService {
     try {
       const response = await fetch(url)
       if (!response.ok) {
-        console.error(`Failed to fetch lyrics: ${response.statusText}`)
+        // statusText is empty over HTTP/2, so log the code. A warning, not an error:
+        // the caller already handles this as "no lyrics found".
+        console.warn(`Lyrics lookup failed with HTTP ${response.status}`)
         return null
       }
 

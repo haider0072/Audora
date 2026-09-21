@@ -123,7 +123,10 @@ export function LyricsDisplay({ isVisible, onClose, currentSong, forceRefresh }:
   useEffect(() => {
     if (activeLineRef.current && scrollContainerRef.current) {
       const container = scrollContainerRef.current
-      const lineTop = activeLineRef.current.offsetTop
+      // Measured against the scroll container itself — offsetTop is relative to
+      // the offsetParent, which is a page-level wrapper here, not this container.
+      const lineTop =
+        activeLineRef.current.getBoundingClientRect().top - container.getBoundingClientRect().top + container.scrollTop
       const containerHeight = container.clientHeight
       const lineHeight = activeLineRef.current.clientHeight
       const scrollTop = lineTop - containerHeight / 2 + lineHeight / 2
