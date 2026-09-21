@@ -230,7 +230,7 @@ export function LyricsDisplay({ isVisible, onClose, currentSong, forceRefresh }:
           <X className="w-4 h-4" />
         </Button>
       </div>
-      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto overflow-x-hidden p-4 h-0 w-full">
+      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto overflow-x-hidden scrollbar-none p-4 h-0 w-full">
         <div className="flex flex-col items-center justify-center min-h-full w-full max-w-full">{renderContent()}</div>
       </div>
     </div>

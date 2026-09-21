@@ -83,6 +83,16 @@
   background-color: hsl(var(--foreground));
 }
 
+/* Hides the scrollbar while keeping the element scrollable */
+.scrollbar-none {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+
 /* Text shadow for better readability over dynamic backgrounds */
 .text-shadow {
   text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);

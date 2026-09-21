@@ -196,7 +196,8 @@ export function MobileLyricsDisplay({ isOpen, onOpenChange, currentSong, forceRe
           </SheetDescription>
         </SheetHeader>
         <div className="flex-1 overflow-hidden">
-          <ScrollArea className="h-full" ref={scrollAreaRef}>
+          {/* Scrollbar hidden on purpose — the area still scrolls */}
+          <ScrollArea className="h-full [&>[data-orientation=vertical]]:hidden" ref={scrollAreaRef}>
             <div className="p-4">{renderContent()}</div>
           </ScrollArea>
         </div>
