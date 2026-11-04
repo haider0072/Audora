@@ -333,6 +333,7 @@ export function FullscreenPlayer({
               <AlbumArtDisplay
                 songId={currentSong.id}
                 albumArt={currentSong.albumArt}
+                thumbnail={currentSong.albumArtThumb}
                 title={`${currentSong.title} album art`}
                 size="small"
                 className="flex-shrink-0"

@@ -1,7 +1,7 @@
 /**
  * @jest-environment node
  */
-import { parseLibraryIndex } from "@/lib/cloud/library-index-schema"
+import { ENTRY_FORMAT, isOutdated, parseLibraryIndex } from "@/lib/cloud/library-index-schema"
 
 const good = { etag: "e", size: 10, tags: { title: "Song", duration: 180 }, artKey: "art/abc" }
 
@@ -38,6 +38,24 @@ describe("parseLibraryIndex", () => {
       entries: { "library/a.flac": { ...good, tags: { ...good.tags, streamUrl: "https://evil.test" }, extra: 1 } },
     })
     expect(index.entries["library/a.flac"]).toEqual(good)
+  })
+
+  it("validates rendered cover keys like any other art key", () => {
+    const covers = { small: "art/x/1-s.webp", large: "art/x/1-l.webp" }
+    const index = parseLibraryIndex({
+      version: 1,
+      entries: {
+        "library/ok.flac": { ...good, format: ENTRY_FORMAT, covers },
+        "library/bad.flac": { ...good, format: ENTRY_FORMAT, covers: { ...covers, large: "https://evil.test" } },
+      },
+    })
+    expect(Object.keys(index.entries)).toEqual(["library/ok.flac"])
+  })
+
+  it("marks entries from before the current format as outdated, but never rejected ones", () => {
+    expect(isOutdated({ etag: "e", size: 1, tags: {} })).toBe(true)
+    expect(isOutdated({ etag: "e", size: 1, tags: {}, format: ENTRY_FORMAT })).toBe(false)
+    expect(isOutdated({ etag: "e", size: 1, tags: {}, rejected: true })).toBe(false)
   })
 
   it("keeps rejected entries so non-audio files are not re-read every pass", () => {

@@ -24,6 +24,7 @@ import { PlaylistManager } from "@/components/playlist-manager"
 import { useAlbumArtPreloader } from "@/hooks/use-album-art-preloader"
 import { useFolderSync } from "@/hooks/use-folder-sync"
 import { usePlaylistManager } from "@/hooks/use-playlist-manager"
+import { useWarmNextSong } from "@/hooks/use-warm-next-song"
 import { useAudioEngine } from "@/hooks/use-audio-engine"
 import { useEqualizerManager, DEFAULT_EQUALIZER_BANDS } from "@/hooks/use-equalizer-manager"
 import { useFileImporter } from "@/hooks/use-file-importer"
@@ -180,7 +181,7 @@ export default function EnhancedMusicPlayer() {
   const {
     songs, setSongs, currentSong, setCurrentSong,
     shuffleMode, setShuffleMode, viewMode, setViewMode,
-    sortedSongs, getNextSong, getPreviousSong, notifySongSelected,
+    sortedSongs, getNextSong, peekNextSong, getPreviousSong, notifySongSelected,
     toggleShuffle, removeSong, resetPlaylist, playNext,
   } = usePlaylistManager({
     onCurrentSongRemoved: () => {
@@ -264,6 +265,7 @@ export default function EnhancedMusicPlayer() {
 
   const { isInitialized, isRestoringPlaylist, restorePlaylist, savePlaylist } = usePlaylistPersistence()
   const cloud = useCloudLibrary({ isReady: isInitialized, songCount: songs.length, setSongs })
+  useWarmNextSong(currentSong?.id, isPlaying, peekNextSong)
 
   // Folder sync hook
   const {

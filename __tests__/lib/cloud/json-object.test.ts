@@ -49,7 +49,7 @@ describe("JSON documents in the bucket", () => {
   })
 
   it("treats a corrupt document as a fresh one", async () => {
-    r2.objects.set("doc.json", { body: "{not json", etag: '"x"' })
+    r2.put("doc.json", "{not json")
     jest.spyOn(console, "error").mockImplementation(() => {})
     expect((await readJson(client, "doc.json", parseCount)).value).toEqual({ n: 0 })
   })

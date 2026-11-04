@@ -3,7 +3,10 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 
 import type { Song } from "@/components/enhanced-playlist"
+import { clearLibrarySnapshot, readLibrarySnapshot, saveLibrarySnapshot } from "@/lib/cloud/library-snapshot"
 import { mergeCloudLibrary } from "@/lib/cloud/merge"
+import { preconnect } from "@/lib/cloud/preconnect"
+import { prefetchThumbnails } from "@/lib/cloud/thumbnail-prefetch"
 import type { CloudIndexResponse, CloudLibraryResponse, CloudSong } from "@/lib/cloud/types"
 
 /**
@@ -63,6 +66,21 @@ export function useCloudLibrary({ isReady, songCount, setSongs }: UseCloudLibrar
   const loadedAtRef = useRef(0)
   /** Bumped by every load and by sign-out, so a superseded load stops applying results. */
   const generationRef = useRef(0)
+  /**
+   * Set once the server has answered for the library itself — a listing, or
+   * that there is none for this device. A snapshot arriving later is stale.
+   */
+  const settledRef = useRef(false)
+
+  // Show the last listing this device saw while the fresh one is fetched.
+  useEffect(() => {
+    void readLibrarySnapshot().then((snapshot) => {
+      if (!snapshot || settledRef.current) return
+      setCloudSongs(snapshot.songs)
+      setPending(snapshot.pending)
+      setStatus("ready")
+    })
+  }, [])
 
   const load = useCallback(async () => {
     const generation = ++generationRef.current
@@ -79,9 +97,12 @@ export function useCloudLibrary({ isReady, songCount, setSongs }: UseCloudLibrar
         authenticated: boolean
       }
       if (!isCurrent()) return
+      if (!configured || !authenticated) settledRef.current = true
       if (!configured) return setStatus("unavailable")
       if (!authenticated) {
         setCloudSongs([])
+        setPending(0)
+        void clearLibrarySnapshot()
         return setStatus("signed-out")
       }
 
@@ -95,12 +116,16 @@ export function useCloudLibrary({ isReady, songCount, setSongs }: UseCloudLibrar
         const library = (await response.json()) as CloudLibraryResponse
         if (!isCurrent()) return
 
+        settledRef.current = true
         setCloudSongs(library.songs)
         setPending(library.pending)
         setStatus("ready")
         loadedAtRef.current = Date.now()
+        void saveLibrarySnapshot(library)
 
-        if (library.pending === 0) return
+        // Songs from an older indexer are already listed and playing; they
+        // are brought up to date in the same loop, just without the badge.
+        if (library.pending + library.outdated === 0) return
 
         const indexing = await fetch("/api/cloud/library/index", { method: "POST" })
         if (!indexing.ok) throw new Error(await readError(indexing))
@@ -133,6 +158,18 @@ export function useCloudLibrary({ isReady, songCount, setSongs }: UseCloudLibrar
     return () => document.removeEventListener("visibilitychange", onVisible)
   }, [load])
 
+  // Warm the connection and every list cover once the library is known, so
+  // neither the first play nor scrolling waits on R2.
+  useEffect(() => {
+    if (cloudSongs.length === 0) return
+    preconnect(new URL(cloudSongs[0].streamUrl).origin)
+
+    const controller = new AbortController()
+    const thumbnails = cloudSongs.flatMap((song) => (song.thumbUrl ? [song.thumbUrl] : []))
+    void prefetchThumbnails(thumbnails, controller.signal)
+    return () => controller.abort()
+  }, [cloudSongs])
+
   // Fold the cloud list into the player's. `mergeCloudLibrary` returns the
   // previous array when nothing changes, so re-running on every local change
   // is free and cannot loop.
@@ -160,6 +197,7 @@ export function useCloudLibrary({ isReady, songCount, setSongs }: UseCloudLibrar
 
   const signOut = useCallback(async ({ everywhere = false }: { everywhere?: boolean } = {}) => {
     generationRef.current++
+    settledRef.current = true
     const response = await fetch(everywhere ? "/api/cloud/session?scope=all" : "/api/cloud/session", {
       method: "DELETE",
     })
@@ -171,6 +209,7 @@ export function useCloudLibrary({ isReady, songCount, setSongs }: UseCloudLibrar
     setPending(0)
     setError(null)
     setStatus("signed-out")
+    await clearLibrarySnapshot()
   }, [])
 
   const refresh = useCallback(() => {

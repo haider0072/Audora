@@ -14,6 +14,12 @@ const NEAR_VIEWPORT_MARGIN = "600px"
 interface AlbumArtDisplayProps {
   songId?: string
   albumArt?: string
+  /**
+   * A smaller rendition of the same cover, drawn instead of `albumArt` at the
+   * small and medium sizes. Cloud songs have one; a list row then fetches a
+   * few kilobytes rather than the full cover.
+   */
+  thumbnail?: string
   title?: string
   isTransitioning?: boolean
   className?: string
@@ -25,8 +31,9 @@ interface AlbumArtDisplayProps {
 }
 
 export function AlbumArtDisplay({
-  songId,
-  albumArt,
+  songId: songIdProp,
+  albumArt: albumArtProp,
+  thumbnail,
   title = "Album Art",
   isTransitioning = false,
   className = "",
@@ -35,6 +42,13 @@ export function AlbumArtDisplay({
   showFallback = true,
   rounded = "rounded-2xl",
 }: AlbumArtDisplayProps) {
+  // The thumbnail is a different image of the same song, so it is cached
+  // under its own id: sharing the song's would hand whichever loaded first to
+  // every size.
+  const drawsThumbnail = size !== "large" && !!thumbnail
+  const albumArt = drawsThumbnail ? thumbnail : albumArtProp
+  const songId = songIdProp && drawsThumbnail ? `${songIdProp}::thumb` : songIdProp
+
   const [currentImageUrl, setCurrentImageUrl] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const [hasError, setHasError] = useState(false)
