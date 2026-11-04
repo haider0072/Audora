@@ -44,6 +44,19 @@ export interface AlbumArtBytes {
   data: Uint8Array<ArrayBuffer>
 }
 
+/**
+ * Thrown by a `ByteSource` whose bytes could not be fetched at all — as
+ * opposed to bytes that arrived and did not parse. The extractor passes it
+ * through instead of falling back to filename metadata, so a caller indexing
+ * remote files can retry later rather than keep a placeholder forever.
+ */
+export class ByteSourceReadError extends Error {
+  constructor(message: string, options?: { cause?: unknown }) {
+    super(message, options)
+    this.name = "ByteSourceReadError"
+  }
+}
+
 /** `AudioMetadata` plus the cover still as bytes. Internal to parsing. */
 type ParsedMetadata = Partial<AudioMetadata> & { albumArtBytes?: AlbumArtBytes }
 
@@ -156,6 +169,7 @@ export class MetadataExtractor {
       const { albumArtBytes, ...parsed } = finalMetadata
       return { metadata: parsed, albumArt: albumArtBytes }
     } catch (error) {
+      if (error instanceof ByteSourceReadError) throw error
       console.error("Error extracting metadata:", error)
       return { metadata }
     }

@@ -31,6 +31,8 @@ describe("R2Client", () => {
     expect(result?.etag).toBe('"abc"')
     const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
     expect(init.cache).toBe("no-store")
+    // Unbounded, one stalled read would hold an indexing pass open forever.
+    expect(init.signal).toBeInstanceOf(AbortSignal)
     // A gzipped response carries a weak ETag that If-Match never matches.
     expect(new Headers(init.headers).get("accept-encoding")).toBe("identity")
   })

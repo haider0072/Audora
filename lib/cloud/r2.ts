@@ -33,6 +33,13 @@ export class R2Error extends Error {
 const LIST_PAGE_SIZE = 1000
 
 /**
+ * Ceiling on one request, body included. Every call here moves at most a few
+ * megabytes, so this only ever trips on a connection that has stalled — and
+ * without it one stalled read holds an indexing pass open indefinitely.
+ */
+const REQUEST_TIMEOUT_MS = 20_000
+
+/**
  * RFC 3986 encoding for one path segment. `encodeURIComponent` leaves
  * `!'()*` alone, which S3 signature canonicalisation does not.
  */
@@ -75,6 +82,9 @@ export class R2Client {
    * - The original body is sent rather than the signed `Request`'s, which has
    *   become a stream; Node sends a stream chunked, without Content-Length,
    *   and R2 rejects that PUT with 411.
+   *
+   * Each request is also bounded by `REQUEST_TIMEOUT_MS`; a timeout rejects
+   * like any other network failure, so callers need no special case.
    */
   private async send(
     url: string,
@@ -82,7 +92,13 @@ export class R2Client {
   ): Promise<Response> {
     const method = init.method ?? "GET"
     const signed = await this.aws.sign(url, { method, headers: init.headers, body: init.body })
-    return fetch(signed.url, { method, headers: signed.headers, body: init.body, cache: "no-store" })
+    return fetch(signed.url, {
+      method,
+      headers: signed.headers,
+      body: init.body,
+      cache: "no-store",
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    })
   }
 
   /** Every object under `prefix`, following continuation tokens. */

@@ -1,4 +1,4 @@
-import type { ByteSource } from "@/lib/metadata-extractor"
+import { ByteSourceReadError, type ByteSource } from "@/lib/metadata-extractor"
 
 import type { R2Client } from "./r2"
 
@@ -65,21 +65,32 @@ export class R2RangeSource implements ByteSource {
       if (!this.pending) {
         const from = this.prefix.length
         const to = Math.min(this.size, Math.max(end, from + READ_AHEAD_BYTES)) - 1
-        this.pending = this.client
-          .readRange(this.key, from, to)
-          .then((bytes) => {
-            const grown = new Uint8Array(this.prefix.length + bytes.length)
-            grown.set(this.prefix)
-            grown.set(bytes, this.prefix.length)
-            this.prefix = grown
-            // An object shorter than its listing claims would otherwise spin.
-            if (bytes.length === 0) throw new Error(`Unexpected end of ${this.key}`)
-          })
-          .finally(() => {
-            this.pending = null
-          })
+        this.pending = this.extendPrefix(from, to).finally(() => {
+          this.pending = null
+        })
       }
       await this.pending
     }
+  }
+
+  /**
+   * Append bytes `[from, to]` to the prefix. Every failure is a
+   * `ByteSourceReadError`, so the extractor reports it instead of indexing
+   * the file under filename placeholders.
+   */
+  private async extendPrefix(from: number, to: number): Promise<void> {
+    let bytes: Uint8Array
+    try {
+      bytes = await this.client.readRange(this.key, from, to)
+    } catch (error) {
+      throw new ByteSourceReadError(`Could not read ${this.key}`, { cause: error })
+    }
+    // An object shorter than its listing claims would otherwise spin.
+    if (bytes.length === 0) throw new ByteSourceReadError(`Unexpected end of ${this.key}`)
+
+    const grown = new Uint8Array(this.prefix.length + bytes.length)
+    grown.set(this.prefix)
+    grown.set(bytes, this.prefix.length)
+    this.prefix = grown
   }
 }
