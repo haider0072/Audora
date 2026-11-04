@@ -57,6 +57,15 @@ export class ByteSourceReadError extends Error {
   }
 }
 
+/**
+ * Most bytes read from the head of a file in search of tags. Tags and an
+ * embedded cover are all that sit before the audio, and the largest cover in
+ * the owner's library is 10.9 MB (measured 2026-11-04), so this is three times
+ * that. Without a bound, a crafted header claiming a huge tag would have the
+ * reader pull the whole file into memory.
+ */
+const MAX_METADATA_BYTES = 32 * 1024 * 1024
+
 /** `AudioMetadata` plus the cover still as bytes. Internal to parsing. */
 type ParsedMetadata = Partial<AudioMetadata> & { albumArtBytes?: AlbumArtBytes }
 
@@ -104,7 +113,8 @@ export class MetadataExtractor {
         // FLAC — scan block headers to find exact metadata end (handles large embedded art)
         let scanOffset = 4
         let isLastBlock = false
-        while (!isLastBlock && scanOffset < file.size) {
+        const scanLimit = Math.min(file.size, MAX_METADATA_BYTES)
+        while (!isLastBlock && scanOffset < scanLimit) {
           const blockHeaderBuf = await file.slice(scanOffset, scanOffset + 4).arrayBuffer()
           const bh = new DataView(blockHeaderBuf)
           if (bh.byteLength < 4) break
@@ -118,6 +128,7 @@ export class MetadataExtractor {
         metadataSize = Math.min(file.size, 4 * 1024 * 1024)
       }
 
+      metadataSize = Math.min(metadataSize, MAX_METADATA_BYTES)
       const buffer = await file.slice(0, metadataSize).arrayBuffer()
       const additionalMetadata = await this.parseFileMetadata(buffer, file.type)
 
@@ -658,6 +669,8 @@ export class MetadataExtractor {
     if (hv.getUint8(0) === 0x49 && hv.getUint8(1) === 0x44 && hv.getUint8(2) === 0x33) {
       frameOffset = 10 + this.getId3Size(hv, 6)
     }
+    // A tag claiming to run past the metadata bound is not one worth chasing.
+    if (frameOffset + 4 > MAX_METADATA_BYTES) return undefined
 
     // Read first frame header (4 bytes)
     const frameBuf = await file.slice(frameOffset, frameOffset + 4).arrayBuffer()

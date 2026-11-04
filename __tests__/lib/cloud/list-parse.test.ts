@@ -43,6 +43,16 @@ describe("parseListPage", () => {
     expect(objects[0].key).toBe("library/Simon & Garfunkel/Track's.mp3")
   })
 
+  it("decodes each entity once, so decoded text is never decoded again", () => {
+    const { objects } = parseListPage(page(entry("library/&#38;amp; &amp;lt;b&amp;gt;.mp3", 10)))
+    expect(objects[0].key).toBe("library/&amp; &lt;b&gt;.mp3")
+  })
+
+  it("leaves a character reference outside Unicode as written instead of failing the page", () => {
+    const { objects } = parseListPage(page(entry("library/&#99999999;.mp3", 10) + entry("library/ok.mp3", 1)))
+    expect(objects.map((object) => object.key)).toEqual(["library/&#99999999;.mp3", "library/ok.mp3"])
+  })
+
   it("keeps non-ASCII keys intact", () => {
     const { objects } = parseListPage(page(entry("library/عاطف اسلم/تیرا ہونے لگا.flac", 10)))
     expect(objects[0].key).toBe("library/عاطف اسلم/تیرا ہونے لگا.flac")
