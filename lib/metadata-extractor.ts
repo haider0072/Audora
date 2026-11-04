@@ -26,8 +26,45 @@ interface AudioMetadata {
   gainCorrection?: number
 }
 
+/**
+ * What the extractor needs from a file: its name, size, MIME type, and ranged
+ * reads. A `File` satisfies it as-is; the cloud library satisfies it with
+ * ranged requests against an object in R2, which is what lets the same parser
+ * index files it never downloads in full.
+ */
+export interface ByteSource {
+  readonly name: string
+  readonly size: number
+  readonly type: string
+  slice(start?: number, end?: number): { arrayBuffer(): Promise<ArrayBuffer> }
+}
+
+/** Embedded cover art as raw bytes, before it is given a URL. */
+export interface AlbumArtBytes {
+  data: Uint8Array<ArrayBuffer>
+}
+
+/** `AudioMetadata` plus the cover still as bytes. Internal to parsing. */
+type ParsedMetadata = Partial<AudioMetadata> & { albumArtBytes?: AlbumArtBytes }
+
 export class MetadataExtractor {
+  /**
+   * Read tags, duration and cover from a local file. The cover is returned as
+   * an object URL in `albumArt`, as it always has been.
+   */
   static async extractMetadata(file: File): Promise<AudioMetadata> {
+    const { metadata, albumArt } = await this.extractFromSource(file)
+    if (albumArt) {
+      metadata.albumArt = URL.createObjectURL(new Blob([albumArt.data], { type: "image/jpeg" }))
+    }
+    return metadata
+  }
+
+  /**
+   * Read tags and duration from any byte source, with the cover left as raw
+   * bytes. Used where object URLs are meaningless — on the server.
+   */
+  static async extractFromSource(file: ByteSource): Promise<{ metadata: AudioMetadata; albumArt?: AlbumArtBytes }> {
     const metadata: AudioMetadata = {
       title: file.name.replace(/\.[^/.]+$/, ""),
       fileSize: file.size,
@@ -116,16 +153,17 @@ export class MetadataExtractor {
         finalMetadata.artist = finalMetadata.artists[0]
       }
 
-      return finalMetadata
+      const { albumArtBytes, ...parsed } = finalMetadata
+      return { metadata: parsed, albumArt: albumArtBytes }
     } catch (error) {
       console.error("Error extracting metadata:", error)
-      return metadata
+      return { metadata }
     }
   }
 
-  private static async parseFileMetadata(buffer: ArrayBuffer, mimeType: string): Promise<Partial<AudioMetadata>> {
+  private static async parseFileMetadata(buffer: ArrayBuffer, mimeType: string): Promise<ParsedMetadata> {
     const view = new DataView(buffer)
-    const metadata: Partial<AudioMetadata> = {}
+    const metadata: ParsedMetadata = {}
 
     try {
       if (mimeType.includes("mp3") || this.isMp3Buffer(view)) {
@@ -151,8 +189,8 @@ export class MetadataExtractor {
     return flacSignature === "fLaC"
   }
 
-  private static parseMp3Metadata(view: DataView): Partial<AudioMetadata> {
-    const metadata: Partial<AudioMetadata> = {}
+  private static parseMp3Metadata(view: DataView): ParsedMetadata {
+    const metadata: ParsedMetadata = {}
 
     try {
       // Look for ID3v2 tag
@@ -163,7 +201,7 @@ export class MetadataExtractor {
       }
 
       // Extract album art from ID3v2 APIC frame
-      metadata.albumArt = this.extractMp3AlbumArt(view)
+      metadata.albumArtBytes = this.extractMp3AlbumArt(view)
     } catch (error) {
       console.error("Error parsing MP3 metadata:", error)
     }
@@ -171,8 +209,8 @@ export class MetadataExtractor {
     return metadata
   }
 
-  private static parseFlacMetadata(view: DataView): Partial<AudioMetadata> {
-    const metadata: Partial<AudioMetadata> = {}
+  private static parseFlacMetadata(view: DataView): ParsedMetadata {
+    const metadata: ParsedMetadata = {}
 
     try {
       let offset = 4 // Skip 'fLaC' signature
@@ -197,7 +235,7 @@ export class MetadataExtractor {
           Object.assign(metadata, vorbisData)
         } else if (blockType === 6) {
           // PICTURE
-          metadata.albumArt = this.extractFlacAlbumArt(view, offset, blockSize)
+          metadata.albumArtBytes = this.extractFlacAlbumArt(view, offset, blockSize)
         }
 
         offset += blockSize
@@ -414,7 +452,7 @@ export class MetadataExtractor {
     return metadata
   }
 
-  private static extractMp3AlbumArt(view: DataView): string | undefined {
+  private static extractMp3AlbumArt(view: DataView): AlbumArtBytes | undefined {
     try {
       // Look for APIC frame in ID3v2
       let offset = 10 // Skip ID3v2 header
@@ -450,8 +488,7 @@ export class MetadataExtractor {
           // Extract image data
           const imageSize = frameSize - (dataOffset - frameStart)
           const imageData = new Uint8Array(view.buffer, view.byteOffset + dataOffset, imageSize)
-          const blob = new Blob([imageData.slice()], { type: "image/jpeg" })
-          return URL.createObjectURL(blob)
+          return { data: imageData.slice() }
         }
 
         const frameSize = view.getUint32(offset + 4, false)
@@ -463,7 +500,7 @@ export class MetadataExtractor {
     return undefined
   }
 
-  private static extractFlacAlbumArt(view: DataView, offset: number, blockSize: number): string | undefined {
+  private static extractFlacAlbumArt(view: DataView, offset: number, blockSize: number): AlbumArtBytes | undefined {
     try {
       // Skip picture type (4 bytes)
       offset += 4
@@ -485,8 +522,7 @@ export class MetadataExtractor {
 
       // Extract image data
       const imageData = new Uint8Array(view.buffer, view.byteOffset + offset, imageLength)
-      const blob = new Blob([imageData.slice()], { type: "image/jpeg" })
-      return URL.createObjectURL(blob)
+      return { data: imageData.slice() }
     } catch (error) {
       console.error("Error extracting FLAC album art:", error)
     }
@@ -498,7 +534,7 @@ export class MetadataExtractor {
    * Extract duration from binary file headers without using Audio element.
    * Works in background tabs without throttling.
    */
-  private static async extractDurationFromBinary(file: File, headerView: DataView): Promise<number | undefined> {
+  private static async extractDurationFromBinary(file: ByteSource, headerView: DataView): Promise<number | undefined> {
     try {
       const ext = file.name.split(".").pop()?.toLowerCase() || ""
 
@@ -531,7 +567,7 @@ export class MetadataExtractor {
    * Layout: 4 bytes "fLaC" + 4 byte block header + 34 byte STREAMINFO
    *   Offset 18 (from file start): 20-bit sample rate, 3-bit channels, 5-bit bps, 36-bit total samples
    */
-  private static async getFlacDuration(file: File): Promise<number | undefined> {
+  private static async getFlacDuration(file: ByteSource): Promise<number | undefined> {
     const buf = await file.slice(0, 42).arrayBuffer()
     const view = new DataView(buf)
 
@@ -559,7 +595,7 @@ export class MetadataExtractor {
    * WAV: Duration from RIFF header.
    * data_size / (sample_rate * channels * bits_per_sample / 8)
    */
-  private static async getWavDuration(file: File): Promise<number | undefined> {
+  private static async getWavDuration(file: ByteSource): Promise<number | undefined> {
     const buf = await file.slice(0, 44).arrayBuffer()
     const view = new DataView(buf)
 
@@ -599,7 +635,7 @@ export class MetadataExtractor {
    * MP3: Estimate duration from file size and first frame bitrate.
    * Parses first valid MPEG frame header after ID3v2 tag.
    */
-  private static async getMp3Duration(file: File): Promise<number | undefined> {
+  private static async getMp3Duration(file: ByteSource): Promise<number | undefined> {
     // Find first frame after ID3v2 tag
     let frameOffset = 0
     const header = await file.slice(0, 10).arrayBuffer()

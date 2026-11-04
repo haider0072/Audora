@@ -1,0 +1,85 @@
+import type { ByteSource } from "@/lib/metadata-extractor"
+
+import type { R2Client } from "./r2"
+
+/**
+ * An object in R2 presented as a `ByteSource`, so the metadata extractor can
+ * read tags from it with ranged requests instead of downloading the file.
+ *
+ * Server only — it reads through the credentialed client.
+ *
+ * Every read the extractor makes sits at the head of the file: the format
+ * signature, the FLAC block chain, the ID3 tag, the first MPEG frame. So
+ * rather than one request per slice — the FLAC block scan alone asks for
+ * four bytes at a time — this keeps one contiguous prefix of the object in
+ * memory and grows it to cover whatever is asked for, at least a chunk at a
+ * time. A typical file is indexed in one or two requests.
+ */
+
+/** Minimum growth of the cached prefix. Covers the tags of most files in one read. */
+const READ_AHEAD_BYTES = 256 * 1024
+
+const MIME_BY_EXTENSION: Record<string, string> = {
+  flac: "audio/flac",
+  mp3: "audio/mpeg",
+  m4a: "audio/mp4",
+  aac: "audio/aac",
+  wav: "audio/wav",
+  ogg: "audio/ogg",
+  opus: "audio/ogg",
+}
+
+export function mimeTypeForName(name: string): string {
+  const extension = name.split(".").pop()?.toLowerCase() ?? ""
+  return MIME_BY_EXTENSION[extension] ?? "application/octet-stream"
+}
+
+export class R2RangeSource implements ByteSource {
+  readonly type: string
+  private prefix = new Uint8Array(0)
+  private pending: Promise<void> | null = null
+
+  constructor(
+    private readonly client: R2Client,
+    private readonly key: string,
+    readonly name: string,
+    readonly size: number,
+  ) {
+    this.type = mimeTypeForName(name)
+  }
+
+  slice(start = 0, end = this.size): { arrayBuffer(): Promise<ArrayBuffer> } {
+    const from = Math.max(0, Math.min(start, this.size))
+    const to = Math.max(from, Math.min(end, this.size))
+    return {
+      arrayBuffer: async () => {
+        await this.ensurePrefix(to)
+        return this.prefix.slice(from, to).buffer
+      },
+    }
+  }
+
+  /** Grow the cached prefix until it reaches `end`. Concurrent callers share one read. */
+  private async ensurePrefix(end: number): Promise<void> {
+    while (this.prefix.length < end) {
+      if (!this.pending) {
+        const from = this.prefix.length
+        const to = Math.min(this.size, Math.max(end, from + READ_AHEAD_BYTES)) - 1
+        this.pending = this.client
+          .readRange(this.key, from, to)
+          .then((bytes) => {
+            const grown = new Uint8Array(this.prefix.length + bytes.length)
+            grown.set(this.prefix)
+            grown.set(bytes, this.prefix.length)
+            this.prefix = grown
+            // An object shorter than its listing claims would otherwise spin.
+            if (bytes.length === 0) throw new Error(`Unexpected end of ${this.key}`)
+          })
+          .finally(() => {
+            this.pending = null
+          })
+      }
+      await this.pending
+    }
+  }
+}
