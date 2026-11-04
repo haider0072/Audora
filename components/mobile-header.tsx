@@ -1,7 +1,7 @@
 "use client"
 import { Button } from "@/components/ui/button"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
-import { Music, Plus, FolderOpen, Upload, MonitorSpeaker } from "lucide-react"
+import { Music, Plus, FolderOpen, Upload, MonitorSpeaker, Cloud } from "lucide-react"
 import { ThemeToggle } from "./theme-toggle"
 
 interface MobileHeaderProps {
@@ -12,6 +12,10 @@ interface MobileHeaderProps {
   onOpenSync?: () => void
   /** Highlights the entry point while a session is connected. */
   syncActive?: boolean
+  /** Opens the cloud library panel. */
+  onOpenCloud?: () => void
+  /** Highlights the entry point while signed in to the cloud library. */
+  cloudActive?: boolean
 }
 
 export function MobileHeader({
@@ -20,6 +24,8 @@ export function MobileHeader({
   isLoading = false,
   onOpenSync,
   syncActive = false,
+  onOpenCloud,
+  cloudActive = false,
 }: MobileHeaderProps) {
   return (
     <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
@@ -61,6 +67,18 @@ export function MobileHeader({
               aria-label="Play on two devices"
             >
               <MonitorSpeaker className="w-4 h-4" />
+            </Button>
+          ) : null}
+
+          {onOpenCloud ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              className={`h-9 w-9 p-0 ${cloudActive ? "text-primary" : ""}`}
+              onClick={onOpenCloud}
+              aria-label="Cloud library"
+            >
+              <Cloud className="w-4 h-4" />
             </Button>
           ) : null}
 

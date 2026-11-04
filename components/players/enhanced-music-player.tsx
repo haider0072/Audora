@@ -12,7 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import {
   Play, Pause, SkipBack, SkipForward,
   Volume2, VolumeX, Settings, Mic, Youtube, Sparkles, Shuffle, Maximize2, User,
-  Search, Music, List, Globe, Library, MonitorSpeaker,
+  Search, Music, List, Globe, Library, MonitorSpeaker, Cloud,
 } from "lucide-react"
 
 import Image from "next/image"
@@ -40,9 +40,12 @@ import { usePlaybackTime } from "@/hooks/use-playback-time"
 import { AddMusicControls } from "@/components/add-music-control"
 import { FullscreenPlayer } from "@/components/fullscreen-player"
 import { SyncPanel } from "@/components/sync-panel"
+import { CloudLibraryPanel } from "@/components/cloud-library-panel"
+import { useCloudLibrary } from "@/hooks/use-cloud-library"
 import { useDeviceSync } from "@/hooks/use-device-sync"
 import type { SyncPlaybackAdapter } from "@/hooks/use-sync-playback"
 import { findTrackByKey, trackLabel, trackSyncKey } from "@/lib/sync/song-match"
+import { createMediaUrl, releaseMediaUrl, songSource } from "@/lib/media-source"
 
 const LyricsDisplay = lazy(() =>
   import("@/components/lyrics-display").then(mod => ({ default: mod.LyricsDisplay }))
@@ -104,6 +107,7 @@ export default function EnhancedMusicPlayer() {
   const [albumArtSourceRect, setAlbumArtSourceRect] = useState<DOMRect | null>(null);
   const [sidebarMode, setSidebarMode] = useState<"library" | "online">("library");
   const [showSync, setShowSync] = useState(false);
+  const [showCloud, setShowCloud] = useState(false);
   const [searchQuery, setSearchQuery] = useState("")
   const [playlistScrollTarget, setPlaylistScrollTarget] = useState<PlaylistScrollTarget | null>(null)
 
@@ -259,6 +263,7 @@ export default function EnhancedMusicPlayer() {
   })
 
   const { isInitialized, isRestoringPlaylist, restorePlaylist, savePlaylist } = usePlaylistPersistence()
+  const cloud = useCloudLibrary({ isReady: isInitialized, songCount: songs.length, setSongs })
 
   // Folder sync hook
   const {
@@ -312,8 +317,9 @@ export default function EnhancedMusicPlayer() {
         setSongs(restoredSongs)
         if (current) {
           setCurrentSong(current)
-          if (audioRef.current) {
-            const audioUrl = URL.createObjectURL(current.file)
+          const source = songSource(current)
+          if (audioRef.current && source) {
+            const audioUrl = createMediaUrl(source)
             setCurrentSong({ ...current, url: audioUrl })
             audioRef.current.src = audioUrl
             audioRef.current.load()
@@ -357,7 +363,7 @@ export default function EnhancedMusicPlayer() {
         applyNormalization(song.gainCorrection ?? 0)
         const swapped = swapToPreloaded()
         if (swapped) {
-          if (currentSong?.url) URL.revokeObjectURL(currentSong.url)
+          releaseMediaUrl(currentSong?.url)
           setCurrentSong(song)
           setCurrentBitrate(song.bitrate)
           setIsPlaying(true)
@@ -394,11 +400,18 @@ export default function EnhancedMusicPlayer() {
       // Manual / non-preloaded crossfade: blend into the new track via the
       // inactive element instead of a hard reload. Returns false (→ normal load)
       // when crossfade is off or nothing is currently playing.
+      const source = songSource(song)
+      if (!source) {
+        console.error("Song has neither a local file nor a cloud copy:", song.id)
+        toast({ title: "This song can't be played", variant: "destructive" })
+        return
+      }
+
       applyNormalization(song.gainCorrection ?? 0)
-      const faded = await crossfadeTo(song.file, abort.signal)
+      const faded = await crossfadeTo(source, abort.signal)
       if (abort.signal.aborted) return
       if (faded) {
-        if (currentSong?.url) URL.revokeObjectURL(currentSong.url)
+        releaseMediaUrl(currentSong?.url)
         setCurrentSong(song)
         setCurrentBitrate(song.bitrate)
         setIsPlaying(true)
@@ -411,7 +424,7 @@ export default function EnhancedMusicPlayer() {
       resetGaplessState()
 
       setIsTransitioning(true)
-      if (currentSong?.url) URL.revokeObjectURL(currentSong.url)
+      releaseMediaUrl(currentSong?.url)
       preloadUpcomingSongs()
       setCurrentSong(song)
       setCurrentBitrate(song.bitrate)
@@ -421,7 +434,7 @@ export default function EnhancedMusicPlayer() {
 
       if (audioRef.current) {
         audioRef.current.pause()
-        const audioUrl = URL.createObjectURL(song.file)
+        const audioUrl = createMediaUrl(source)
         const updatedSong = { ...song, url: audioUrl }
         setCurrentSong(updatedSong)
         audioRef.current.src = audioUrl
@@ -460,10 +473,11 @@ export default function EnhancedMusicPlayer() {
    */
   const ensureSourceLoaded = useCallback(async () => {
     const audio = audioRef.current
-    if (!audio || audio.src || !currentSong?.file) return
+    const source = songSource(currentSong)
+    if (!audio || audio.src || !currentSong || !source) return
 
     resetGaplessState() // ensure we're on primary
-    const audioUrl = URL.createObjectURL(currentSong.file)
+    const audioUrl = createMediaUrl(source)
     setCurrentSong({ ...currentSong, url: audioUrl })
     audio.src = audioUrl
     audio.load()
@@ -519,9 +533,10 @@ export default function EnhancedMusicPlayer() {
   // Keep nearEndHandlerRef pointing to the latest handler (preloads next song for gapless)
   nearEndHandlerRef.current = () => {
     const nextSong = getNextSong()
-    if (nextSong) {
+    const source = songSource(nextSong)
+    if (nextSong && source) {
       pendingPreloadRef.current = nextSong
-      preloadNextSong(nextSong.file)
+      preloadNextSong(source)
     }
   }
 
@@ -635,9 +650,7 @@ export default function EnhancedMusicPlayer() {
   // Cleanup Object URLs and caches on unmount
   useEffect(() => {
     return () => {
-      songs.forEach((song) => {
-        if (song.url) URL.revokeObjectURL(song.url)
-      })
+      songs.forEach((song) => releaseMediaUrl(song.url))
       AlbumArtCache.clearCache()
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps -- intentional: cleanup only on unmount
@@ -658,8 +671,9 @@ export default function EnhancedMusicPlayer() {
   return (
     <div className="min-h-screen max-h-screen overflow-hidden relative">
       <AlbumArtBackground albumArt={currentSong?.albumArt} songId={currentSong?.id} isTransitioning={isTransitioning} />
-      <audio ref={audioRef} preload="metadata" className="hidden" />
-      <audio ref={secondaryAudioRef} preload="metadata" className="hidden" />
+      {/* crossOrigin: cloud songs stream from R2, and Web Audio outputs silence for a cross-origin element without CORS */}
+      <audio ref={audioRef} preload="metadata" crossOrigin="anonymous" className="hidden" />
+      <audio ref={secondaryAudioRef} preload="metadata" crossOrigin="anonymous" className="hidden" />
       {/* Screen reader announcements for song changes */}
       <div aria-live="polite" aria-atomic="true" className="sr-only">
         {currentSong && `Now playing: ${currentSong.title}${currentSong.artist ? ` by ${currentSong.artist}` : ""}`}
@@ -912,6 +926,15 @@ export default function EnhancedMusicPlayer() {
                           >
                             <MonitorSpeaker className="w-3.5 h-3.5" />
                           </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className={`h-8 w-8 p-0 ${cloud.status === "ready" ? "text-primary" : ""}`}
+                            onClick={() => setShowCloud(true)}
+                            aria-label="Cloud library"
+                          >
+                            <Cloud className="w-3.5 h-3.5" />
+                          </Button>
                           <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={() => setActiveView("lyrics")} disabled={!currentSong} aria-label="Show lyrics">
                             <Mic className="w-3.5 h-3.5" />
                           </Button>
@@ -964,6 +987,14 @@ export default function EnhancedMusicPlayer() {
                       <DialogTitle>Two-device playback</DialogTitle>
                     </DialogHeader>
                     <SyncPanel sync={sync} />
+                  </DialogContent>
+                </Dialog>
+                <Dialog open={showCloud} onOpenChange={setShowCloud}>
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>Cloud library</DialogTitle>
+                    </DialogHeader>
+                    <CloudLibraryPanel cloud={cloud} />
                   </DialogContent>
                 </Dialog>
               </>

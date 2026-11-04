@@ -13,6 +13,7 @@ import {
   Trash2,
 } from "lucide-react"
 import type { AudioMetadata } from "@/lib/metadata-extractor"
+import type { CloudSongRef } from "@/lib/cloud/types"
 import { AlbumArtDisplay } from "./album-art-display"
 import { AlphabetSidebar, getArtistLetter } from "./alphabet-sidebar"
 import {
@@ -24,8 +25,13 @@ import {
 
 interface Song extends AudioMetadata {
   id: string
-  file: File
+  /** The audio itself. Absent for a song that lives only in the cloud library. */
+  file?: File
   url: string
+  /** Original file name. Set on restored and cloud songs; fresh imports read `file.name`. */
+  fileName?: string
+  /** Present when this song is in the cloud library, whether or not it is also local. */
+  cloud?: CloudSongRef
 }
 
 export interface PlaylistScrollTarget {

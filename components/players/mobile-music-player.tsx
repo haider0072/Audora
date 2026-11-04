@@ -29,9 +29,12 @@ import { MobileArtistInfo } from "@/components/mobile-artist-info"
 import { OnlineSearchSidebar } from "@/components/dab/online-search-sidebar"
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { SyncPanel } from "@/components/sync-panel"
+import { CloudLibraryPanel } from "@/components/cloud-library-panel"
+import { useCloudLibrary } from "@/hooks/use-cloud-library"
 import { useDeviceSync } from "@/hooks/use-device-sync"
 import type { SyncPlaybackAdapter } from "@/hooks/use-sync-playback"
 import { findTrackByKey, trackLabel, trackSyncKey } from "@/lib/sync/song-match"
+import { createMediaUrl, releaseMediaUrl, songSource } from "@/lib/media-source"
 
 import type { EqualizerBand } from "@/components/refined-equalizer"
 import { formatTime, waitForCanPlay } from "@/lib/utils"
@@ -47,6 +50,7 @@ export default function MobileMusicPlayer() {
   const [isTransitioning, setIsTransitioning] = useState(false)
   const [sidebarMode, setSidebarMode] = useState<"library" | "online">("library")
   const [showSync, setShowSync] = useState(false)
+  const [showCloud, setShowCloud] = useState(false)
 
   const audioRef = useRef<HTMLAudioElement>(null)
   const secondaryAudioRef = useRef<HTMLAudioElement>(null)
@@ -201,6 +205,7 @@ export default function MobileMusicPlayer() {
   })
 
   const { isInitialized, isRestoringPlaylist, restorePlaylist, savePlaylist } = usePlaylistPersistence()
+  const cloud = useCloudLibrary({ isReady: isInitialized, songCount: songs.length, setSongs })
 
   // Filtered songs for search
   const filteredSongs = useMemo(() => {
@@ -316,8 +321,9 @@ export default function MobileMusicPlayer() {
         setSongs(restoredSongs)
         if (current) {
           setCurrentSong(current)
-          if (audioRef.current) {
-            const audioUrl = URL.createObjectURL(current.file)
+          const source = songSource(current)
+          if (audioRef.current && source) {
+            const audioUrl = createMediaUrl(source)
             setCurrentSong({ ...current, url: audioUrl })
             audioRef.current.src = audioUrl
             audioRef.current.load()
@@ -349,7 +355,7 @@ export default function MobileMusicPlayer() {
       applyNormalization(song.gainCorrection ?? 0)
       const swapped = swapToPreloaded()
       if (swapped) {
-        if (currentSong?.url) URL.revokeObjectURL(currentSong.url)
+        releaseMediaUrl(currentSong?.url)
         setCurrentSong(song)
         setIsPlaying(true)
         notifySongSelected(song, isAutoAdvance)
@@ -384,11 +390,18 @@ export default function MobileMusicPlayer() {
     // Manual / non-preloaded crossfade: blend into the new track via the
     // inactive element instead of a hard reload. Returns false (→ normal load)
     // when crossfade is off or nothing is currently playing.
+    const source = songSource(song)
+    if (!source) {
+      console.error("Song has neither a local file nor a cloud copy:", song.id)
+      toast({ title: "This song can't be played", variant: "destructive" })
+      return
+    }
+
     applyNormalization(song.gainCorrection ?? 0)
-    const faded = await crossfadeTo(song.file, abort.signal)
+    const faded = await crossfadeTo(source, abort.signal)
     if (abort.signal.aborted) return
     if (faded) {
-      if (currentSong?.url) URL.revokeObjectURL(currentSong.url)
+      releaseMediaUrl(currentSong?.url)
       setCurrentSong(song)
       setIsPlaying(true)
       notifySongSelected(song, isAutoAdvance)
@@ -402,9 +415,7 @@ export default function MobileMusicPlayer() {
     try {
       setIsTransitioning(true)
 
-      if (currentSong?.url && currentSong.url !== song.url) {
-        URL.revokeObjectURL(currentSong.url)
-      }
+      if (currentSong?.url !== song.url) releaseMediaUrl(currentSong?.url)
 
       setTimeout(() => preloadUpcomingSongs(), 100)
 
@@ -417,7 +428,7 @@ export default function MobileMusicPlayer() {
         audioRef.current.pause()
         audioRef.current.currentTime = 0
 
-        const audioUrl = URL.createObjectURL(song.file)
+        const audioUrl = createMediaUrl(source)
         const updatedSong = { ...song, url: audioUrl }
         setCurrentSong(updatedSong)
         audioRef.current.src = audioUrl
@@ -463,10 +474,11 @@ export default function MobileMusicPlayer() {
    */
   const ensureSourceLoaded = useCallback(async () => {
     const audio = audioRef.current
-    if (!audio || audio.src || !currentSong?.file) return
+    const source = songSource(currentSong)
+    if (!audio || audio.src || !currentSong || !source) return
 
     resetGaplessState() // ensure we're on primary
-    const audioUrl = URL.createObjectURL(currentSong.file)
+    const audioUrl = createMediaUrl(source)
     setCurrentSong({ ...currentSong, url: audioUrl })
     audio.src = audioUrl
     audio.load()
@@ -510,9 +522,10 @@ export default function MobileMusicPlayer() {
   // Keep nearEndHandlerRef pointing to the latest handler (preloads next song for gapless)
   nearEndHandlerRef.current = () => {
     const nextSong = getNextSong()
-    if (nextSong) {
+    const source = songSource(nextSong)
+    if (nextSong && source) {
       pendingPreloadRef.current = nextSong
-      preloadNextSong(nextSong.file)
+      preloadNextSong(source)
     }
   }
 
@@ -601,11 +614,7 @@ export default function MobileMusicPlayer() {
   // Cleanup URLs on unmount
   useEffect(() => {
     return () => {
-      songs.forEach((song) => {
-        if (song.url) {
-          URL.revokeObjectURL(song.url)
-        }
-      })
+      songs.forEach((song) => releaseMediaUrl(song.url))
       AlbumArtCache.clearCache()
     }
   }, [])
@@ -634,8 +643,9 @@ export default function MobileMusicPlayer() {
       />
 
       {/* Audio Elements (dual for gapless playback) */}
-      <audio ref={audioRef} preload="metadata" />
-      <audio ref={secondaryAudioRef} preload="metadata" />
+      {/* crossOrigin: cloud songs stream from R2, and Web Audio outputs silence for a cross-origin element without CORS */}
+      <audio ref={audioRef} preload="metadata" crossOrigin="anonymous" />
+      <audio ref={secondaryAudioRef} preload="metadata" crossOrigin="anonymous" />
 
       {/* Mobile Layout */}
       <div className="flex flex-col h-screen relative z-10">
@@ -646,6 +656,8 @@ export default function MobileMusicPlayer() {
           isLoading={isLoadingSongs || isRestoringPlaylist}
           onOpenSync={() => setShowSync(true)}
           syncActive={syncConnected}
+          onOpenCloud={() => setShowCloud(true)}
+          cloudActive={cloud.status === "ready"}
         />
 
         {/* Playlist Controls */}
@@ -710,6 +722,17 @@ export default function MobileMusicPlayer() {
             </SheetHeader>
             <div className="pt-4">
               <SyncPanel sync={sync} />
+            </div>
+          </SheetContent>
+        </Sheet>
+
+        <Sheet open={showCloud} onOpenChange={setShowCloud}>
+          <SheetContent side="bottom" className="max-h-[85vh] overflow-y-auto">
+            <SheetHeader>
+              <SheetTitle>Cloud library</SheetTitle>
+            </SheetHeader>
+            <div className="pt-4">
+              <CloudLibraryPanel cloud={cloud} />
             </div>
           </SheetContent>
         </Sheet>
