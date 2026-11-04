@@ -3,7 +3,7 @@
  */
 import { ByteSourceReadError, MetadataExtractor } from "@/lib/metadata-extractor"
 import type { R2Client } from "@/lib/cloud/r2"
-import { R2RangeSource, mimeTypeForName } from "@/lib/cloud/r2-source"
+import { R2RangeSource } from "@/lib/cloud/r2-source"
 import { buildFlac } from "@/testing/flac-fixture"
 
 function fakeClient(bytes: Uint8Array) {
@@ -92,13 +92,5 @@ describe("R2RangeSource", () => {
 
     const { metadata } = await MetadataExtractor.extractFromSource(source)
     expect(metadata.title).toBe("Mystery")
-  })
-})
-
-describe("mimeTypeForName", () => {
-  it("maps audio extensions and falls back for the rest", () => {
-    expect(mimeTypeForName("a.FLAC")).toBe("audio/flac")
-    expect(mimeTypeForName("a.mp3")).toBe("audio/mpeg")
-    expect(mimeTypeForName("a.xyz")).toBe("application/octet-stream")
   })
 })

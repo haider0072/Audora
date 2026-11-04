@@ -14,6 +14,7 @@ import {
   type IndexEntry,
   type LibraryIndex,
 } from "./library-index-schema"
+import { LIBRARY_PREFIX, isAudioKey } from "./library-keys"
 import type { R2Object } from "./list-parse"
 import { R2Client } from "./r2"
 import { R2RangeSource } from "./r2-source"
@@ -34,10 +35,8 @@ import type { CloudIndexResponse, CloudLibraryResponse, CloudSong } from "./type
  * objects that have disappeared are dropped on the next indexing pass.
  */
 
-export const LIBRARY_PREFIX = "library/"
 const INDEX_KEY = "index/library-v1.json"
 
-const AUDIO_EXTENSIONS = new Set(["flac", "mp3", "m4a", "aac", "wav", "ogg", "opus"])
 
 /** SigV4 allows at most seven days. */
 const URL_LIFETIME_SECONDS = 7 * 24 * 60 * 60
@@ -67,11 +66,6 @@ export function cloudSongId(key: string): string {
 
 function fileNameOf(key: string): string {
   return key.slice(key.lastIndexOf("/") + 1)
-}
-
-export function isAudioKey(key: string): boolean {
-  const extension = key.split(".").pop()?.toLowerCase() ?? ""
-  return key.startsWith(LIBRARY_PREFIX) && !key.endsWith("/") && AUDIO_EXTENSIONS.has(extension)
 }
 
 /** Rendered covers never change behind a key, so browsers may keep them for good. */
