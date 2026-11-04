@@ -1,7 +1,7 @@
 /**
  * @jest-environment node
  */
-import { MetadataExtractor } from "@/lib/metadata-extractor"
+import { ByteSourceReadError, MetadataExtractor } from "@/lib/metadata-extractor"
 import type { R2Client } from "@/lib/cloud/r2"
 import { R2RangeSource, mimeTypeForName } from "@/lib/cloud/r2-source"
 
@@ -108,7 +108,25 @@ describe("R2RangeSource", () => {
   it("fails instead of spinning when the object is shorter than listed", async () => {
     const { client } = fakeClient(new Uint8Array([1, 2]))
     const source = new R2RangeSource(client, "library/x.mp3", "x.mp3", 10)
-    await expect(source.slice(0, 10).arrayBuffer()).rejects.toThrow("Unexpected end")
+    await expect(source.slice(0, 10).arrayBuffer()).rejects.toThrow(ByteSourceReadError)
+  })
+
+  it("surfaces a failed read instead of letting the extractor fall back to the file name", async () => {
+    const readRange = jest.fn(async () => {
+      throw new TypeError("fetch failed")
+    })
+    const source = new R2RangeSource({ readRange } as unknown as R2Client, "library/x.flac", "x.flac", 1000)
+
+    // A placeholder here would be indexed as done and never retried.
+    await expect(MetadataExtractor.extractFromSource(source)).rejects.toThrow(ByteSourceReadError)
+  })
+
+  it("still falls back to the file name when the bytes arrive but do not parse", async () => {
+    const { client } = fakeClient(new Uint8Array(64).fill(0x00))
+    const source = new R2RangeSource(client, "library/Mystery.flac", "Mystery.flac", 64)
+
+    const { metadata } = await MetadataExtractor.extractFromSource(source)
+    expect(metadata.title).toBe("Mystery")
   })
 })
 
