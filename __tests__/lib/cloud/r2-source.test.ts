@@ -1,11 +1,9 @@
-import { TextDecoder as NodeTextDecoder } from "node:util"
-
+/**
+ * @jest-environment node
+ */
 import { MetadataExtractor } from "@/lib/metadata-extractor"
 import type { R2Client } from "@/lib/cloud/r2"
 import { R2RangeSource, mimeTypeForName } from "@/lib/cloud/r2-source"
-
-// The indexer runs on the server, where TextDecoder is global; jsdom lacks it.
-Object.assign(globalThis, { TextDecoder: globalThis.TextDecoder ?? NodeTextDecoder })
 
 function u32be(value: number): number[] {
   return [(value >>> 24) & 0xff, (value >>> 16) & 0xff, (value >>> 8) & 0xff, value & 0xff]

@@ -1,3 +1,6 @@
+/**
+ * @jest-environment node
+ */
 import { parseListPage } from "@/lib/cloud/list-parse"
 
 const page = (contents: string, truncated = false, token = "") => `<?xml version="1.0" encoding="UTF-8"?>

@@ -1,3 +1,6 @@
+/**
+ * @jest-environment node
+ */
 import type { CloudConfig } from "@/lib/cloud/config"
 import {
   SESSION_MAX_AGE_SECONDS,
