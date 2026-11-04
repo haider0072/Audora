@@ -131,6 +131,32 @@ describe('usePlaylistManager', () => {
     })
   })
 
+  describe('peekNextSong', () => {
+    it('agrees with getNextSong in sequential mode', () => {
+      const { result } = renderHook(() => usePlaylistManager())
+      const songs = [makeSong({ id: '1' }), makeSong({ id: '2' })]
+      act(() => {
+        result.current.setSongs(songs)
+        result.current.setCurrentSong(songs[0])
+        result.current.setViewMode('list')
+      })
+      expect(result.current.peekNextSong()?.id).toBe(result.current.getNextSong()?.id)
+    })
+
+    it('looks ahead without dealing a new shuffle when the queue is used up', () => {
+      const { result } = renderHook(() => usePlaylistManager())
+      const songs = [makeSong({ id: '1' }), makeSong({ id: '2' })]
+      act(() => {
+        result.current.setSongs(songs)
+        result.current.setShuffleMode(true)
+        result.current.setShuffledQueue([])
+      })
+
+      expect(result.current.peekNextSong()).toBeNull()
+      expect(result.current.shuffledQueue).toEqual([])
+    })
+  })
+
   describe('getNextSong — sequential mode', () => {
     it('returns first song when no current song', () => {
       const { result } = renderHook(() => usePlaylistManager())

@@ -8,6 +8,7 @@ import { LoudnessAnalyzer } from "@/lib/loudness-analyzer"
 import { getAllPresets, type EqPreset } from "@/lib/eq-presets"
 import { useAlbumArtPreloader } from "@/hooks/use-album-art-preloader"
 import { usePlaylistManager } from "@/hooks/use-playlist-manager"
+import { useWarmNextSong } from "@/hooks/use-warm-next-song"
 import { useAudioEngine } from "@/hooks/use-audio-engine"
 import { useEqualizerManager, DEFAULT_EQUALIZER_BANDS } from "@/hooks/use-equalizer-manager"
 import { useFileImporter } from "@/hooks/use-file-importer"
@@ -108,7 +109,7 @@ export default function MobileMusicPlayer() {
   const {
     songs, setSongs, currentSong, setCurrentSong,
     shuffleMode, setShuffleMode, viewMode, setViewMode,
-    sortedSongs, getNextSong, getPreviousSong, notifySongSelected,
+    sortedSongs, getNextSong, peekNextSong, getPreviousSong, notifySongSelected,
     toggleShuffle, removeSong, resetPlaylist, playNext,
   } = usePlaylistManager({
     onCurrentSongRemoved: () => {
@@ -206,6 +207,7 @@ export default function MobileMusicPlayer() {
 
   const { isInitialized, isRestoringPlaylist, restorePlaylist, savePlaylist } = usePlaylistPersistence()
   const cloud = useCloudLibrary({ isReady: isInitialized, songCount: songs.length, setSongs })
+  useWarmNextSong(currentSong?.id, isPlaying, peekNextSong)
 
   // Filtered songs for search
   const filteredSongs = useMemo(() => {

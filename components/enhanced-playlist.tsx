@@ -14,6 +14,7 @@ import {
 } from "lucide-react"
 import type { AudioMetadata } from "@/lib/metadata-extractor"
 import type { CloudSongRef } from "@/lib/cloud/types"
+import { hoverSong, leaveSong, warmSong } from "@/lib/song-warmup"
 import { AlbumArtDisplay } from "./album-art-display"
 import { AlphabetSidebar, getArtistLetter } from "./alphabet-sidebar"
 import {
@@ -99,6 +100,12 @@ const SongItem = memo(
           ${isCurrentSong ? "bg-primary/10 dark:bg-primary/15" : "hover:bg-muted/30 hover:shadow-sm"}
         `}
         onClick={() => onSongSelect(song)}
+        // Start a cloud song loading on intent, so the click finds it ready.
+        onPointerEnter={(event) => {
+          if (event.pointerType === "mouse") hoverSong(song)
+        }}
+        onPointerLeave={leaveSong}
+        onPointerDown={() => warmSong(song)}
       >
         {/* Background overlay for smooth transitions */}
         <div

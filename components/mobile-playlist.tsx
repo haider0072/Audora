@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Music, Play, Trash2, Search, MoreHorizontal, ListPlus } from "lucide-react"
 import { AlbumArtDisplay } from "./album-art-display"
 import type { Song } from "./enhanced-playlist"
+import { hoverSong, leaveSong, warmSong } from "@/lib/song-warmup"
 import { AlphabetSidebar, getArtistLetter } from "./alphabet-sidebar"
 import { memo, useState, useMemo, useRef, useEffect, useCallback } from "react"
 import {
@@ -182,6 +183,12 @@ export function MobilePlaylist({
           ${!isCurrentSong ? "hover:bg-muted/30 hover:shadow-sm" : ""}
         `}
           onClick={() => onSongSelect(song)}
+          // A finger landing on a cloud song starts it loading before the tap completes.
+          onPointerEnter={(event) => {
+            if (event.pointerType === "mouse") hoverSong(song)
+          }}
+          onPointerLeave={leaveSong}
+          onPointerDown={() => warmSong(song)}
         >
           {/* Background overlay for smooth transitions */}
           <div

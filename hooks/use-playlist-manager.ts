@@ -36,6 +36,12 @@ export interface UsePlaylistManagerReturn {
   getCurrentPlaylist: () => Song[]
   generateShuffledQueue: (songList: Song[], currentSongId?: string) => Song[]
   getNextSong: () => Song | null
+  /**
+   * The song `getNextSong` would return, without any of its side effects —
+   * for looking ahead (warming the next track) rather than advancing. Null
+   * where advancing would first have to deal a fresh shuffle.
+   */
+  peekNextSong: () => Song | null
   getPreviousSong: () => Song | null
   notifySongSelected: (song: Song, isAutoAdvance: boolean) => void
   toggleShuffle: () => void
@@ -177,7 +183,7 @@ export function usePlaylistManager(options: UsePlaylistManagerOptions = {}): Use
   /**
    * Get the next song based on shuffle mode
    */
-  const getNextSong = useCallback((): Song | null => {
+  const peekNextSong = useCallback((): Song | null => {
     // Manual queue takes priority over both shuffle and sequential modes
     if (manualQueue.length > 0) return manualQueue[0]
 
@@ -185,17 +191,7 @@ export function usePlaylistManager(options: UsePlaylistManagerOptions = {}): Use
     if (currentPlaylist.length === 0) return null
 
     if (shuffleMode) {
-      // Return next song from shuffled queue
-      if (currentShuffleIndex < shuffledQueue.length) {
-        return shuffledQueue[currentShuffleIndex]
-      }
-
-      // Queue exhausted, generate new queue
-      const newQueue = generateShuffledQueue(currentPlaylist)
-      setShuffledQueue(newQueue)
-      setCurrentShuffleIndex(0)
-      setPlayedSongs(new Set())
-      return newQueue.length > 0 ? newQueue[0] : null
+      return currentShuffleIndex < shuffledQueue.length ? shuffledQueue[currentShuffleIndex] : null
     }
 
     // Sequential mode
@@ -205,7 +201,21 @@ export function usePlaylistManager(options: UsePlaylistManagerOptions = {}): Use
     if (currentIndex === -1) return currentPlaylist[0] || null
 
     return currentPlaylist[(currentIndex + 1) % currentPlaylist.length]
-  }, [getCurrentPlaylist, shuffleMode, shuffledQueue, currentShuffleIndex, currentSong, generateShuffledQueue, manualQueue])
+  }, [getCurrentPlaylist, shuffleMode, shuffledQueue, currentShuffleIndex, currentSong, manualQueue])
+
+  const getNextSong = useCallback((): Song | null => {
+    const next = peekNextSong()
+    if (next || !shuffleMode || manualQueue.length > 0) return next
+
+    // Shuffle queue exhausted: deal a fresh one.
+    const currentPlaylist = getCurrentPlaylist()
+    if (currentPlaylist.length === 0) return null
+    const newQueue = generateShuffledQueue(currentPlaylist)
+    setShuffledQueue(newQueue)
+    setCurrentShuffleIndex(0)
+    setPlayedSongs(new Set())
+    return newQueue.length > 0 ? newQueue[0] : null
+  }, [peekNextSong, shuffleMode, manualQueue, getCurrentPlaylist, generateShuffledQueue])
 
   /**
    * Get the previous song based on shuffle mode
@@ -413,6 +423,7 @@ export function usePlaylistManager(options: UsePlaylistManagerOptions = {}): Use
     getCurrentPlaylist,
     generateShuffledQueue,
     getNextSong,
+    peekNextSong,
     getPreviousSong,
     notifySongSelected,
     toggleShuffle,
