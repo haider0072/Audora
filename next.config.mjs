@@ -6,10 +6,33 @@ const withPWA = withPWAInit({
   aggressiveFrontEndNavCaching: true,
   reloadOnOnline: true,
   disable: false,
+  // Custom routes are registered ahead of the defaults, so these win.
+  extendDefaultRuntimeCaching: true,
   workboxOptions: {
     disableDevLogs: true,
+    runtimeCaching: [
+      // Cloud library audio and art. Signed URLs change daily and audio is
+      // fetched in ranges, so caching would only store fragments under keys
+      // that never repeat; the default cross-origin rule would also hold
+      // full-file responses in Cache Storage.
+      {
+        urlPattern: /^https:\/\/[^/]+\.r2\.cloudflarestorage\.com\//,
+        handler: "NetworkOnly",
+        options: { cacheName: "cloud-library-r2" },
+      },
+      // Session and listing depend on the sign-in cookie; a cached copy
+      // would show a library after sign-out.
+      {
+        urlPattern: /\/api\/cloud\//,
+        handler: "NetworkOnly",
+        options: { cacheName: "cloud-library-api" },
+      },
+    ],
   },
 });
+
+/** Cloud library objects are served from R2's S3 endpoint (path-style). */
+const R2_ORIGIN = "https://*.r2.cloudflarestorage.com";
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
@@ -43,11 +66,11 @@ const nextConfig = {
             "default-src 'self'",
             "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://www.youtube.com https://s.ytimg.com",
             "style-src 'self' 'unsafe-inline'",
-            "img-src 'self' blob: data: https://i.ytimg.com https://*.googleapis.com https://i.scdn.co https://*.yeet.su https://static.qobuz.com https://resources.tidal.com https://m.media-amazon.com https://images-na.ssl-images-amazon.com",
+            `img-src 'self' blob: data: ${R2_ORIGIN} https://i.ytimg.com https://*.googleapis.com https://i.scdn.co https://*.yeet.su https://static.qobuz.com https://resources.tidal.com https://m.media-amazon.com https://images-na.ssl-images-amazon.com`,
             "font-src 'self'",
-            "connect-src 'self' blob: https://lrclib.net https://www.googleapis.com https://*.yeet.su https://resources.tidal.com",
+            `connect-src 'self' blob: ${R2_ORIGIN} https://lrclib.net https://www.googleapis.com https://*.yeet.su https://resources.tidal.com`,
             "frame-src https://www.youtube.com",
-            "media-src 'self' blob:",
+            `media-src 'self' blob: ${R2_ORIGIN}`,
             "worker-src 'self' blob:",
           ].join('; '),
         },

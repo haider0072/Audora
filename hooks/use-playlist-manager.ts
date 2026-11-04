@@ -3,6 +3,7 @@ import { toast } from "@/hooks/use-toast"
 import { PlaylistStorage } from "@/lib/playlist-storage"
 import { AlbumArtCache } from "@/lib/album-art-cache"
 import type { Song } from "@/components/enhanced-playlist"
+import { isCloudOnlySong } from "@/lib/cloud/merge"
 
 export interface UsePlaylistManagerOptions {
   onPlaylistChange?: (songs: Song[]) => void
@@ -274,6 +275,17 @@ export function usePlaylistManager(options: UsePlaylistManagerOptions = {}): Use
    */
   const removeSong = useCallback(
     async (songId: string) => {
+      // A cloud-only song has nothing on this device to remove, and the next
+      // library refresh would put it straight back.
+      const target = songs.find((s) => s.id === songId)
+      if (target && isCloudOnlySong(target)) {
+        toast({
+          title: "This song lives in your cloud library",
+          description: "Delete it from the bucket to remove it everywhere.",
+        })
+        return
+      }
+
       // Attempt to remove the song file from storage
       try {
         await PlaylistStorage.removeSongFile(songId)

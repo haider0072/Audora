@@ -3,6 +3,7 @@ import type { EqualizerBand } from "@/components/refined-equalizer"
 import { PEAKING_Q } from "@/hooks/use-equalizer-manager"
 import { cancelRamps, dbToGain, rampToValue, volumeToGain } from "@/lib/audio-params"
 import { setPlaybackTime } from "@/lib/playback-time-store"
+import { createMediaUrl, releaseMediaUrl, type PlayableSource } from "@/lib/media-source"
 import { waitForCanPlay } from "@/lib/utils"
 
 export interface UseAudioEngineOptions {
@@ -76,7 +77,7 @@ export interface UseAudioEngineReturn {
   getPosition: () => number
 
   // Gapless methods
-  preloadNextSong: (file: File) => Promise<boolean>
+  preloadNextSong: (source: PlayableSource) => Promise<boolean>
   swapToPreloaded: (durationSec?: number) => boolean
   resetGaplessState: () => void
   isPreloaded: boolean
@@ -84,7 +85,7 @@ export interface UseAudioEngineReturn {
   // Crossfade on demand (manual next / non-preloaded). Loads the file into the
   // inactive element and equal-power crossfades into it. Returns false when
   // crossfade is disabled or nothing is currently playing (caller falls back).
-  crossfadeTo: (file: File, signal?: AbortSignal) => Promise<boolean>
+  crossfadeTo: (source: PlayableSource, signal?: AbortSignal) => Promise<boolean>
 }
 
 const PRELOAD_THRESHOLD_SECONDS = 3
@@ -422,36 +423,25 @@ export function useAudioEngine(options: UseAudioEngineOptions): UseAudioEngineRe
    * Preload next song into the inactive audio element for gapless playback.
    * Returns true if preload succeeded.
    */
-  const preloadNextSong = useCallback(async (file: File): Promise<boolean> => {
+  const preloadNextSong = useCallback(async (source: PlayableSource): Promise<boolean> => {
     const inactiveAudio = getInactiveAudio()
     if (!inactiveAudio) return false
 
     try {
       // Clean up previous preloaded URL
-      if (preloadedUrlRef.current) {
-        URL.revokeObjectURL(preloadedUrlRef.current)
-        preloadedUrlRef.current = null
-      }
+      releaseMediaUrl(preloadedUrlRef.current)
+      preloadedUrlRef.current = null
 
-      const url = URL.createObjectURL(file)
+      const url = createMediaUrl(source)
       preloadedUrlRef.current = url
       inactiveAudio.src = url
       inactiveAudio.load()
 
-      await new Promise<void>((resolve, reject) => {
-        const onCanPlay = () => {
-          inactiveAudio.removeEventListener("canplay", onCanPlay)
-          inactiveAudio.removeEventListener("error", onError)
-          resolve()
-        }
-        const onError = () => {
-          inactiveAudio.removeEventListener("canplay", onCanPlay)
-          inactiveAudio.removeEventListener("error", onError)
-          reject(new Error("Preload failed"))
-        }
-        inactiveAudio.addEventListener("canplay", onCanPlay)
-        inactiveAudio.addEventListener("error", onError)
-      })
+      // Bounded wait: a streamed source on a stalled network fires neither
+      // canplay nor error, and an unbounded wait would leave this preload
+      // pending forever. A timeout only costs the gapless swap — playback
+      // falls back to a normal load.
+      await waitForCanPlay(inactiveAudio)
 
       preloadedRef.current = true
       setIsPreloaded(true)
@@ -558,7 +548,7 @@ export function useAudioEngine(options: UseAudioEngineOptions): UseAudioEngineRe
    * Returns false (so the caller can fall back to a normal load) when crossfade
    * is disabled, the graph isn't ready, or nothing is currently playing.
    */
-  const crossfadeTo = useCallback(async (file: File, signal?: AbortSignal): Promise<boolean> => {
+  const crossfadeTo = useCallback(async (source: PlayableSource, signal?: AbortSignal): Promise<boolean> => {
     const crossfadeSec = manualCrossfadeDurationRef.current
     if (crossfadeSec <= 0) return false
 
@@ -572,12 +562,10 @@ export function useAudioEngine(options: UseAudioEngineOptions): UseAudioEngineRe
     if (!activeAudio || activeAudio.paused) return false
 
     try {
-      if (preloadedUrlRef.current) {
-        URL.revokeObjectURL(preloadedUrlRef.current)
-        preloadedUrlRef.current = null
-      }
+      releaseMediaUrl(preloadedUrlRef.current)
+      preloadedUrlRef.current = null
 
-      const url = URL.createObjectURL(file)
+      const url = createMediaUrl(source)
       preloadedUrlRef.current = url
       inactiveAudio.src = url
       inactiveAudio.load()
@@ -655,10 +643,8 @@ export function useAudioEngine(options: UseAudioEngineOptions): UseAudioEngineRe
     nearEndFiredRef.current = false
     crossfadeStartedRef.current = false
 
-    if (preloadedUrlRef.current) {
-      URL.revokeObjectURL(preloadedUrlRef.current)
-      preloadedUrlRef.current = null
-    }
+    releaseMediaUrl(preloadedUrlRef.current)
+    preloadedUrlRef.current = null
   }, [secondaryAudioRef, finalizeCrossfade])
 
   /**
@@ -899,10 +885,8 @@ export function useAudioEngine(options: UseAudioEngineOptions): UseAudioEngineRe
         gainNodeRef.current = null
         analyserRef.current = null
       }
-      if (preloadedUrlRef.current) {
-        URL.revokeObjectURL(preloadedUrlRef.current)
-        preloadedUrlRef.current = null
-      }
+      releaseMediaUrl(preloadedUrlRef.current)
+      preloadedUrlRef.current = null
       if (pendingPauseRef.current) {
         clearTimeout(pendingPauseRef.current)
         pendingPauseRef.current = null

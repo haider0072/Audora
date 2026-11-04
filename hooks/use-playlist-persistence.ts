@@ -7,6 +7,7 @@ import { requestPersistentStorage, formatBytes } from "@/lib/storage-quota"
 import type { Song } from "@/components/enhanced-playlist"
 import type { EqualizerBand } from "@/components/refined-equalizer"
 import { isValidPreset, type EqPreset } from "@/lib/eq-presets"
+import { isCloudOnlySong } from "@/lib/cloud/merge"
 
 export interface PlaylistPersistenceData {
   songs: Song[]
@@ -233,7 +234,10 @@ export function usePlaylistPersistence(
     // here would put a stale value in localStorage and validateStoredFiles
     // would then drop the IndexedDB entry as "mismatched" on the next
     // reload, exactly causing the "songs vanish after refresh" bug.
-    const serializableSongs = songs.map((song) => ({
+    // Cloud-only songs have no audio blob; restore would drop them and the
+    // next save would make that permanent. They come back from the cloud
+    // library on every load instead.
+    const serializableSongs = songs.filter((song) => !isCloudOnlySong(song)).map((song) => ({
       id: song.id,
       title: song.title,
       artist: song.artist,
@@ -301,7 +305,9 @@ export function useAutoSave(
       // permission prompt, validation purge) the auto-save would otherwise
       // permanently nuke localStorage. Treat an empty in-memory playlist as
       // "nothing to save" instead.
-      if (data.songs.length === 0) {
+      // Counted the way savePlaylist will write it: a list holding only cloud
+      // songs persists as empty, and must not erase a saved local library.
+      if (!data.songs.some((song) => !isCloudOnlySong(song))) {
         const existing = PlaylistStorage.loadPlaylistMetadata()
         if (existing && existing.songs.length > 0) return
       }

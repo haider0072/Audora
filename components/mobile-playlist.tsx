@@ -6,6 +6,7 @@ import { Separator } from "@/components/ui/separator"
 import { Button } from "@/components/ui/button"
 import { Music, Play, Trash2, Search, MoreHorizontal, ListPlus } from "lucide-react"
 import { AlbumArtDisplay } from "./album-art-display"
+import type { Song } from "./enhanced-playlist"
 import { AlphabetSidebar, getArtistLetter } from "./alphabet-sidebar"
 import { memo, useState, useMemo, useRef, useEffect, useCallback } from "react"
 import {
@@ -15,24 +16,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 
-interface Song {
-  id: string
-  title?: string
-  artist?: string
-  album?: string
-  year?: string
-  genre?: string
-  bitrate?: number
-  sampleRate?: number
-  duration?: number
-  isHiRes?: boolean
-  albumArt?: string
-  fileSize?: number
-  format?: string
-  file: File
-  url: string
-  artists?: string[] // Added for grouping
-}
 
 interface GroupedSongs {
   [artist: string]: {
