@@ -63,6 +63,14 @@ describe("mergeCloudLibrary", () => {
     expect(merged).toHaveLength(1)
   })
 
+  it("carries the list-size cover and treats a new one as a change", () => {
+    const first = mergeCloudLibrary([], [cloudSong("a.flac", 10, { thumbUrl: "https://r2.test/s1" })])
+    expect(first[0].albumArtThumb).toBe("https://r2.test/s1")
+
+    const second = mergeCloudLibrary(first, [cloudSong("a.flac", 10, { thumbUrl: "https://r2.test/s2" })])
+    expect(second[0].albumArtThumb).toBe("https://r2.test/s2")
+  })
+
   it("returns the same array when nothing changed", () => {
     const cloud = [cloudSong("a.flac", 10), cloudSong("b.flac", 20)]
     const first = mergeCloudLibrary([localSong("a.flac", 10)], cloud)

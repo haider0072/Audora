@@ -53,12 +53,15 @@ export function cloudSongToSong(cloud: CloudSong): Song {
     isHiRes: cloud.isHiRes,
     format: cloud.format,
     albumArt: cloud.artUrl,
+    albumArtThumb: cloud.thumbUrl,
     cloud: cloudRef(cloud),
   }
 }
 
 function sameCloudOnlySong(song: Song, cloud: CloudSong): boolean {
-  return sameRef(song.cloud, cloudRef(cloud)) && song.albumArt === cloud.artUrl
+  return (
+    sameRef(song.cloud, cloudRef(cloud)) && song.albumArt === cloud.artUrl && song.albumArtThumb === cloud.thumbUrl
+  )
 }
 
 /**

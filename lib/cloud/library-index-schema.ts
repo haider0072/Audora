@@ -15,8 +15,18 @@ import type { CloudSong } from "./types"
 
 export const ART_PREFIX = "art/"
 
+/**
+ * What an entry written today records. Bumped whenever indexing learns to
+ * capture something new; an entry from an older format is still served as it
+ * is, and re-read in the background to bring it up to date.
+ *
+ * 1. Tags and the original embedded cover (`artKey`).
+ * 2. Rendered covers (`covers`) in place of the original.
+ */
+export const ENTRY_FORMAT = 2
+
 /** Tag fields kept per song: everything on `CloudSong` the listing does not already know. */
-export type SongTags = Omit<CloudSong, "id" | "key" | "fileName" | "fileSize" | "streamUrl" | "artUrl">
+export type SongTags = Omit<CloudSong, "id" | "key" | "fileName" | "fileSize" | "streamUrl" | "artUrl" | "thumbUrl">
 
 const text = z.string()
 
@@ -36,17 +46,28 @@ const tagsSchema: z.ZodType<SongTags> = z.object({
   format: text.optional(),
 })
 
+const artKey = z.string().startsWith(ART_PREFIX)
+
 const entrySchema = z.object({
+  /** Absent on entries written before formats were numbered, which are format 1. */
+  format: z.number().int().positive().optional(),
   etag: z.string(),
   size: z.number().int().nonnegative(),
   tags: tagsSchema,
-  /** Key of the extracted cover, when the file embeds one. */
-  artKey: z.string().startsWith(ART_PREFIX).optional(),
+  /** Format 1: key of the original embedded cover. */
+  artKey: artKey.optional(),
+  /** Format 2: keys of the rendered covers, when the file embeds one. */
+  covers: z.object({ small: artKey, large: artKey }).optional(),
   /** Set when the object is not audio at all; it stays out of the library until replaced. */
   rejected: z.literal(true).optional(),
 })
 
 export type IndexEntry = z.infer<typeof entrySchema>
+
+/** Whether an entry was written by an older version of the indexer and should be re-read. */
+export function isOutdated(entry: IndexEntry): boolean {
+  return !entry.rejected && (entry.format ?? 1) < ENTRY_FORMAT
+}
 
 export interface LibraryIndex {
   version: 1

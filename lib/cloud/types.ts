@@ -29,14 +29,21 @@ export interface CloudSong {
   format?: string
   /** Signed GET for the audio. */
   streamUrl: string
-  /** Signed GET for the cover, when the file embeds one. */
+  /** Signed GET for the cover at now-playing size, when the file embeds one. */
   artUrl?: string
+  /** Signed GET for the cover at list-row size. Absent until the song is re-indexed. */
+  thumbUrl?: string
 }
 
 export interface CloudLibraryResponse {
   songs: CloudSong[]
-  /** Objects in the bucket not yet indexed; the client asks for indexing while this is non-zero. */
+  /** Objects in the bucket not yet indexed, so not in `songs`. */
   pending: number
+  /**
+   * Songs in `songs` indexed by an older version of the indexer. They play
+   * as they are; the client keeps indexing while this or `pending` is non-zero.
+   */
+  outdated: number
   /** Milliseconds since epoch after which `streamUrl`/`artUrl` stop working. */
   urlsExpireAt: number
 }

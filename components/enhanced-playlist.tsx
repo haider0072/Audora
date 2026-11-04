@@ -32,6 +32,8 @@ interface Song extends AudioMetadata {
   fileName?: string
   /** Present when this song is in the cloud library, whether or not it is also local. */
   cloud?: CloudSongRef
+  /** Cover sized for list rows. Cloud songs only; everything else draws `albumArt` at every size. */
+  albumArtThumb?: string
 }
 
 export interface PlaylistScrollTarget {
@@ -110,6 +112,7 @@ const SongItem = memo(
           <AlbumArtDisplay
             songId={song.id}
             albumArt={song.albumArt}
+            thumbnail={song.albumArtThumb}
             title={`${song.title} album art`}
             size="small"
             className={`

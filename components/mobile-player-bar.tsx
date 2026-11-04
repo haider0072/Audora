@@ -51,6 +51,7 @@ interface Song {
   format?: string
   isHiRes?: boolean
   albumArt?: string
+  albumArtThumb?: string
 }
 
 interface MobilePlayerBarProps {
@@ -141,6 +142,7 @@ export function MobilePlayerBar({
             <AlbumArtDisplay
               songId={currentSong.id}
               albumArt={currentSong.albumArt}
+              thumbnail={currentSong.albumArtThumb}
               title={`${currentSong.title} album art`}
               size="small"
               rounded="rounded-lg"

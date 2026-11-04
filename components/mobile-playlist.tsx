@@ -195,6 +195,7 @@ export function MobilePlaylist({
             <AlbumArtDisplay
               songId={song.id}
               albumArt={song.albumArt}
+              thumbnail={song.albumArtThumb}
               title={`${song.title} album art`}
               size="small"
               className={`

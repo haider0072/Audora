@@ -85,6 +85,26 @@ describe('AlbumArtDisplay', () => {
     expect(img).toHaveAttribute('src', 'blob:good')
   })
 
+  it('draws the thumbnail at small sizes, cached apart from the full cover', async () => {
+    cache.getCachedAlbumArt.mockReturnValue(null)
+    cache.preloadAlbumArt.mockResolvedValue('blob:thumb')
+
+    render(<AlbumArtDisplay songId="song-1" albumArt="https://r2.test/l.webp" thumbnail="https://r2.test/s.webp" size="small" title="cover" />)
+
+    await screen.findByRole('img', { name: 'cover' })
+    expect(cache.preloadAlbumArt).toHaveBeenCalledWith('song-1::thumb', 'https://r2.test/s.webp')
+  })
+
+  it('draws the full cover at the large size even when a thumbnail exists', async () => {
+    cache.getCachedAlbumArt.mockReturnValue(null)
+    cache.preloadAlbumArt.mockResolvedValue('blob:large')
+
+    render(<AlbumArtDisplay songId="song-1" albumArt="https://r2.test/l.webp" thumbnail="https://r2.test/s.webp" size="large" title="cover" />)
+
+    await screen.findByRole('img', { name: 'cover' })
+    expect(cache.preloadAlbumArt).toHaveBeenCalledWith('song-1', 'https://r2.test/l.webp')
+  })
+
   describe('when it scrolls out of view', () => {
     const observer = useSteerableObserver()
 

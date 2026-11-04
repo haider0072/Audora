@@ -4,8 +4,16 @@ import { MetadataExtractor } from "@/lib/metadata-extractor"
 
 import { AUDIO_SIGNATURE_BYTES, looksLikeAudio } from "./audio-signature"
 import type { CloudConfig } from "./config"
+import { renderCovers } from "./cover-art"
 import { readJson, updateJson } from "./json-object"
-import { ART_PREFIX, parseLibraryIndex, type IndexEntry, type LibraryIndex } from "./library-index-schema"
+import {
+  ART_PREFIX,
+  ENTRY_FORMAT,
+  isOutdated,
+  parseLibraryIndex,
+  type IndexEntry,
+  type LibraryIndex,
+} from "./library-index-schema"
 import type { R2Object } from "./list-parse"
 import { R2Client } from "./r2"
 import { R2RangeSource } from "./r2-source"
@@ -66,12 +74,18 @@ export function isAudioKey(key: string): boolean {
   return key.startsWith(LIBRARY_PREFIX) && !key.endsWith("/") && AUDIO_EXTENSIONS.has(extension)
 }
 
-/** Content type of embedded art, from its magic bytes. Tags routinely mislabel it. */
-function imageType(bytes: Uint8Array): string {
-  if (bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47) return "image/png"
-  if (bytes[0] === 0x47 && bytes[1] === 0x49 && bytes[2] === 0x46) return "image/gif"
-  if (bytes[8] === 0x57 && bytes[9] === 0x45 && bytes[10] === 0x42 && bytes[11] === 0x50) return "image/webp"
-  return "image/jpeg"
+/** Rendered covers never change behind a key, so browsers may keep them for good. */
+const COVER_CACHE_CONTROL = "private, max-age=31536000, immutable"
+
+/**
+ * Where the rendered covers of one version of one object live. The ETag is
+ * part of the key, so replacing the audio gives its covers new URLs — the
+ * immutable caching above would otherwise keep showing the old art.
+ */
+function coverKeys(object: R2Object): { small: string; large: string } {
+  const song = cloudSongId(object.key).slice("cloud:".length)
+  const version = createHash("sha256").update(object.etag).digest("hex").slice(0, 12)
+  return { small: `${ART_PREFIX}${song}/${version}-s.webp`, large: `${ART_PREFIX}${song}/${version}-l.webp` }
 }
 
 async function listAudio(client: R2Client): Promise<R2Object[]> {
@@ -96,7 +110,10 @@ export async function getLibrary(config: CloudConfig, now: number = Date.now()):
   ])
 
   const signedAt = signingWindowStart(now)
+  const sign = (key: string | undefined) =>
+    key ? client.presignGet(key, signedAt, URL_LIFETIME_SECONDS) : Promise.resolve(undefined)
   let pending = 0
+  let outdated = 0
   const songs: CloudSong[] = []
 
   await Promise.all(
@@ -107,10 +124,12 @@ export async function getLibrary(config: CloudConfig, now: number = Date.now()):
         return
       }
       if (entry.rejected) return
+      if (isOutdated(entry)) outdated++
 
-      const [streamUrl, artUrl] = await Promise.all([
+      const [streamUrl, artUrl, thumbUrl] = await Promise.all([
         client.presignGet(object.key, signedAt, URL_LIFETIME_SECONDS),
-        entry.artKey ? client.presignGet(entry.artKey, signedAt, URL_LIFETIME_SECONDS) : undefined,
+        sign(entry.covers?.large ?? entry.artKey),
+        sign(entry.covers?.small),
       ])
 
       songs.push({
@@ -121,6 +140,7 @@ export async function getLibrary(config: CloudConfig, now: number = Date.now()):
         fileSize: object.size,
         streamUrl,
         artUrl,
+        thumbUrl,
       })
     }),
   )
@@ -130,6 +150,7 @@ export async function getLibrary(config: CloudConfig, now: number = Date.now()):
   return {
     songs,
     pending,
+    outdated,
     urlsExpireAt: signedAt.getTime() + URL_LIFETIME_SECONDS * 1000,
   }
 }
@@ -146,18 +167,19 @@ async function indexObject(client: R2Client, object: R2Object, signal: AbortSign
 
   const { metadata, albumArt } = await MetadataExtractor.extractFromSource(source)
 
-  let artKey: string | undefined
-  if (albumArt && albumArt.data.length > 0) {
-    artKey = `${ART_PREFIX}${cloudSongId(object.key).slice("cloud:".length)}`
-    await client.write(artKey, albumArt.data, {
-      contentType: imageType(albumArt.data),
-      // The key changes whenever the audio does, so the bytes behind a key never change.
-      cacheControl: "private, max-age=31536000, immutable",
-      signal,
-    })
+  const rendered = albumArt && albumArt.data.length > 0 ? await renderCovers(albumArt.data) : null
+  let covers: IndexEntry["covers"]
+  if (rendered) {
+    covers = coverKeys(object)
+    const options = { contentType: "image/webp", cacheControl: COVER_CACHE_CONTROL, signal }
+    await Promise.all([
+      client.write(covers.small, rendered.small, options),
+      client.write(covers.large, rendered.large, options),
+    ])
   }
 
   return {
+    format: ENTRY_FORMAT,
     etag: object.etag,
     size: object.size,
     tags: {
@@ -175,7 +197,7 @@ async function indexObject(client: R2Client, object: R2Object, signal: AbortSign
       isHiRes: metadata.isHiRes,
       format: metadata.format,
     },
-    artKey,
+    covers,
   }
 }
 
@@ -204,7 +226,14 @@ export async function indexPending(config: CloudConfig): Promise<CloudIndexRespo
     readJson(client, INDEX_KEY, parseLibraryIndex),
   ])
 
-  const todo = objects.filter((object) => !isCurrent(index.entries[object.key], object))
+  // New and changed files first: they are missing from the library, while
+  // outdated entries are already being served.
+  const missing = objects.filter((object) => !isCurrent(index.entries[object.key], object))
+  const upgrades = objects.filter((object) => {
+    const entry = index.entries[object.key]
+    return isCurrent(entry, object) && isOutdated(entry)
+  })
+  const todo = [...missing, ...upgrades]
   const fresh: Record<string, IndexEntry> = {}
 
   await runBounded(todo, INDEX_CONCURRENCY, startedAt + INDEX_START_BUDGET_MS, async (object) => {
