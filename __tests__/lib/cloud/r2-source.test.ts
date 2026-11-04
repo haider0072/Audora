@@ -121,6 +121,30 @@ describe("R2RangeSource", () => {
     await expect(MetadataExtractor.extractFromSource(source)).rejects.toThrow(ByteSourceReadError)
   })
 
+  it("stops reading a crafted header at the metadata bound instead of pulling in the whole file", async () => {
+    // A FLAC whose first block claims to be 16 MB, followed by a chain of
+    // further blocks — the reader must give up at the bound, not walk on.
+    const size = 64 * 1024 * 1024
+    const readRange = jest.fn(async (_key: string, start: number, end: number) => {
+      const bytes = new Uint8Array(end - start + 1)
+      for (let offset = 0; offset < bytes.length; offset++) {
+        const absolute = start + offset
+        if (absolute < 4) bytes[offset] = "fLaC".charCodeAt(absolute)
+      }
+      // Every block header, wherever it falls, says "not last, 16 MB long".
+      for (let header = 4; header <= end; header += 4 + 0xffffff) {
+        if (header >= start) bytes.set([0x01, 0xff, 0xff, 0xff], header - start)
+      }
+      return bytes
+    })
+    const source = new R2RangeSource({ readRange } as unknown as R2Client, "library/x.flac", "x.flac", size)
+
+    jest.spyOn(console, "error").mockImplementation(() => {})
+    await MetadataExtractor.extractFromSource(source)
+    const furthest = Math.max(...readRange.mock.calls.map(([, , end]) => end))
+    expect(furthest).toBeLessThan(33 * 1024 * 1024)
+  })
+
   it("still falls back to the file name when the bytes arrive but do not parse", async () => {
     const { client } = fakeClient(new Uint8Array(64).fill(0x00))
     const source = new R2RangeSource(client, "library/Mystery.flac", "Mystery.flac", 64)

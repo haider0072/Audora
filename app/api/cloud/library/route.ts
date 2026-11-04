@@ -11,7 +11,7 @@ import { getLibrary } from "@/lib/cloud/library-index"
 export const dynamic = "force-dynamic"
 
 export async function GET(request: NextRequest) {
-  const { config, denied } = requireCloudSession(request)
+  const { config, denied } = await requireCloudSession(request)
   if (denied) return denied
 
   try {

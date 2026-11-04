@@ -100,6 +100,15 @@ export function CloudLibraryPanel({ cloud }: CloudLibraryPanelProps) {
           Sign out
         </Button>
       </div>
+
+      <Button
+        variant="link"
+        size="sm"
+        className="h-auto px-0 text-muted-foreground"
+        onClick={() => void cloud.signOut({ everywhere: true })}
+      >
+        Sign out of all devices
+      </Button>
     </div>
   )
 }

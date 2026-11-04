@@ -40,7 +40,8 @@ export interface UseCloudLibraryReturn {
   pending: number
   error: string | null
   signIn: (password: string) => Promise<boolean>
-  signOut: () => Promise<void>
+  /** Sign this device out, or with `everywhere` every device signed in. */
+  signOut: (options?: { everywhere?: boolean }) => Promise<void>
   refresh: () => void
 }
 
@@ -157,9 +158,11 @@ export function useCloudLibrary({ isReady, songCount, setSongs }: UseCloudLibrar
     [load],
   )
 
-  const signOut = useCallback(async () => {
+  const signOut = useCallback(async ({ everywhere = false }: { everywhere?: boolean } = {}) => {
     generationRef.current++
-    const response = await fetch("/api/cloud/session", { method: "DELETE" })
+    const response = await fetch(everywhere ? "/api/cloud/session?scope=all" : "/api/cloud/session", {
+      method: "DELETE",
+    })
     if (!response.ok) {
       setError(await readError(response))
       return

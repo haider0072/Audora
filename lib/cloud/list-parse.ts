@@ -13,18 +13,26 @@ export interface R2Object {
 }
 
 const XML_ENTITIES: Record<string, string> = {
-  "&amp;": "&",
-  "&lt;": "<",
-  "&gt;": ">",
-  "&quot;": '"',
-  "&apos;": "'",
+  amp: "&",
+  lt: "<",
+  gt: ">",
+  quot: '"',
+  apos: "'",
 }
 
+const MAX_CODE_POINT = 0x10ffff
+
+/**
+ * Decode XML entities in one pass, so the output of one entity is never read
+ * as the start of another (`&#38;amp;` is `&amp;`, not `&`). A character
+ * reference outside Unicode is left as written instead of throwing.
+ */
 function decodeXml(value: string): string {
-  return value
-    .replace(/&#(\d+);/g, (_, code: string) => String.fromCodePoint(Number(code)))
-    .replace(/&#x([0-9a-f]+);/gi, (_, code: string) => String.fromCodePoint(Number.parseInt(code, 16)))
-    .replace(/&(amp|lt|gt|quot|apos);/g, (entity) => XML_ENTITIES[entity])
+  return value.replace(/&(?:#(\d+)|#x([0-9a-fA-F]+)|(amp|lt|gt|quot|apos));/g, (entity, dec, hex, name) => {
+    if (name) return XML_ENTITIES[name]
+    const code = dec !== undefined ? Number(dec) : Number.parseInt(hex, 16)
+    return code <= MAX_CODE_POINT ? String.fromCodePoint(code) : entity
+  })
 }
 
 function xmlField(block: string, tag: string): string | null {

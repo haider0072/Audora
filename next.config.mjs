@@ -31,8 +31,17 @@ const withPWA = withPWAInit({
   },
 });
 
-/** Cloud library objects are served from R2's S3 endpoint (path-style). */
-const R2_ORIGIN = "https://*.r2.cloudflarestorage.com";
+/**
+ * Cloud library objects are served from R2's S3 endpoint (path-style), on
+ * this account's host only — not every R2 account's. Without an account the
+ * deployment has no cloud library and R2 is not allowed at all.
+ */
+const R2_ORIGIN = process.env.R2_ACCOUNT_ID
+  ? `https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`
+  : "";
+
+/** React's development tooling evaluates code at runtime; production never does. */
+const SCRIPT_EVAL = process.env.NODE_ENV === "production" ? "" : "'unsafe-eval'";
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
@@ -64,7 +73,7 @@ const nextConfig = {
           key: 'Content-Security-Policy',
           value: [
             "default-src 'self'",
-            "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://www.youtube.com https://s.ytimg.com",
+            `script-src 'self' 'unsafe-inline' ${SCRIPT_EVAL} https://www.youtube.com https://s.ytimg.com`,
             "style-src 'self' 'unsafe-inline'",
             `img-src 'self' blob: data: ${R2_ORIGIN} https://i.ytimg.com https://*.googleapis.com https://i.scdn.co https://*.yeet.su https://static.qobuz.com https://resources.tidal.com https://m.media-amazon.com https://images-na.ssl-images-amazon.com`,
             "font-src 'self'",
@@ -72,6 +81,10 @@ const nextConfig = {
             "frame-src https://www.youtube.com",
             `media-src 'self' blob: ${R2_ORIGIN}`,
             "worker-src 'self' blob:",
+            "object-src 'none'",
+            "base-uri 'self'",
+            "form-action 'self'",
+            "frame-ancestors 'self'",
           ].join('; '),
         },
       ],

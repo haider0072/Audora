@@ -44,6 +44,8 @@ export class R2RangeSource implements ByteSource {
     private readonly key: string,
     readonly name: string,
     readonly size: number,
+    /** Aborts every read still to come, e.g. at an indexing pass's time limit. */
+    private readonly signal?: AbortSignal,
   ) {
     this.type = mimeTypeForName(name)
   }
@@ -81,7 +83,7 @@ export class R2RangeSource implements ByteSource {
   private async extendPrefix(from: number, to: number): Promise<void> {
     let bytes: Uint8Array
     try {
-      bytes = await this.client.readRange(this.key, from, to)
+      bytes = await this.client.readRange(this.key, from, to, this.signal)
     } catch (error) {
       throw new ByteSourceReadError(`Could not read ${this.key}`, { cause: error })
     }

@@ -2,7 +2,10 @@ import { createHash } from "node:crypto"
 
 import { MetadataExtractor } from "@/lib/metadata-extractor"
 
+import { AUDIO_SIGNATURE_BYTES, looksLikeAudio } from "./audio-signature"
 import type { CloudConfig } from "./config"
+import { readJson, updateJson } from "./json-object"
+import { ART_PREFIX, parseLibraryIndex, type IndexEntry, type LibraryIndex } from "./library-index-schema"
 import type { R2Object } from "./list-parse"
 import { R2Client } from "./r2"
 import { R2RangeSource } from "./r2-source"
@@ -25,7 +28,6 @@ import type { CloudIndexResponse, CloudLibraryResponse, CloudSong } from "./type
 
 export const LIBRARY_PREFIX = "library/"
 const INDEX_KEY = "index/library-v1.json"
-const ART_PREFIX = "art/"
 
 const AUDIO_EXTENSIONS = new Set(["flac", "mp3", "m4a", "aac", "wav", "ogg", "opus"])
 
@@ -38,32 +40,17 @@ const INDEX_CONCURRENCY = 8
 
 /**
  * Stop starting new files after this long, so each indexing request returns
- * well inside a function's time limit and the client sees steady progress.
+ * promptly and the client sees steady progress.
  */
-const INDEX_BUDGET_MS = 20_000
+const INDEX_START_BUDGET_MS = 20_000
 
-/** Read-modify-write attempts on the index before giving up for this pass. */
-const INDEX_WRITE_ATTEMPTS = 4
-
-/** Tag fields kept per song: everything on `CloudSong` the listing does not already know. */
-type SongTags = Omit<CloudSong, "id" | "key" | "fileName" | "fileSize" | "streamUrl" | "artUrl">
-
-interface IndexEntry {
-  etag: string
-  size: number
-  tags: SongTags
-  /** Key of the extracted cover, when the file embeds one. */
-  artKey?: string
-}
-
-interface LibraryIndex {
-  version: 1
-  entries: Record<string, IndexEntry>
-}
-
-function emptyIndex(): LibraryIndex {
-  return { version: 1, entries: {} }
-}
+/**
+ * Abandon files still in flight after this long — they stay pending — so
+ * the pass always gets to save what it finished. With the save itself (one
+ * read, one write, each bounded by the R2 request timeout) this stays inside
+ * the route's `maxDuration`.
+ */
+const INDEX_ABORT_AFTER_MS = 35_000
 
 /** Stable, opaque, and never equal to a local song id. */
 export function cloudSongId(key: string): string {
@@ -87,23 +74,6 @@ function imageType(bytes: Uint8Array): string {
   return "image/jpeg"
 }
 
-async function loadIndex(client: R2Client): Promise<{ index: LibraryIndex; etag: string | null }> {
-  const stored = await client.read(INDEX_KEY)
-  if (!stored) return { index: emptyIndex(), etag: null }
-
-  try {
-    const parsed = JSON.parse(new TextDecoder().decode(stored.body)) as LibraryIndex
-    if (parsed?.version !== 1 || typeof parsed.entries !== "object" || parsed.entries === null) {
-      console.error("Cloud library index has an unknown shape; rebuilding it.")
-      return { index: emptyIndex(), etag: stored.etag }
-    }
-    return { index: parsed, etag: stored.etag }
-  } catch (error) {
-    console.error("Cloud library index is not valid JSON; rebuilding it:", error)
-    return { index: emptyIndex(), etag: stored.etag }
-  }
-}
-
 async function listAudio(client: R2Client): Promise<R2Object[]> {
   return (await client.list(LIBRARY_PREFIX)).filter((object) => isAudioKey(object.key))
 }
@@ -120,7 +90,10 @@ function signingWindowStart(now: number): Date {
 /** Every indexed song with fresh signed URLs, plus how many objects still await indexing. */
 export async function getLibrary(config: CloudConfig, now: number = Date.now()): Promise<CloudLibraryResponse> {
   const client = new R2Client(config)
-  const [objects, { index }] = await Promise.all([listAudio(client), loadIndex(client)])
+  const [objects, { value: index }] = await Promise.all([
+    listAudio(client),
+    readJson(client, INDEX_KEY, parseLibraryIndex),
+  ])
 
   const signedAt = signingWindowStart(now)
   let pending = 0
@@ -133,6 +106,7 @@ export async function getLibrary(config: CloudConfig, now: number = Date.now()):
         pending++
         return
       }
+      if (entry.rejected) return
 
       const [streamUrl, artUrl] = await Promise.all([
         client.presignGet(object.key, signedAt, URL_LIFETIME_SECONDS),
@@ -160,9 +134,16 @@ export async function getLibrary(config: CloudConfig, now: number = Date.now()):
   }
 }
 
-async function indexObject(client: R2Client, object: R2Object): Promise<IndexEntry> {
+async function indexObject(client: R2Client, object: R2Object, signal: AbortSignal): Promise<IndexEntry> {
   const name = fileNameOf(object.key)
-  const source = new R2RangeSource(client, object.key, name, object.size)
+  const source = new R2RangeSource(client, object.key, name, object.size, signal)
+
+  const head = new Uint8Array(await source.slice(0, AUDIO_SIGNATURE_BYTES).arrayBuffer())
+  if (!looksLikeAudio(head)) {
+    console.warn(`${object.key} does not look like audio; leaving it out of the library.`)
+    return { etag: object.etag, size: object.size, tags: {}, rejected: true }
+  }
+
   const { metadata, albumArt } = await MetadataExtractor.extractFromSource(source)
 
   let artKey: string | undefined
@@ -172,6 +153,7 @@ async function indexObject(client: R2Client, object: R2Object): Promise<IndexEnt
       contentType: imageType(albumArt.data),
       // The key changes whenever the audio does, so the bytes behind a key never change.
       cacheControl: "private, max-age=31536000, immutable",
+      signal,
     })
   }
 
@@ -209,25 +191,30 @@ async function runBounded<T>(items: T[], limit: number, deadline: number, task: 
 }
 
 /**
- * Index objects that are new or changed since the last pass, for up to
- * `INDEX_BUDGET_MS`, and save the result. Returns how many were indexed and
- * how many remain; the client calls again while any remain.
+ * Index objects that are new or changed since the last pass, starting files
+ * for up to `INDEX_START_BUDGET_MS`, and save the result. Returns how many
+ * were indexed and how many remain; the client calls again while any remain.
  */
 export async function indexPending(config: CloudConfig): Promise<CloudIndexResponse> {
   const client = new R2Client(config)
-  const deadline = Date.now() + INDEX_BUDGET_MS
-  const [objects, { index }] = await Promise.all([listAudio(client), loadIndex(client)])
+  const startedAt = Date.now()
+  const abandon = AbortSignal.timeout(INDEX_ABORT_AFTER_MS)
+  const [objects, { value: index }] = await Promise.all([
+    listAudio(client),
+    readJson(client, INDEX_KEY, parseLibraryIndex),
+  ])
 
   const todo = objects.filter((object) => !isCurrent(index.entries[object.key], object))
   const fresh: Record<string, IndexEntry> = {}
 
-  await runBounded(todo, INDEX_CONCURRENCY, deadline, async (object) => {
+  await runBounded(todo, INDEX_CONCURRENCY, startedAt + INDEX_START_BUDGET_MS, async (object) => {
     try {
-      fresh[object.key] = await indexObject(client, object)
+      fresh[object.key] = await indexObject(client, object, abandon)
     } catch (error) {
       // One unreadable file must not stall the library; it stays pending and
-      // is retried on the next pass.
-      console.error(`Could not index ${object.key}:`, error)
+      // is retried on the next pass. A file abandoned at the time limit is
+      // expected, not worth a log line.
+      if (!abandon.aborted) console.error(`Could not index ${object.key}:`, error)
     }
   })
 
@@ -244,24 +231,13 @@ export async function indexPending(config: CloudConfig): Promise<CloudIndexRespo
  * pass from another device is merged rather than overwritten.
  */
 async function saveIndex(client: R2Client, fresh: Record<string, IndexEntry>, liveKeys: Set<string>) {
-  for (let attempt = 0; attempt < INDEX_WRITE_ATTEMPTS; attempt++) {
-    const { index, etag } = await loadIndex(client)
-
+  await updateJson(client, INDEX_KEY, parseLibraryIndex, (index): LibraryIndex | null => {
     const entries: Record<string, IndexEntry> = {}
     for (const [key, entry] of Object.entries(index.entries)) {
       if (liveKeys.has(key)) entries[key] = entry
     }
     const pruned = Object.keys(entries).length !== Object.keys(index.entries).length
-    if (!pruned && Object.keys(fresh).length === 0) return
-    Object.assign(entries, fresh)
-
-    const body = JSON.stringify({ version: 1, entries } satisfies LibraryIndex)
-    const written = await client.write(INDEX_KEY, body, {
-      contentType: "application/json",
-      ...(etag ? { ifMatch: etag } : { ifNoneMatch: true }),
-    })
-    if (written) return
-  }
-
-  throw new Error("Cloud library index kept changing underneath this pass; will retry next pass.")
+    if (!pruned && Object.keys(fresh).length === 0) return null
+    return { version: 1, entries: { ...entries, ...fresh } }
+  })
 }
