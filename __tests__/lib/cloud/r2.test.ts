@@ -37,6 +37,17 @@ describe("R2Client", () => {
     expect(new Headers(init.headers).get("accept-encoding")).toBe("identity")
   })
 
+  it("aborts a request when the caller's signal fires, not only on its own timeout", async () => {
+    const fetchMock = mockFetch(new Response(null, { status: 404 }))
+    const controller = new AbortController()
+    await new R2Client(config).read("index/library-v1.json", controller.signal)
+
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    expect(init.signal?.aborted).toBe(false)
+    controller.abort()
+    expect(init.signal?.aborted).toBe(true)
+  })
+
   it("sends the original body on writes so Node can set Content-Length", async () => {
     const fetchMock = mockFetch(new Response(null, { status: 200 }))
     const body = new Uint8Array([1, 2, 3])

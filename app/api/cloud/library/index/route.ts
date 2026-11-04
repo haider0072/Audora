@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server"
 
-import { requireCloudSession } from "@/lib/cloud/guard"
+import { requireCloudMutation } from "@/lib/cloud/guard"
 import { indexPending } from "@/lib/cloud/library-index"
 
 /**
@@ -11,11 +11,14 @@ import { indexPending } from "@/lib/cloud/library-index"
 
 export const dynamic = "force-dynamic"
 
-/** Headroom over the indexing budget for the final index write. */
-export const maxDuration = 60
+/**
+ * In-flight work is abandoned at `INDEX_ABORT_AFTER_MS` (35 s); the save that
+ * follows is one read and one write of at most 20 s each. 90 s covers both.
+ */
+export const maxDuration = 90
 
 export async function POST(request: NextRequest) {
-  const { config, denied } = requireCloudSession(request)
+  const { config, denied } = await requireCloudMutation(request)
   if (denied) return denied
 
   try {

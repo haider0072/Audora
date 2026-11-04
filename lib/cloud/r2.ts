@@ -83,21 +83,28 @@ export class R2Client {
    *   become a stream; Node sends a stream chunked, without Content-Length,
    *   and R2 rejects that PUT with 411.
    *
-   * Each request is also bounded by `REQUEST_TIMEOUT_MS`; a timeout rejects
-   * like any other network failure, so callers need no special case.
+   * Each request is also bounded by `REQUEST_TIMEOUT_MS`, and by the caller's
+   * `signal` when one is given; either rejects like any other network
+   * failure, so callers need no special case.
    */
   private async send(
     url: string,
-    init: { method?: string; headers?: Record<string, string>; body?: Uint8Array<ArrayBuffer> | string } = {},
+    init: {
+      method?: string
+      headers?: Record<string, string>
+      body?: Uint8Array<ArrayBuffer> | string
+      signal?: AbortSignal
+    } = {},
   ): Promise<Response> {
     const method = init.method ?? "GET"
     const signed = await this.aws.sign(url, { method, headers: init.headers, body: init.body })
+    const timeout = AbortSignal.timeout(REQUEST_TIMEOUT_MS)
     return fetch(signed.url, {
       method,
       headers: signed.headers,
       body: init.body,
       cache: "no-store",
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      signal: init.signal ? AbortSignal.any([timeout, init.signal]) : timeout,
     })
   }
 
@@ -130,9 +137,10 @@ export class R2Client {
    * Bytes `[start, end]` (inclusive) of an object. Returns fewer when the
    * object is shorter; an empty buffer past its end.
    */
-  async readRange(key: string, start: number, end: number): Promise<Uint8Array> {
+  async readRange(key: string, start: number, end: number, signal?: AbortSignal): Promise<Uint8Array> {
     const response = await this.send(this.objectUrl(key), {
       headers: { Range: `bytes=${start}-${end}` },
+      signal,
     })
     if (response.status === 416) return new Uint8Array(0)
     if (!response.ok) {
@@ -148,8 +156,11 @@ export class R2Client {
    * reports a weak ETag (`W/"..."`), which `If-Match` never matches — so a
    * compressed read would make every conditional write after it fail.
    */
-  async read(key: string): Promise<{ body: Uint8Array; etag: string } | null> {
-    const response = await this.send(this.objectUrl(key), { headers: { "Accept-Encoding": "identity" } })
+  async read(key: string, signal?: AbortSignal): Promise<{ body: Uint8Array; etag: string } | null> {
+    const response = await this.send(this.objectUrl(key), {
+      headers: { "Accept-Encoding": "identity" },
+      signal,
+    })
     if (response.status === 404) return null
     if (!response.ok) {
       throw new R2Error(`R2 read failed for ${key} (${response.status})`, response.status)
@@ -170,14 +181,20 @@ export class R2Client {
   async write(
     key: string,
     body: Uint8Array<ArrayBuffer> | string,
-    options: { contentType: string; cacheControl?: string; ifMatch?: string; ifNoneMatch?: boolean },
+    options: {
+      contentType: string
+      cacheControl?: string
+      ifMatch?: string
+      ifNoneMatch?: boolean
+      signal?: AbortSignal
+    },
   ): Promise<boolean> {
     const headers: Record<string, string> = { "Content-Type": options.contentType }
     if (options.cacheControl) headers["Cache-Control"] = options.cacheControl
     if (options.ifMatch) headers["If-Match"] = options.ifMatch
     if (options.ifNoneMatch) headers["If-None-Match"] = "*"
 
-    const response = await this.send(this.objectUrl(key), { method: "PUT", headers, body })
+    const response = await this.send(this.objectUrl(key), { method: "PUT", headers, body, signal: options.signal })
     if (response.status === 412) return false
     if (!response.ok) {
       throw new R2Error(`R2 write failed for ${key} (${response.status})`, response.status)

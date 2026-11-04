@@ -27,6 +27,12 @@ export interface CloudConfig {
  */
 const MIN_SESSION_SECRET_LENGTH = 32
 
+/**
+ * The login throttle bounds an online guesser to a few dozen tries an hour,
+ * which only protects a password with real entropy behind it.
+ */
+const MIN_PASSWORD_LENGTH = 12
+
 export function getCloudConfig(): CloudConfig | null {
   const accountId = process.env.R2_ACCOUNT_ID
   const accessKeyId = process.env.R2_ACCESS_KEY_ID
@@ -42,6 +48,13 @@ export function getCloudConfig(): CloudConfig | null {
   if (sessionSecret.length < MIN_SESSION_SECRET_LENGTH) {
     console.error(
       `AUDORA_SESSION_SECRET must be at least ${MIN_SESSION_SECRET_LENGTH} characters; cloud library disabled.`,
+    )
+    return null
+  }
+
+  if (password.length < MIN_PASSWORD_LENGTH) {
+    console.error(
+      `AUDORA_CLOUD_PASSWORD must be at least ${MIN_PASSWORD_LENGTH} characters; cloud library disabled.`,
     )
     return null
   }
