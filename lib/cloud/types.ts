@@ -53,6 +53,13 @@ export interface CloudIndexResponse {
   pending: number
 }
 
+/** The answer to asking where one file should be uploaded. */
+export type CloudUploadPlan =
+  /** Send the file with a PUT to `url`, with exactly these headers. */
+  | { status: "upload"; key: string; url: string; headers: Record<string, string> }
+  /** The library already holds this track; nothing to send. */
+  | { status: "exists"; key: string }
+
 /** The cloud side of a song, attached to `Song.cloud`. */
 export interface CloudSongRef {
   key: string

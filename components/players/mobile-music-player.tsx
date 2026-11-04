@@ -32,6 +32,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sh
 import { SyncPanel } from "@/components/sync-panel"
 import { CloudLibraryPanel } from "@/components/cloud-library-panel"
 import { useCloudLibrary } from "@/hooks/use-cloud-library"
+import { useCloudUploadSync } from "@/hooks/use-cloud-upload-sync"
 import { useDeviceSync } from "@/hooks/use-device-sync"
 import type { SyncPlaybackAdapter } from "@/hooks/use-sync-playback"
 import { findTrackByKey, trackLabel, trackSyncKey } from "@/lib/sync/song-match"
@@ -207,6 +208,7 @@ export default function MobileMusicPlayer() {
 
   const { isInitialized, isRestoringPlaylist, restorePlaylist, savePlaylist } = usePlaylistPersistence()
   const cloud = useCloudLibrary({ isReady: isInitialized, songCount: songs.length, setSongs })
+  useCloudUploadSync(cloud.refresh)
   useWarmNextSong(currentSong?.id, isPlaying, peekNextSong)
 
   // Filtered songs for search
@@ -734,7 +736,7 @@ export default function MobileMusicPlayer() {
               <SheetTitle>Cloud library</SheetTitle>
             </SheetHeader>
             <div className="pt-4">
-              <CloudLibraryPanel cloud={cloud} />
+              <CloudLibraryPanel cloud={cloud} songs={songs} />
             </div>
           </SheetContent>
         </Sheet>

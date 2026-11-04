@@ -14,6 +14,11 @@ const CONTENT_TYPES: Record<string, string> = {
   opus: "audio/ogg",
 }
 
+/** For a file input's `accept`: every supported extension. */
+export const AUDIO_FILE_ACCEPT = Object.keys(CONTENT_TYPES)
+  .map((extension) => `.${extension}`)
+  .join(",")
+
 function extensionOf(name: string): string {
   const dot = name.lastIndexOf(".")
   return dot === -1 ? "" : name.slice(dot + 1).toLowerCase()

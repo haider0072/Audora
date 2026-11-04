@@ -2,8 +2,8 @@ import { NextResponse, type NextRequest } from "next/server"
 import { z } from "zod"
 
 import { requireCloudMutation } from "@/lib/cloud/guard"
-import { checkUploadName } from "@/lib/cloud/upload-name"
-import { MAX_UPLOAD_BYTES, planUpload } from "@/lib/cloud/uploads"
+import { MAX_UPLOAD_BYTES, checkUploadName } from "@/lib/cloud/upload-rules"
+import { planUpload } from "@/lib/cloud/uploads"
 
 /**
  * Sign the upload of one file to the cloud library. The browser asks just

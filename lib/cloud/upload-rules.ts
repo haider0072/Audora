@@ -1,18 +1,23 @@
 import { isAudioFileName } from "./audio-files"
 
 /**
- * Whether a file name may become an object key in the library. Pure, so the
- * picker can drop a file before asking the server about it.
+ * What the cloud library accepts as an upload. Pure, so the browser can turn
+ * a file away before asking the server about it, and the server enforces the
+ * same rules.
  *
+ * A file name may become an object key in the library as long as it passes
+ * `checkUploadName`.
  * The name is used as it is — besides Unicode normalisation, nothing is
  * renamed — because the library matches songs across devices by file name
  * and size, and a renamed upload would no longer match its local copy.
  */
 
+/** R2's ceiling for a single PutObject: 5 GiB minus 5 MiB. */
+export const MAX_UPLOAD_BYTES = 5 * 1024 ** 3 - 5 * 1024 ** 2
+
 /** S3 keys are at most 1024 bytes; one path segment on most file systems, 255. */
 const MAX_NAME_BYTES = 255
 
-// eslint-disable-next-line no-control-regex
 const CONTROL_CHARACTERS = /[\u0000-\u001f\u007f]/
 
 export type UploadNameCheck = { ok: true; name: string } | { ok: false; reason: string }

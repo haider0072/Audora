@@ -1,7 +1,7 @@
 /**
  * @jest-environment node
  */
-import { checkUploadName } from "@/lib/cloud/upload-name"
+import { checkUploadName } from "@/lib/cloud/upload-rules"
 
 describe("checkUploadName", () => {
   it("accepts an audio file name as it is", () => {

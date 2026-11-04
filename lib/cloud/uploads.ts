@@ -4,6 +4,7 @@ import { audioContentType } from "./audio-files"
 import type { CloudConfig } from "./config"
 import { LIBRARY_PREFIX } from "./library-keys"
 import { R2Client } from "./r2"
+import type { CloudUploadPlan } from "./types"
 
 /**
  * Where an upload goes, and the URL to send it to. Server only.
@@ -14,9 +15,6 @@ import { R2Client } from "./r2"
  * indexer picks up on the client's next listing.
  */
 
-/** R2's ceiling for a single PutObject: 5 GiB minus 5 MiB. */
-export const MAX_UPLOAD_BYTES = 5 * 1024 ** 3 - 5 * 1024 ** 2
-
 /**
  * How long a signed upload URL may be started for. The client signs just
  * before each upload starts, and an upload in progress is not cut off when
@@ -24,13 +22,9 @@ export const MAX_UPLOAD_BYTES = 5 * 1024 ** 3 - 5 * 1024 ** 2
  */
 const UPLOAD_URL_LIFETIME_SECONDS = 15 * 60
 
-export type UploadPlan =
-  | { status: "upload"; key: string; url: string; headers: Record<string, string> }
-  /** The library already holds this track; nothing to send. */
-  | { status: "exists"; key: string }
-
 /**
- * Plan the upload of one file, already checked by `checkUploadName`.
+ * Plan the upload of one file, already checked by `checkUploadName` and
+ * no larger than `MAX_UPLOAD_BYTES`.
  *
  * Songs are one track when their name and size match — the identity
  * `trackSyncKey` gives them everywhere else — so a file already stored under
@@ -38,10 +32,10 @@ export type UploadPlan =
  * the same name goes to a key derived from both, which can only ever hold
  * that one track.
  */
-export async function planUpload(config: CloudConfig, name: string, size: number): Promise<UploadPlan> {
+export async function planUpload(config: CloudConfig, name: string, size: number): Promise<CloudUploadPlan> {
   const client = new R2Client(config)
 
-  const offer = async (key: string): Promise<UploadPlan> => {
+  const offer = async (key: string): Promise<CloudUploadPlan> => {
     const signed = await client.presignPut(key, {
       contentType: audioContentType(name),
       contentLength: size,

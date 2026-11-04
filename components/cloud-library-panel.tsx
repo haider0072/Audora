@@ -3,6 +3,8 @@
 import { useState, type FormEvent } from "react"
 import { Cloud, CloudOff, Loader2, LogOut, RefreshCw } from "lucide-react"
 
+import { CloudUploadSection } from "@/components/cloud-upload-section"
+import type { Song } from "@/components/enhanced-playlist"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -16,9 +18,11 @@ import type { UseCloudLibraryReturn } from "@/hooks/use-cloud-library"
 
 interface CloudLibraryPanelProps {
   cloud: UseCloudLibraryReturn
+  /** This device's songs, so the panel can offer to upload the ones the cloud lacks. */
+  songs: readonly Song[]
 }
 
-export function CloudLibraryPanel({ cloud }: CloudLibraryPanelProps) {
+export function CloudLibraryPanel({ cloud, songs }: CloudLibraryPanelProps) {
   const [password, setPassword] = useState("")
   const [submitting, setSubmitting] = useState(false)
 
@@ -84,11 +88,13 @@ export function CloudLibraryPanel({ cloud }: CloudLibraryPanelProps) {
       </div>
 
       <p className="text-sm text-muted-foreground">
-        Upload new music to the bucket&apos;s <code>library/</code> folder and it appears here after the next
-        refresh. Cloud songs stream on demand; nothing is stored on this device.
+        Cloud songs stream on demand; nothing is stored on this device. Uploads appear here as soon as they
+        have been read.
       </p>
 
       {cloud.error ? <p className="text-sm text-destructive">{cloud.error}</p> : null}
+
+      {cloud.status === "ready" ? <CloudUploadSection songs={songs} /> : null}
 
       <div className="flex gap-2">
         <Button variant="secondary" className="flex-1" onClick={cloud.refresh} disabled={cloud.status === "loading"}>

@@ -3,7 +3,7 @@
  */
 import { NextRequest } from "next/server"
 
-import { MAX_UPLOAD_BYTES } from "@/lib/cloud/uploads"
+import { MAX_UPLOAD_BYTES } from "@/lib/cloud/upload-rules"
 import { installFakeR2, type FakeR2 } from "@/testing/fake-r2"
 
 const ORIGIN = "https://audora.test"
