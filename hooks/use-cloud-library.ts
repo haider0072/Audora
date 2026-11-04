@@ -45,6 +45,7 @@ export interface UseCloudLibraryReturn {
   signIn: (password: string) => Promise<boolean>
   /** Sign this device out, or with `everywhere` every device signed in. */
   signOut: (options?: { everywhere?: boolean }) => Promise<void>
+  /** Fetch the listing again — or, while one is in flight, once more after it. */
   refresh: () => void
 }
 
@@ -71,6 +72,9 @@ export function useCloudLibrary({ isReady, songCount, setSongs }: UseCloudLibrar
    * that there is none for this device. A snapshot arriving later is stale.
    */
   const settledRef = useRef(false)
+  /** Loads running now, and whether the library changed after they started. */
+  const activeLoadsRef = useRef(0)
+  const staleRef = useRef(false)
 
   // Show the last listing this device saw while the fresh one is fetched.
   useEffect(() => {
@@ -82,12 +86,13 @@ export function useCloudLibrary({ isReady, songCount, setSongs }: UseCloudLibrar
     })
   }, [])
 
-  const load = useCallback(async () => {
+  const load = useCallback(async function runLoad(): Promise<void> {
     const generation = ++generationRef.current
     const isCurrent = () => generation === generationRef.current
 
     setStatus((previous) => (previous === "ready" ? previous : "loading"))
     setError(null)
+    activeLoadsRef.current++
 
     try {
       const session = await fetch("/api/cloud/session", { cache: "no-store" })
@@ -141,6 +146,12 @@ export function useCloudLibrary({ isReady, songCount, setSongs }: UseCloudLibrar
       console.error("Cloud library load failed:", cause)
       setError(cause instanceof Error ? cause.message : "Could not reach the cloud library")
       setStatus((previous) => (previous === "ready" ? previous : "error"))
+    } finally {
+      activeLoadsRef.current--
+      if (staleRef.current && activeLoadsRef.current === 0) {
+        staleRef.current = false
+        void runLoad()
+      }
     }
   }, [])
 
@@ -198,6 +209,7 @@ export function useCloudLibrary({ isReady, songCount, setSongs }: UseCloudLibrar
   const signOut = useCallback(async ({ everywhere = false }: { everywhere?: boolean } = {}) => {
     generationRef.current++
     settledRef.current = true
+    staleRef.current = false
     const response = await fetch(everywhere ? "/api/cloud/session?scope=all" : "/api/cloud/session", {
       method: "DELETE",
     })
@@ -212,8 +224,12 @@ export function useCloudLibrary({ isReady, songCount, setSongs }: UseCloudLibrar
     await clearLibrarySnapshot()
   }, [])
 
+  // A refresh while a load runs would cut its indexing loop short only to
+  // start it over; folding it into one more pass afterwards loses nothing,
+  // since every pass lists the bucket afresh.
   const refresh = useCallback(() => {
-    void load()
+    if (activeLoadsRef.current > 0) staleRef.current = true
+    else void load()
   }, [load])
 
   return { status, songCount: cloudSongs.length, pending, error, signIn, signOut, refresh }

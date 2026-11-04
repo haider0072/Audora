@@ -1,8 +1,8 @@
 /**
  * An in-memory stand-in for R2's S3 API, installed as the global `fetch`.
  *
- * Covers what the cloud library relies on: ListObjectsV2 by prefix, GET with
- * ETags and byte ranges, and PUT honouring `If-Match` / `If-None-Match: *`.
+ * Covers what the cloud library relies on: ListObjectsV2 by prefix, HEAD, GET
+ * with ETags and byte ranges, and PUT honouring `If-Match` / `If-None-Match: *`.
  */
 
 export interface StoredObject {
@@ -71,6 +71,15 @@ export function installFakeR2(): FakeR2 {
 
     const key = decodeURIComponent(url.pathname.match(BUCKET_PATH)?.[1] ?? "")
     requests.push(`${method} ${key}`)
+
+    if (method === "HEAD") {
+      const stored = objects.get(key)
+      if (!stored) return new Response(null, { status: 404 })
+      return new Response(null, {
+        status: 200,
+        headers: { etag: stored.etag, "content-length": String(stored.body.length) },
+      })
+    }
 
     if (method === "GET") {
       const stored = objects.get(key)

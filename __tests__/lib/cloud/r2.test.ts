@@ -78,4 +78,28 @@ describe("R2Client", () => {
       "https://acct.r2.cloudflarestorage.com/audora-music/library/Don%27t%20Stop%20%28feat.%20A%26B%29.flac",
     )
   })
+
+  it("reads an object's size and ETag with HEAD, and null when it is missing", async () => {
+    const fetchMock = mockFetch(new Response(null, { status: 200, headers: { etag: '"abc"', "content-length": "42" } }))
+    expect(await new R2Client(config).head("library/a.flac")).toEqual({ size: 42, etag: '"abc"' })
+    expect((fetchMock.mock.calls[0] as unknown as [string, RequestInit])[1].method).toBe("HEAD")
+
+    mockFetch(new Response(null, { status: 404 }))
+    expect(await new R2Client(config).head("library/missing.flac")).toBeNull()
+  })
+
+  it("presigns a PUT bound to the declared type, length, and a key that must not exist", async () => {
+    const { url, headers } = await new R2Client(config).presignPut("library/a.flac", {
+      contentType: "audio/flac",
+      contentLength: 1234,
+      expiresInSeconds: 900,
+    })
+
+    const signed = new URL(url)
+    expect(signed.origin + signed.pathname).toBe("https://acct.r2.cloudflarestorage.com/audora-music/library/a.flac")
+    expect(signed.searchParams.get("X-Amz-Expires")).toBe("900")
+    expect(signed.searchParams.get("X-Amz-SignedHeaders")).toBe("content-length;content-type;host;if-none-match")
+    // The browser sets Content-Length from the body and refuses to be told it.
+    expect(headers).toEqual({ "Content-Type": "audio/flac", "If-None-Match": "*" })
+  })
 })

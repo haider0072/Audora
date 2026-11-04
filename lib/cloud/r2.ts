@@ -10,8 +10,8 @@ export type { R2Object }
  *
  * Server only — it holds the bucket credentials. The surface is the handful
  * of calls the cloud library needs: list, ranged read, write a small object,
- * and presign a GET so the browser can stream a file straight from R2 without
- * the bytes ever passing through a serverless function.
+ * and presign a GET or PUT so the browser can stream or upload a file
+ * straight to R2 without the bytes ever passing through a serverless function.
  *
  * Path-style addressing (`<account>.r2.cloudflarestorage.com/<bucket>/<key>`)
  * is used throughout so every URL shares one host, which keeps the CSP and
@@ -200,6 +200,43 @@ export class R2Client {
       throw new R2Error(`R2 write failed for ${key} (${response.status})`, response.status)
     }
     return true
+  }
+
+  /** An object's size and ETag, or null when it does not exist. */
+  async head(key: string, signal?: AbortSignal): Promise<{ size: number; etag: string } | null> {
+    const response = await this.send(this.objectUrl(key), { method: "HEAD", signal })
+    if (response.status === 404) return null
+    if (!response.ok) {
+      throw new R2Error(`R2 head failed for ${key} (${response.status})`, response.status)
+    }
+    return {
+      size: Number(response.headers.get("content-length") ?? 0),
+      etag: response.headers.get("etag") ?? "",
+    }
+  }
+
+  /**
+   * A PUT URL the browser can upload one new object to, straight to R2.
+   *
+   * Content-Type, Content-Length and `If-None-Match: *` are all signed, so
+   * the URL accepts exactly the declared bytes as the declared type, and only
+   * while nothing exists at the key — it cannot overwrite a song or be reused
+   * for something else. The browser sets Content-Length itself from the
+   * body, so `headers` lists only what the caller must send.
+   */
+  async presignPut(
+    key: string,
+    options: { contentType: string; contentLength: number; expiresInSeconds: number },
+  ): Promise<{ url: string; headers: Record<string, string> }> {
+    const url = new URL(this.objectUrl(key))
+    url.searchParams.set("X-Amz-Expires", String(options.expiresInSeconds))
+    const headers = { "Content-Type": options.contentType, "If-None-Match": "*" }
+    const signed = await this.aws.sign(url.toString(), {
+      method: "PUT",
+      headers: { ...headers, "Content-Length": String(options.contentLength) },
+      aws: { signQuery: true, allHeaders: true },
+    })
+    return { url: signed.url, headers }
   }
 
   /**

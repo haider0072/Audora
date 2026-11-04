@@ -1,5 +1,6 @@
 import { ByteSourceReadError, type ByteSource } from "@/lib/metadata-extractor"
 
+import { audioContentType } from "./audio-files"
 import type { R2Client } from "./r2"
 
 /**
@@ -19,21 +20,6 @@ import type { R2Client } from "./r2"
 /** Minimum growth of the cached prefix. Covers the tags of most files in one read. */
 const READ_AHEAD_BYTES = 256 * 1024
 
-const MIME_BY_EXTENSION: Record<string, string> = {
-  flac: "audio/flac",
-  mp3: "audio/mpeg",
-  m4a: "audio/mp4",
-  aac: "audio/aac",
-  wav: "audio/wav",
-  ogg: "audio/ogg",
-  opus: "audio/ogg",
-}
-
-export function mimeTypeForName(name: string): string {
-  const extension = name.split(".").pop()?.toLowerCase() ?? ""
-  return MIME_BY_EXTENSION[extension] ?? "application/octet-stream"
-}
-
 export class R2RangeSource implements ByteSource {
   readonly type: string
   private prefix = new Uint8Array(0)
@@ -47,7 +33,7 @@ export class R2RangeSource implements ByteSource {
     /** Aborts every read still to come, e.g. at an indexing pass's time limit. */
     private readonly signal?: AbortSignal,
   ) {
-    this.type = mimeTypeForName(name)
+    this.type = audioContentType(name)
   }
 
   slice(start = 0, end = this.size): { arrayBuffer(): Promise<ArrayBuffer> } {
