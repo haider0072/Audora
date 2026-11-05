@@ -22,6 +22,7 @@ import { HeaderVolume } from "@/components/desktop/header-volume"
 import { NowStage } from "@/components/desktop/now-stage"
 import { SettingsView } from "@/components/desktop/settings-view"
 import { SideTabs } from "@/components/desktop/side-tabs"
+import { SongRoom } from "@/components/desktop/song-room"
 import { ViewHeader, ViewModeToggle } from "@/components/desktop/view-header"
 import { LazyNowView } from "@/components/now/lazy-now-view"
 import type { NowTab } from "@/components/now/now-tabs"
@@ -490,7 +491,7 @@ export default function EnhancedMusicPlayer() {
     // The desktop sits on ink lit by the song's colours in both themes, so it
     // takes the dark theme's tokens whatever the app theme is.
     <div className="dark song-scope desktop-frame" style={songColors} data-playing={isPlaying || undefined}>
-      <div className="song-aura" aria-hidden="true" />
+      <SongRoom />
       {/* crossOrigin: cloud songs stream from R2, and Web Audio outputs silence for a cross-origin element without CORS */}
       <audio ref={audioRef} preload="metadata" crossOrigin="anonymous" className="hidden" />
       <audio ref={secondaryAudioRef} preload="metadata" crossOrigin="anonymous" className="hidden" />

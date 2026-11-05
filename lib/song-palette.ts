@@ -5,8 +5,8 @@
  * other colour on screen belongs to the song that is playing. This module
  * turns a cover's pixels into that colour: the cover's strongest, clearly
  * different hues, and from them an accent that reads as a mark on the surface
- * it sits on, whatever the hue, a stronger one for words, and the deep lights
- * of the desktop's aura, which text reads over.
+ * it sits on, whatever the hue, a stronger one for words, and the desktop's
+ * room and the deep lights of its aura, which text reads over.
  *
  * Pure: it works on pixel data and never touches the DOM, so the colour rules
  * can be tested on their own. Reading pixels off an image lives in
@@ -78,6 +78,14 @@ const AURA_MAX_LIGHTNESS = 0.56
 
 /** Each of the aura's three lights sits a little deeper than the one before, for depth whatever the cover. */
 const AURA_DEPTH = [1, 0.86, 0.74] as const
+
+/**
+ * The room the lights glow in: the cover's strongest hue, deep enough to be a
+ * ground rather than a light, and as much colour as a ground that deep can
+ * hold without turning muddy.
+ */
+const ROOM_LIGHTNESS = 0.16
+const ROOM_SATURATION = { min: 0.4, max: 0.7 }
 
 /** Hue buckets, 20° each. */
 const HUE_BUCKETS = 18
@@ -295,7 +303,7 @@ export function accentTextColor(palette: SongPalette, surface: Surface): string 
   const tint = hslToRgb([hue, saturation, markLightness])
   const grounds = rowStates(SURFACE_RGB[surface], surface, tint)
   if (surface === "ink") {
-    for (const light of auraLights(palette)) grounds.push(...auraGrounds(hslToRgb(light), tint))
+    for (const light of [...auraLights(palette), roomHsl(palette)]) grounds.push(...auraGrounds(hslToRgb(light), tint))
   }
   const step = surface === "ink" ? 0.02 : -0.02
   let lightness = markLightness
@@ -312,14 +320,14 @@ export function ringColors(palette: SongPalette, surface: Surface): readonly [st
 }
 
 /**
- * The brightest a light of this hue and saturation can be with text still
- * reading over it at 4.5:1, bare or under a row tinted `tint`: the lightness
- * steps down from the top until it does. Hues differ a lot in luminance, so
- * each finds its own place, and the check runs on the colour exactly as it
- * will be written.
+ * The brightest a light of this hue and saturation can be, up to `from`, with
+ * text still reading over it at 4.5:1, bare or under a row tinted `tint`: the
+ * lightness steps down from `from` until it does. Hues differ a lot in
+ * luminance, so each finds its own place, and the check runs on the colour
+ * exactly as it will be written.
  */
-function auraLight(hue: number, saturation: number, tint: Rgb): number {
-  let lightness = AURA_MAX_LIGHTNESS
+function auraLight(hue: number, saturation: number, tint: Rgb, from: number): number {
+  let lightness = from
   while (!readsOver(AURA_TEXT_RGB, auraGrounds(hslToRgb([hue, saturation, lightness]), tint)) && lightness > 0.04) {
     lightness = toPercent(lightness - 0.01)
   }
@@ -333,9 +341,28 @@ function auraLights(palette: SongPalette): readonly [Hsl, Hsl, Hsl] {
     const [h, s] = rgbToHsl(rgb)
     const hue = Math.round(h)
     const saturation = toPercent(clamp(s, AURA_SATURATION.min, AURA_SATURATION.max))
-    return [hue, saturation, toPercent(auraLight(hue, saturation, tint) * AURA_DEPTH[index])]
+    return [hue, saturation, toPercent(auraLight(hue, saturation, tint, AURA_MAX_LIGHTNESS) * AURA_DEPTH[index])]
   })
   return [a, b, c]
+}
+
+/** The room under the aura for a song, as it will be written. */
+function roomHsl(palette: SongPalette): Hsl {
+  const tint = hslToRgb(accentHsl(palette, "ink"))
+  const [h, s] = rgbToHsl(palette[0])
+  const hue = Math.round(h)
+  const saturation = toPercent(clamp(s, ROOM_SATURATION.min, ROOM_SATURATION.max))
+  return [hue, saturation, auraLight(hue, saturation, tint, ROOM_LIGHTNESS)]
+}
+
+/**
+ * The desktop's room for a song: the window itself in the cover's strongest
+ * hue, deep, for the aura's lights to glow in, so the whole window is the
+ * song's colour rather than ink with lights on it. Text reads over it as it
+ * does over the lights.
+ */
+export function roomColor(palette: SongPalette): string {
+  return toCss(roomHsl(palette))
 }
 
 /**

@@ -28,7 +28,12 @@
   inherits: true;
   initial-value: transparent;
 }
-/* The desktop aura's lights, each set on the aura itself, so a swell repaints it alone. */
+/* The desktop room's colour and its lights', each set on the layer it paints, so a swell repaints that layer alone. */
+@property --room {
+  syntax: "<color>";
+  inherits: false;
+  initial-value: transparent;
+}
 @property --aura-1 {
   syntax: "<color>";
   inherits: false;
@@ -542,7 +547,9 @@
       --frame-gap: 36px;
     }
   }
-  /* A scrim that deepens the window's edges, so the lights glow from within. */
+  /* A scrim that deepens the window's edges a little, so the lights glow from
+     within. It is nowhere thinner than 12%, which lib/song-palette
+     (`AURA_SCRIM_MIN`) counts on for the text over the room. */
   .desktop-frame::before {
     content: "";
     position: absolute;
@@ -551,38 +558,89 @@
     pointer-events: none;
     background: linear-gradient(
       100deg,
-      hsl(var(--ink-0) / 0.4),
-      hsl(var(--ink-0) / 0.12) 50%,
-      hsl(var(--ink-0) / 0.48)
+      hsl(var(--ink-0) / 0.24),
+      hsl(var(--ink-0) / 0.12) 46%,
+      hsl(var(--ink-0) / 0.28)
     );
   }
 
-  /* The aura: three soft lights in the cover's colours, the strongest behind
-     the cover. A song change swells from one set to the next (the colours
-     are registered, above). While music plays the lights drift, a step at a
-     time: a few moves a second, which a drift this slow can't be told from,
-     rather than a repaint every frame. Paused, they hold still and dim. */
-  .song-aura {
-    --aura-1: var(--song-aura-1, hsl(var(--ink-4)));
-    --aura-2: var(--song-aura-2, hsl(var(--ink-3)));
-    --aura-3: var(--song-aura-3, hsl(var(--ink-3)));
+  /* The room (components/desktop/song-room.tsx): the window in the cover's
+     strongest colour, deep, with three soft lights in its colours glowing in
+     it, the strongest behind the cover, and a fine grain over them, so the
+     colour reads as a material rather than a gradient. A song change swells
+     from one set to the next (the colours are registered, above). While
+     music plays the lights drift, a step at a time: a few moves a second,
+     which a drift this slow can't be told from, rather than a repaint every
+     frame. Paused, they dim and hold still, and the room keeps its colour. */
+  .song-room {
+    --room: var(--song-room, hsl(var(--ink-0)));
     position: absolute;
-    inset: -12%;
+    inset: 0;
     z-index: -2;
+    overflow: hidden;
     pointer-events: none;
-    background:
-      radial-gradient(42% 52% at 18% 36%, var(--aura-1), transparent 70%),
-      radial-gradient(38% 48% at 84% 16%, var(--aura-2), transparent 70%),
-      radial-gradient(56% 58% at 50% 106%, var(--aura-3), transparent 72%);
-    opacity: 0.32;
-    animation: aura-drift 60s steps(180) infinite paused;
+    background: var(--room);
+    transition: --room var(--motion-swell) var(--ease-swell);
+  }
+  .song-room::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    opacity: 0.1;
+    mix-blend-mode: overlay;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+  .song-light {
+    position: absolute;
+    border-radius: 9999px;
+    opacity: 0.6;
+    animation-iteration-count: infinite;
+    animation-direction: alternate;
+    animation-play-state: paused;
+  }
+  .song-light-1 {
+    --aura-1: var(--song-aura-1, hsl(var(--ink-4)));
+    top: -38vmax;
+    left: -24vmax;
+    width: 88vmax;
+    height: 88vmax;
+    background: radial-gradient(closest-side, var(--aura-1), transparent);
+    animation-name: light-drift-1;
+    animation-duration: 34s;
+    animation-timing-function: steps(102);
     transition:
       opacity var(--motion-swell) var(--ease-swell),
-      --aura-1 var(--motion-swell) var(--ease-swell),
-      --aura-2 var(--motion-swell) var(--ease-swell),
+      --aura-1 var(--motion-swell) var(--ease-swell);
+  }
+  .song-light-2 {
+    --aura-2: var(--song-aura-2, hsl(var(--ink-3)));
+    top: -24vmax;
+    right: -28vmax;
+    width: 78vmax;
+    height: 78vmax;
+    background: radial-gradient(closest-side, var(--aura-2), transparent);
+    animation-name: light-drift-2;
+    animation-duration: 41s;
+    animation-timing-function: steps(123);
+    transition:
+      opacity var(--motion-swell) var(--ease-swell),
+      --aura-2 var(--motion-swell) var(--ease-swell);
+  }
+  .song-light-3 {
+    --aura-3: var(--song-aura-3, hsl(var(--ink-3)));
+    bottom: -64vmax;
+    left: 2vmax;
+    width: 96vmax;
+    height: 96vmax;
+    background: radial-gradient(closest-side, var(--aura-3), transparent);
+    animation-name: light-drift-3;
+    animation-duration: 47s;
+    animation-timing-function: steps(141);
+    transition:
+      opacity var(--motion-swell) var(--ease-swell),
       --aura-3 var(--motion-swell) var(--ease-swell);
   }
-  .song-scope[data-playing] .song-aura {
+  .song-scope[data-playing] .song-light {
     opacity: 1;
     animation-play-state: running;
   }
@@ -4089,14 +4147,20 @@
   }
 }
 
-/* Out and back, so a running drift never jumps when it starts over. */
-@keyframes aura-drift {
-  0%,
-  100% {
-    transform: translate3d(-3%, -2%, 0) scale(1.04);
+/* Each of the room's lights drifts its own way, there and back (the lights alternate), so a drift never jumps as it starts over. */
+@keyframes light-drift-1 {
+  to {
+    transform: translate3d(14vmax, 10vmax, 0) scale(1.14);
   }
-  50% {
-    transform: translate3d(3%, 3%, 0) scale(1.12);
+}
+@keyframes light-drift-2 {
+  to {
+    transform: translate3d(-16vmax, 12vmax, 0) scale(0.88);
+  }
+}
+@keyframes light-drift-3 {
+  to {
+    transform: translate3d(12vmax, -10vmax, 0) scale(1.1);
   }
 }
 
@@ -4224,7 +4288,7 @@
     transform: none;
   }
   .song-scope[data-playing] .wordmark-ring,
-  .song-aura {
+  .song-light {
     animation: none;
   }
   .play-button[data-loading] .play-button-arc,

@@ -5,6 +5,7 @@ import {
   paletteFromPixels,
   rgbToHsl,
   ringColors,
+  roomColor,
   type Rgb,
   type SongPalette,
 } from "@/lib/song-palette"
@@ -195,9 +196,8 @@ describe("accentTextColor", () => {
     for (const [cover, palette] of SWEPT_COVERS) {
       const inkText = drawn(accentTextColor(palette, "ink"))
       const inkTint = drawn(accentColor(palette, "ink"))
-      const inkGrounds = [INK_2, ...auraColors(palette).map((css) => underScrim(drawn(css)))].flatMap((ground) =>
-        rowGrounds(ground, TEXT_ON_INK, inkTint),
-      )
+      const lit = [...auraColors(palette), roomColor(palette)].map((css) => underScrim(drawn(css)))
+      const inkGrounds = [INK_2, ...lit].flatMap((ground) => rowGrounds(ground, TEXT_ON_INK, inkTint))
       if (inkGrounds.some((ground) => contrast(inkText, ground) < 4.5)) failures.push(`${cover} on ink`)
 
       const paperText = drawn(accentTextColor(palette, "paper"))
@@ -288,5 +288,34 @@ describe("auraColors", () => {
     for (const css of auraColors(palette)) {
       expect(rgbToHsl(parseHsl(css))[1]).toBeGreaterThanOrEqual(0.44)
     }
+  })
+})
+
+describe("roomColor", () => {
+  it("keeps the dimmest text at 4.5:1 over the room, bare or in a row lit and tinted any way, as the browser draws it", () => {
+    const failures: string[] = []
+    for (const [cover, palette] of SWEPT_COVERS) {
+      const tint = drawn(accentColor(palette, "ink"))
+      const css = roomColor(palette)
+      const grounds = rowGrounds(underScrim(drawn(css)), TEXT_ON_INK, tint)
+      if (grounds.some((ground) => contrast(MUTED_ON_AURA, ground) < 4.5)) failures.push(`${cover}: ${css}`)
+    }
+    expect(failures).toEqual([])
+  })
+
+  it("is the cover's strongest hue, deep, under lights brighter than itself", () => {
+    const palette = paletteFromPixels(pixelsOf([[30, 90, 220], 60], [[230, 140, 40], 30], [[40, 180, 90], 20]))!
+    const room = roomColor(palette)
+    const [h, , l] = rgbToHsl(parseHsl(room))
+    expect(Math.abs(h - rgbToHsl(palette[0])[0])).toBeLessThan(3)
+    expect(l).toBeGreaterThan(0.1)
+    expect(l).toBeLessThan(0.17)
+    for (const css of auraColors(palette)) expect(luminance(drawn(css))).toBeGreaterThan(luminance(drawn(room)))
+  })
+
+  it("keeps a soft cover's colour, and holds a loud one back to a ground", () => {
+    const soft = paletteFromPixels(pixelsOf([[160, 120, 100], 40]))!
+    expect(rgbToHsl(parseHsl(roomColor(soft)))[1]).toBeGreaterThanOrEqual(0.39)
+    expect(rgbToHsl(parseHsl(roomColor(coverOfHue(200))))[1]).toBeLessThanOrEqual(0.71)
   })
 })
