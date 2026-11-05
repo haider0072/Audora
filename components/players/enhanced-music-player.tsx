@@ -520,7 +520,7 @@ export default function EnhancedMusicPlayer() {
           ref={fullscreenButtonRef}
           label="Full screen"
           size="sm"
-          className="view-round"
+          className="round-glass"
           disabled={!displaySong}
           onClick={fullscreen.enter}
         >
@@ -580,7 +580,7 @@ export default function EnhancedMusicPlayer() {
               ref={fullscreenExitRef}
               label="Exit full screen"
               size="md"
-              className="full-exit"
+              className="round-glass full-exit"
               onClick={fullscreen.exit}
             >
               <X className="h-5 w-5" aria-hidden="true" />

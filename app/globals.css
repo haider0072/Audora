@@ -408,6 +408,16 @@
   .transport-button[aria-pressed="true"] {
     color: var(--song-accent);
   }
+  /* A round button of light over the song's colour: the stage's More, and
+     full screen's ways in and out. */
+  .round-glass {
+    background-color: hsl(var(--foreground) / 0.12);
+    color: hsl(var(--foreground));
+  }
+  .round-glass:hover:not(:disabled),
+  .round-glass[data-state="open"] {
+    background-color: hsl(var(--foreground) / 0.2);
+  }
 
   /* Seek: the track thickens under the pointer and shows where you would land.
      Only transform and opacity move. */
@@ -672,15 +682,10 @@
     z-index: 1;
   }
   .full-exit {
-    background-color: hsl(var(--foreground) / 0.12);
-    color: hsl(var(--foreground));
     transition:
       background-color var(--motion-release) var(--ease-release),
       opacity var(--motion-release) var(--ease-release),
       transform var(--motion-pluck) var(--ease-pluck);
-  }
-  .full-exit:hover:not(:disabled) {
-    background-color: hsl(var(--foreground) / 0.2);
   }
   .desktop-frame[data-idle] .full-exit:not(:hover, :focus-visible) {
     opacity: 0;
@@ -1074,14 +1079,6 @@
     font-weight: 650;
     line-height: 1.15;
     letter-spacing: -0.03em;
-  }
-  .stage .stage-more {
-    background-color: hsl(var(--foreground) / 0.12);
-    color: hsl(var(--foreground));
-  }
-  .stage .stage-more:hover,
-  .stage .stage-more[data-state="open"] {
-    background-color: hsl(var(--foreground) / 0.2);
   }
   .stage-credits {
     min-width: 0;
@@ -1516,12 +1513,6 @@
       background-color: hsl(var(--foreground) / 0.08);
       transition-duration: var(--motion-attack);
     }
-  }
-  .view-head .view-round {
-    background-color: hsl(var(--foreground) / 0.12);
-  }
-  .view-head .view-round:hover:not(:disabled) {
-    background-color: hsl(var(--foreground) / 0.2);
   }
 
   /* What you queued (components/desktop/up-next.tsx), over the library while

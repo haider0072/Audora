@@ -173,7 +173,7 @@ export function NowStage({
           </div>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <TransportButton ref={moreRef} label="More" size="sm" className="stage-more">
+              <TransportButton ref={moreRef} label="More" size="sm" className="round-glass">
                 <MoreHorizontal className="h-[18px] w-[18px]" />
               </TransportButton>
             </DropdownMenuTrigger>
