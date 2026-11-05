@@ -25,7 +25,7 @@ export function StatusMessage({ title, detail, action, inline = false }: StatusM
       <p className="status-message-title">{title}</p>
       {detail && <p className="status-message-detail">{detail}</p>}
       {action && (
-        <button type="button" className="status-message-action" onClick={action.onClick}>
+        <button type="button" className="text-button status-message-action" onClick={action.onClick}>
           {action.label}
         </button>
       )}

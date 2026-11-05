@@ -59,7 +59,8 @@ export interface UsePlaylistManagerReturn {
   notifySongSelected: (song: Song, isAutoAdvance: boolean, fromQueue?: boolean) => void
   toggleShuffle: () => void
   removeSong: (songId: string) => Promise<void>
-  resetPlaylist: () => Promise<void>
+  /** Clears the library from storage and from the player. True once it is cleared. */
+  resetPlaylist: () => Promise<boolean>
   playNext: (song: Song) => void
   /** Queue a song after the ones already queued. */
   addToQueue: (song: Song) => void
@@ -417,19 +418,20 @@ export function usePlaylistManager(options: UsePlaylistManagerOptions = {}): Use
   /**
    * Reset the entire playlist
    */
-  const resetPlaylist = useCallback(async () => {
+  const resetPlaylist = useCallback(async (): Promise<boolean> => {
     // Clear storage first. Resetting the UI while the bytes are still on disk
     // would leave every record unreachable — the exact way orphans are made.
     try {
       await PlaylistStorage.clearPlaylist()
     } catch (error) {
+      console.error("Could not clear the library from storage:", error)
       const message = error instanceof Error ? error.message : "Unknown error"
       toast({
         title: "Could not clear playlist",
         description: message,
         variant: "destructive",
       })
-      return
+      return false
     }
 
     // Only now discard the in-memory copies. Clearing the art cache before the
@@ -455,6 +457,7 @@ export function usePlaylistManager(options: UsePlaylistManagerOptions = {}): Use
 
     onPlaylistReset?.()
     onPlaylistChange?.([])
+    return true
   }, [songs, onPlaylistChange, onPlaylistReset])
 
   return {

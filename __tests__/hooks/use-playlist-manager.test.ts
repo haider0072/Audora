@@ -324,14 +324,37 @@ describe('usePlaylistManager', () => {
         result.current.setCurrentSong(makeSong({ id: '1' }))
       })
 
+      let cleared = false
       await act(async () => {
-        await result.current.resetPlaylist()
+        cleared = await result.current.resetPlaylist()
       })
 
+      expect(cleared).toBe(true)
       expect(result.current.songs).toEqual([])
       expect(result.current.currentSong).toBeNull()
       expect(result.current.shuffledQueue).toEqual([])
       expect(onReset).toHaveBeenCalled()
+    })
+
+    it('keeps the library, and says so, when storage cannot be cleared', async () => {
+      const { PlaylistStorage } = jest.requireMock('@/lib/playlist-storage')
+      PlaylistStorage.clearPlaylist.mockRejectedValueOnce(new Error('blocked'))
+      const quiet = jest.spyOn(console, 'error').mockImplementation(() => {})
+      const onReset = jest.fn()
+      const { result } = renderHook(() => usePlaylistManager({ onPlaylistReset: onReset }))
+      act(() => {
+        result.current.setSongs([makeSong({ id: '1' })])
+      })
+
+      let cleared = true
+      await act(async () => {
+        cleared = await result.current.resetPlaylist()
+      })
+
+      expect(cleared).toBe(false)
+      expect(result.current.songs).toHaveLength(1)
+      expect(onReset).not.toHaveBeenCalled()
+      quiet.mockRestore()
     })
 
     it('revokes blob URLs on reset', async () => {
