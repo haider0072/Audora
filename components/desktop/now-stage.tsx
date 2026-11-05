@@ -1,14 +1,15 @@
 "use client"
 
-import { useRef, type RefObject } from "react"
-import { Maximize2, MonitorSpeaker, MoreHorizontal, Shuffle, SlidersHorizontal } from "lucide-react"
+import { useRef, type ReactNode, type RefObject } from "react"
+import { Maximize2, Minimize2, MonitorSpeaker, MoreHorizontal, Shuffle, SlidersHorizontal } from "lucide-react"
 
 import { AlbumArtDisplay } from "@/components/album-art-display"
+import { VolumePop } from "@/components/desktop/volume-pop"
 import { PlayButton } from "@/components/player/play-button"
 import { QualityLabel } from "@/components/player/quality-label"
 import { RollingText, type RollDirection } from "@/components/player/rolling-text"
 import { SeekBar } from "@/components/player/seek-bar"
-import { SkipIcon, TransportButton } from "@/components/player/transport-button"
+import { SkipGlyph, TransportButton } from "@/components/player/transport-button"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -37,23 +38,35 @@ export interface NowStageProps {
   onSkipPrevious: () => void
   onSkipNext: () => void
   onSeek: (seconds: number) => void
+  volume: number[]
+  isMuted: boolean
+  onVolumeChange: (value: number[]) => void
+  onToggleMute: () => void
   /** Show the song's artist or album in the library. */
   onShowPage: (page: LibraryPage) => void
-  /** The cover, which full screen grows out of. */
-  coverRef: RefObject<HTMLButtonElement>
-  onOpenFullscreen: () => void
+  /** The frame shows the song alone. */
+  fullscreen: boolean
+  /** Into full screen from the cover or More, and back out from More. */
+  onToggleFullscreen: () => void
+  /** The More button, for focus to come back to from elsewhere. */
+  moreRef: RefObject<HTMLButtonElement>
   /** The equalizer and the rest of the sound settings. */
   onOpenSound: () => void
   onOpenSync: () => void
   syncConnected: boolean
+  /** The song's views, as words under the transport. */
+  views: ReactNode
 }
 
 /**
  * The desktop's player, the left half of the window: the cover as large as the
- * window allows, always in sight; under it what is playing, its quality and
- * the way to its artist and album, the seek bar, and the transport. The song's
- * views open beside it, in the right half. Styled by `.stage` in
- * app/globals.css.
+ * window allows, always in sight; under it what is playing and the way to its
+ * artist and album, with More beside them; the seek bar, with the song's
+ * quality between its times; the transport, its volume collapsed to the
+ * speaker at its end; and the song's views. Everything sits straight on the
+ * song's colour, with no boxes. In full screen it keeps its place beside the
+ * open view, or stands alone in the middle of the window. Styled by `.stage`
+ * in app/globals.css.
  */
 export function NowStage({
   song,
@@ -68,17 +81,22 @@ export function NowStage({
   onSkipPrevious,
   onSkipNext,
   onSeek,
+  volume,
+  isMuted,
+  onVolumeChange,
+  onToggleMute,
   onShowPage,
-  coverRef,
-  onOpenFullscreen,
+  fullscreen,
+  onToggleFullscreen,
+  moreRef,
   onOpenSound,
   onOpenSync,
   syncConnected,
+  views,
 }: NowStageProps) {
   // What the menu asks for opens once the menu has closed, with focus back on
   // the menu's button, so a dialog can hand it back there.
   const afterMenu = useRef<(() => void) | null>(null)
-  const moreRef = useRef<HTMLButtonElement>(null)
 
   return (
     <section className="stage" aria-label="Now playing">
@@ -87,13 +105,13 @@ export function NowStage({
           {song ? (
             // A pointer's way into full screen; the keyboard's is in More.
             <button
-              ref={coverRef}
               type="button"
               className="stage-cover"
               tabIndex={-1}
               aria-hidden="true"
-              title="Full screen"
-              onClick={onOpenFullscreen}
+              title={fullscreen ? undefined : "Full screen"}
+              disabled={fullscreen}
+              onClick={onToggleFullscreen}
             >
               <AlbumArtDisplay
                 songId={song.id}
@@ -101,7 +119,7 @@ export function NowStage({
                 thumbnail={song.albumArtThumb}
                 title={`${song.title} album art`}
                 size="large"
-                rounded="rounded-2xl"
+                rounded="rounded-xl"
                 className="stage-art"
                 isTransitioning={isLoading}
               />
@@ -115,70 +133,50 @@ export function NowStage({
           )}
         </div>
 
-        <div className="stage-info">
-          {song && (
-            <>
-              <h2 className="stage-title">
-                <RollingText text={song.title || "Unknown title"} direction={direction} />
-              </h2>
-              <p className="stage-credits">
-                <RollingText text={[song.artist, song.album].filter(Boolean).join(" — ")} direction={direction}>
-                  {/* Each name keeps its own ellipsis, the artist's given room first, so a long album never hides both. */}
-                  {song.artist && (
-                    <button
-                      type="button"
-                      className="stage-link"
-                      title={`Go to ${song.artist}`}
-                      onClick={() => onShowPage(artistPage(song))}
-                    >
-                      {song.artist}
-                    </button>
-                  )}
-                  {song.artist && song.album && (
-                    <span className="stage-credits-sep" aria-hidden="true">
-                      —
-                    </span>
-                  )}
-                  {song.album && (
-                    <button
-                      type="button"
-                      className="stage-link"
-                      title={`Go to ${song.album}`}
-                      onClick={() => onShowPage(albumPage(song))}
-                    >
-                      {song.album}
-                    </button>
-                  )}
-                </RollingText>
-              </p>
-              <QualityLabel song={song} withBitrate className="stage-specs" />
-            </>
-          )}
-        </div>
-
-        <SeekBar
-          className="stage-seek"
-          duration={duration}
-          onSeek={onSeek}
-          isPlaying={isPlaying}
-          disabled={isLoading || !song}
-        />
-
-        <div className="stage-transport">
-          <TransportButton label="Shuffle" size="lg" pressed={shuffle} onClick={onToggleShuffle} className="stage-quiet">
-            <Shuffle className="h-5 w-5" />
-          </TransportButton>
-          <TransportButton label="Previous track" size="lg" onClick={onSkipPrevious} disabled={!canSkip}>
-            <SkipIcon direction="back" size="lg" />
-          </TransportButton>
-          <PlayButton size="lg" isPlaying={isPlaying} isLoading={isLoading} onClick={onPlayPause} disabled={!song} />
-          <TransportButton label="Next track" size="lg" onClick={onSkipNext} disabled={!canSkip}>
-            <SkipIcon direction="forward" size="lg" />
-          </TransportButton>
+        <div className="stage-head">
+          <div className="stage-info">
+            {song && (
+              <>
+                <h2 className="stage-title">
+                  <RollingText text={song.title || "Unknown title"} direction={direction} />
+                </h2>
+                <p className="stage-credits">
+                  <RollingText text={[song.artist, song.album].filter(Boolean).join(" — ")} direction={direction}>
+                    {/* Each name keeps its own ellipsis, the artist's given room first, so a long album never hides both. */}
+                    {song.artist && (
+                      <button
+                        type="button"
+                        className="stage-link"
+                        title={`Go to ${song.artist}`}
+                        onClick={() => onShowPage(artistPage(song))}
+                      >
+                        {song.artist}
+                      </button>
+                    )}
+                    {song.artist && song.album && (
+                      <span className="stage-credits-sep" aria-hidden="true">
+                        —
+                      </span>
+                    )}
+                    {song.album && (
+                      <button
+                        type="button"
+                        className="stage-link"
+                        title={`Go to ${song.album}`}
+                        onClick={() => onShowPage(albumPage(song))}
+                      >
+                        {song.album}
+                      </button>
+                    )}
+                  </RollingText>
+                </p>
+              </>
+            )}
+          </div>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <TransportButton ref={moreRef} label="More" size="lg" className="stage-quiet">
-                <MoreHorizontal className="h-5 w-5" />
+              <TransportButton ref={moreRef} label="More" size="sm" className="round-glass">
+                <MoreHorizontal className="h-[18px] w-[18px]" />
               </TransportButton>
             </DropdownMenuTrigger>
             <DropdownMenuContent
@@ -210,17 +208,42 @@ export function NowStage({
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem
-                disabled={!song}
+                disabled={!song && !fullscreen}
                 onSelect={() => {
-                  afterMenu.current = onOpenFullscreen
+                  afterMenu.current = onToggleFullscreen
                 }}
               >
-                <Maximize2 />
-                Full screen
+                {fullscreen ? <Minimize2 /> : <Maximize2 />}
+                {fullscreen ? "Exit full screen" : "Full screen"}
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
+
+        <SeekBar
+          className="stage-seek"
+          duration={duration}
+          onSeek={onSeek}
+          isPlaying={isPlaying}
+          disabled={isLoading || !song}
+          between={<QualityLabel song={song} withBitrate className="stage-specs" />}
+        />
+
+        <div className="stage-transport">
+          <TransportButton label="Shuffle" size="lg" pressed={shuffle} onClick={onToggleShuffle} className="stage-quiet">
+            <Shuffle className="h-5 w-5" />
+          </TransportButton>
+          <TransportButton label="Previous track" size="lg" onClick={onSkipPrevious} disabled={!canSkip}>
+            <SkipGlyph direction="back" className="h-[30px] w-[30px]" />
+          </TransportButton>
+          <PlayButton size="md" isPlaying={isPlaying} isLoading={isLoading} onClick={onPlayPause} disabled={!song} />
+          <TransportButton label="Next track" size="lg" onClick={onSkipNext} disabled={!canSkip}>
+            <SkipGlyph direction="forward" className="h-[30px] w-[30px]" />
+          </TransportButton>
+          <VolumePop volume={volume} isMuted={isMuted} onVolumeChange={onVolumeChange} onToggleMute={onToggleMute} />
+        </div>
+
+        {views}
       </div>
     </section>
   )

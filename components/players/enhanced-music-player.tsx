@@ -1,7 +1,8 @@
 "use client"
 
-import { useState, useRef, useEffect, useCallback, useId, useMemo } from "react"
-import { Settings } from "lucide-react"
+import { useState, useRef, useEffect, useCallback, useId, useLayoutEffect, useMemo, type ReactNode, type RefObject } from "react"
+import Image from "next/image"
+import { Maximize2, Settings, X } from "lucide-react"
 
 import { toast } from "@/hooks/use-toast"
 import { ToastAction } from "@/components/ui/toast"
@@ -15,16 +16,17 @@ import {
   focusSheetOnOpen,
 } from "@/components/ui/sheet"
 import { AddMusicMenu } from "@/components/desktop/add-music-menu"
-import { DesktopHeader } from "@/components/desktop/desktop-header"
-import { CloudButton, DownloadsButton } from "@/components/desktop/header-status"
-import { HeaderSearch } from "@/components/desktop/header-search"
-import { HeaderVolume } from "@/components/desktop/header-volume"
+import { CloudButton, DownloadsButton, SearchButton } from "@/components/desktop/library-tools"
 import { NowStage } from "@/components/desktop/now-stage"
+import { SearchField } from "@/components/desktop/search-field"
+import { SearchPane } from "@/components/desktop/search-pane"
 import { SettingsView } from "@/components/desktop/settings-view"
-import { SideTabs } from "@/components/desktop/side-tabs"
-import { ViewHeader, ViewModeToggle } from "@/components/desktop/view-header"
+import { SongRoom } from "@/components/desktop/song-room"
+import { SongViews, VIEW_SOURCES, type DesktopView } from "@/components/desktop/song-views"
+import { UpNext } from "@/components/desktop/up-next"
+import { BackHeader, ViewHeader, ViewModeToggle } from "@/components/desktop/view-header"
 import { LazyNowView } from "@/components/now/lazy-now-view"
-import type { NowTab } from "@/components/now/now-tabs"
+import { NOW_TAB_LABELS } from "@/components/now/now-tabs"
 import { TransportButton } from "@/components/player/transport-button"
 import { DropOverlay } from "@/components/library/drop-overlay"
 import { LibraryPanel } from "@/components/library/library-panel"
@@ -33,7 +35,9 @@ import { StackLayer } from "@/components/stack-layer"
 import { useNowPlayer } from "@/components/now/use-now-player"
 import { SoundPanel } from "@/components/sound/sound-panel"
 import { useBodyClass } from "@/hooks/use-body-class"
-import { useDesktopSearch, type SearchTab } from "@/hooks/use-desktop-search"
+import { useDesktopFullscreen } from "@/hooks/use-desktop-fullscreen"
+import { useDesktopPane } from "@/hooks/use-desktop-pane"
+import { useDesktopSearch } from "@/hooks/use-desktop-search"
 import { useSearchShortcut } from "@/hooks/use-search-shortcut"
 import { useReturnFocus } from "@/hooks/use-return-focus"
 import { useAlbumArtPreloader } from "@/hooks/use-album-art-preloader"
@@ -50,14 +54,12 @@ import { useLibraryNavigation } from "@/hooks/use-library-navigation"
 import { usePlaylistPersistence, useAutoSave } from "@/hooks/use-playlist-persistence"
 import { useMediaControls } from "@/hooks/use-media-controls"
 import { useTidalSearch } from "@/hooks/use-tidal-search"
-import { OnlineSearchSidebar } from "@/components/dab/online-search-sidebar"
 import { AlbumArtCache } from "@/lib/album-art-cache"
 import { getAllPresets, type EqPreset, type EqualizerBand } from "@/lib/eq-presets"
-import { matchesQuery } from "@/lib/library-groups"
 import type { LibraryPage } from "@/lib/library-pages"
 import { resetPlaybackTime } from "@/lib/playback-time-store"
 import { formatCount, formatTotalDuration } from "@/lib/utils"
-import { FullscreenPlayer } from "@/components/fullscreen-player"
+import { withViewTransition } from "@/lib/view-transition"
 import { SyncPanel } from "@/components/sync-panel"
 import { CloudLibraryPanel } from "@/components/cloud-library-panel"
 import { useCloudLibrary } from "@/hooks/use-cloud-library"
@@ -76,24 +78,25 @@ const CROSSFADE_MANUAL_SECONDS = 0.4
 export default function EnhancedMusicPlayer() {
   // The desktop is always night, and its menus and dialogs open in the body, outside it.
   useBodyClass("dark")
-  // The right half's tab: the library, or one of the song's views, kept from song to song.
-  const [sideTab, setSideTab] = useState<NowTab>("library")
-  const [isFullscreen, setIsFullscreen] = useState(false);
-  const [albumArtSourceRect, setAlbumArtSourceRect] = useState<DOMRect | null>(null);
-  // Settings takes the library's place, until Done or its button in the header.
-  const [settingsOpen, setSettingsOpen] = useState(false)
   const [showSync, setShowSync] = useState(false);
   const [showCloud, setShowCloud] = useState(false);
   // The Sound sheet, two-device playback and the cloud library open from a
-  // menu, the header, Settings or full screen, and hand focus back to what
-  // opened them.
+  // menu, the library's tools, Settings or full screen, and hand focus back
+  // to what opened them.
   const returnFocus = useReturnFocus()
-  const searchIds = useId()
-  const sideIds = useId()
+  const viewIds = useId()
 
-  const coverRef = useRef<HTMLButtonElement>(null)
   const searchInputRef = useRef<HTMLInputElement>(null)
+  const searchButtonRef = useRef<HTMLButtonElement>(null)
   const settingsToggleRef = useRef<HTMLButtonElement>(null)
+  // Full screen's ways in, in a view's head and in the stage's More, and its
+  // way out, in the brand's corner.
+  const fullscreenButtonRef = useRef<HTMLButtonElement>(null)
+  const stageMoreRef = useRef<HTMLButtonElement>(null)
+  const fullscreenExitRef = useRef<HTMLButtonElement>(null)
+  // A tool in the library's head to hand focus to once the head is back, as
+  // the search or Settings closes from the keyboard.
+  const focusOnLibrary = useRef<RefObject<HTMLElement> | null>(null)
   const audioRef = useRef<HTMLAudioElement>(null)
   const secondaryAudioRef = useRef<HTMLAudioElement>(null)
   // Mirrors the sync role for the auto-advance guard in the playback
@@ -165,26 +168,58 @@ export default function EnhancedMusicPlayer() {
     },
   })
 
-  // One search, in the header, for the library and online. While its results
-  // show, the library is searched for what is typed.
+  // One search, in the library's head, for the library and online; and the
+  // right half, which shows the library or one thing at a time in its place.
   const search = useDesktopSearch(tidalSearch)
-  const libraryQuery = search.open ? search.query : ""
-  const libraryNavigation = useLibraryNavigation(sortedSongs, libraryQuery)
+  const panes = useDesktopPane(search)
+  // On the way out of full screen, focus with nowhere else to go takes a way
+  // back in: the button in a view's head while one is open, or More.
+  const fullscreenReturn = useCallback(() => fullscreenButtonRef.current ?? stageMoreRef.current, [])
+  // Full screen: the frame without the library, the song alone or beside its
+  // open view. The search and Settings are the library's, so they close.
+  const fullscreen = useDesktopFullscreen({
+    exitRef: fullscreenExitRef,
+    returnTo: fullscreenReturn,
+    onEnter: panes.closeSearchAndSettings,
+  })
+  const { exitWith: exitFullscreenWith } = fullscreen
+  const libraryNavigation = useLibraryNavigation(sortedSongs)
   const { show: showLibraryPage } = libraryNavigation
-  const { close: closeSearch } = search
+  const { showLibrary } = panes
 
-  /** Show an artist's or an album's page, from the player: in the library, in place of any view, search or Settings. */
+  /**
+   * Show an artist's or an album's page, from the player or the search: in
+   * the library, in place of anything open there, and out of full screen in
+   * the same step, so the page opens in sight and takes focus.
+   */
   const showInLibrary = useCallback((page: LibraryPage) => {
-    closeSearch()
-    setSettingsOpen(false)
-    setSideTab("library")
-    showLibraryPage(page, "")
-  }, [closeSearch, showLibraryPage])
+    exitFullscreenWith(() => {
+      showLibrary()
+      showLibraryPage(page)
+    })
+  }, [exitFullscreenWith, showLibrary, showLibraryPage])
 
   useSearchShortcut(() => {
-    searchInputRef.current?.focus()
-    searchInputRef.current?.select()
+    // The search is the library's, so it brings the library back, out of
+    // full screen in the same step, so the field can take focus.
+    exitFullscreenWith(() => {
+      if (!search.active) {
+        // The field takes focus as it comes out.
+        panes.startSearch()
+        return
+      }
+      searchInputRef.current?.focus()
+      searchInputRef.current?.select()
+    })
   })
+
+  // Runs once the library's head is back, so the tool it hands focus to is there.
+  useLayoutEffect(() => {
+    if (panes.pane !== "library") return
+    const target = focusOnLibrary.current
+    focusOnLibrary.current = null
+    target?.current?.focus()
+  }, [panes.pane])
 
   const {
     showEqualizer, setShowEqualizer,
@@ -428,13 +463,6 @@ export default function EnhancedMusicPlayer() {
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps -- intentional: cleanup only on unmount
 
-  const handleOpenFullscreen = useCallback(() => {
-    if (coverRef.current) {
-      setAlbumArtSourceRect(coverRef.current.getBoundingClientRect())
-    }
-    setIsFullscreen(true)
-  }, [])
-
   const songColors = useSongColors(displaySong)
 
   const totalDuration = useMemo(() => songs.reduce((total, song) => total + (song.duration || 0), 0), [songs])
@@ -442,80 +470,88 @@ export default function EnhancedMusicPlayer() {
   if (isRestoringPlaylist) libraryMeta = "Restoring…"
   else if (songs.length > 0) libraryMeta = `${formatCount(songs.length, "song")} · ${formatTotalDuration(totalDuration)}`
   const downloads = tidalSearch.activeDownloadCount
-  const matches = useMemo(
-    () => (libraryQuery.trim() ? sortedSongs.filter((song) => matchesQuery(song, libraryQuery)).length : undefined),
-    [sortedSongs, libraryQuery],
-  )
-
-  // The right half of the window: its tab, the library or one of the song's
-  // views; or over them, the search's results, or Settings.
-  const searching = search.open
-  const showOnline = searching && search.tab === "online"
-  const showSettings = settingsOpen && !searching
-  const showView = sideTab !== "library" && !searching && !showSettings
-  // Typed since the last online search: the results offer to look for it.
-  const typed = search.query.trim()
-  const pendingOnline = typed !== "" && typed !== tidalSearch.searchQuery ? typed : undefined
-  const whereId = (place: SearchTab) => `${searchIds}-${place}`
-  const sideTabId = (tab: NowTab) => `${sideIds}-${tab}`
-  const sidePanelId = `${sideIds}-panel`
-  let searchMeta: string | undefined
-  if (showOnline) searchMeta = downloads > 0 ? `${formatCount(downloads, "song")} downloading` : "Qobuz and Amazon"
-  else if (matches !== undefined) searchMeta = `${formatCount(matches, "song")} in your library`
-  const searchOnline = {
-    label: "Search online",
-    onClick: () => {
-      search.setTab("online")
-      // The library's results go from view, and this button with them.
-      document.getElementById(whereId("online"))?.focus()
-    },
-  }
-  const toggleSettings = () => {
-    if (searching) closeSearch()
-    setSettingsOpen(!showSettings)
-  }
-  const closeSettings = () => {
-    setSettingsOpen(false)
-    // Done goes with Settings; its button in the header brings it back.
-    settingsToggleRef.current?.focus()
-  }
-  // Declared last: the compiler takes a call into returnFocus as able to change
-  // what it is given, so declared earlier these would hold the memoized
-  // callbacks above back from being memoized.
+  // Declared after every memoized callback: the compiler takes a call into
+  // returnFocus as able to change what it is given, so declared earlier these
+  // would hold the memoized callbacks back from being memoized.
   const openSound = () => returnFocus.open(setShowEqualizer)
   const openSync = () => returnFocus.open(setShowSync)
   const openCloud = () => returnFocus.open(setShowCloud)
 
-  return (
-    // The desktop sits on ink lit by the song's colours in both themes, so it
-    // takes the dark theme's tokens whatever the app theme is.
-    <div className="dark song-scope desktop-frame" style={songColors} data-playing={isPlaying || undefined}>
-      <div className="song-aura" aria-hidden="true" />
-      {/* crossOrigin: cloud songs stream from R2, and Web Audio outputs silence for a cross-origin element without CORS */}
-      <audio ref={audioRef} preload="metadata" crossOrigin="anonymous" className="hidden" />
-      <audio ref={secondaryAudioRef} preload="metadata" crossOrigin="anonymous" className="hidden" />
-      {/* Screen reader announcements for song changes */}
-      <div aria-live="polite" aria-atomic="true" className="sr-only">
-        {currentSong && `Now playing: ${currentSong.title}${currentSong.artist ? ` by ${currentSong.artist}` : ""}`}
-      </div>
-      <DesktopHeader
-        search={
-          <HeaderSearch
-            value={search.query}
-            onChange={search.setQuery}
-            onSubmit={search.submit}
-            open={searching}
-            onClose={closeSearch}
-            where={search.tab}
-            onWhereChange={search.setTab}
-            whereId={whereId}
-            inputRef={searchInputRef}
-          />
-        }
-      >
-        <DownloadsButton count={downloads} onOpen={search.showOnline} />
+  // The right half of the window: the library, or in its place the search's
+  // results once something is typed, one of the song's views, or Settings.
+  const { pane, view } = panes
+  // Full screen with no view open: the song alone, the right half out of
+  // sight and so out of reach, as CSS hides it (`[data-solo]`). Hidden by
+  // style rather than made inert, so it is back within reach in the same
+  // commit that brings it back, before what mounts in it asks for focus.
+  const solo = fullscreen.full && pane !== "view"
+  const showView = (next: DesktopView | null) => {
+    // In full screen a view opening or closing moves the song, so it glides there.
+    if (fullscreen.full) withViewTransition(() => panes.setView(next))
+    else panes.setView(next)
+  }
+  const typed = search.query.trim()
+  const showResults = pane === "search" && typed !== ""
+  // Typed since the last online search: the results offer to look for it.
+  const pendingOnline = typed !== "" && typed !== tidalSearch.searchQuery ? typed : undefined
+  const viewId = (songView: DesktopView) => `${viewIds}-${songView}`
+  const closeSearch = () => {
+    search.close()
+    // The field goes with the search; the button that brings it back takes focus.
+    focusOnLibrary.current = searchButtonRef
+  }
+  const closeSettings = () => {
+    panes.closeSettings()
+    // Done goes with Settings; its button in the library's head brings it back.
+    focusOnLibrary.current = settingsToggleRef
+  }
+  const closeView = () => {
+    panes.setView(null)
+    // Back goes with the view; the word that opened it takes focus.
+    if (view) document.getElementById(viewId(view))?.focus()
+  }
+
+  let sideHead: ReactNode
+  if (pane === "search") {
+    sideHead = (
+      <SearchField
+        value={search.query}
+        onChange={search.setQuery}
+        onSubmit={search.submit}
+        onClose={closeSearch}
+        inputRef={searchInputRef}
+      />
+    )
+  } else if (pane === "settings") {
+    sideHead = (
+      <ViewHeader title="Settings">
+        <button type="button" className="text-button" onClick={closeSettings}>
+          Done
+        </button>
+      </ViewHeader>
+    )
+  } else if (pane === "view" && view) {
+    sideHead = (
+      <BackHeader to="Library" onBack={closeView} meta={VIEW_SOURCES[view]}>
+        <TransportButton
+          ref={fullscreenButtonRef}
+          label="Full screen"
+          size="sm"
+          className="round-glass"
+          disabled={!displaySong}
+          onClick={fullscreen.enter}
+        >
+          <Maximize2 className="h-4 w-4" />
+        </TransportButton>
+      </BackHeader>
+    )
+  } else {
+    sideHead = (
+      <ViewHeader title="Library" meta={libraryMeta}>
+        <ViewModeToggle value={viewMode} onChange={setViewMode} />
+        <SearchButton ref={searchButtonRef} onOpen={panes.startSearch} />
+        <DownloadsButton count={downloads} onOpen={panes.showOnline} />
         <CloudButton status={cloud.status} onOpen={openCloud} />
-        <HeaderVolume volume={volume} isMuted={isMuted} onVolumeChange={changeVolume} onToggleMute={toggleMute} />
         <AddMusicMenu
           busy={libraryBusy}
           syncing={isSyncing}
@@ -526,18 +562,50 @@ export default function EnhancedMusicPlayer() {
           onFolder={handleFolderUpload}
           onSync={handleFolderSync}
         />
-        <TransportButton
-          ref={settingsToggleRef}
-          label="Settings"
-          size="md"
-          className="header-icon"
-          pressed={showSettings}
-          onClick={toggleSettings}
-        >
-          <Settings className="h-5 w-5" />
+        <TransportButton ref={settingsToggleRef} label="Settings" size="md" className="tool-button" onClick={panes.toggleSettings}>
+          <Settings aria-hidden="true" />
         </TransportButton>
-      </DesktopHeader>
+      </ViewHeader>
+    )
+  }
+
+  return (
+    // The desktop sits on ink lit by the song's colours in both themes, so it
+    // takes the dark theme's tokens whatever the app theme is.
+    <div
+      className="dark song-scope desktop-frame"
+      style={songColors}
+      data-playing={isPlaying || undefined}
+      data-full={fullscreen.full || undefined}
+      data-solo={solo || undefined}
+      data-idle={fullscreen.idle || undefined}
+    >
+      <SongRoom />
+      {/* crossOrigin: cloud songs stream from R2, and Web Audio outputs silence for a cross-origin element without CORS */}
+      <audio ref={audioRef} preload="metadata" crossOrigin="anonymous" className="hidden" />
+      <audio ref={secondaryAudioRef} preload="metadata" crossOrigin="anonymous" className="hidden" />
+      {/* Screen reader announcements for song changes */}
+      <div aria-live="polite" aria-atomic="true" className="sr-only">
+        {currentSong && `Now playing: ${currentSong.title}${currentSong.artist ? ` by ${currentSong.artist}` : ""}`}
+      </div>
       <main className="desktop-body">
+        {/* No header bar: the brand sits over the song, the library's tools in
+            its own head. In full screen the way out takes the brand's place. */}
+        <div className="desktop-corner">
+          {fullscreen.full ? (
+            <TransportButton
+              ref={fullscreenExitRef}
+              label="Exit full screen"
+              size="md"
+              className="round-glass full-exit"
+              onClick={fullscreen.exit}
+            >
+              <X className="h-5 w-5" aria-hidden="true" />
+            </TransportButton>
+          ) : (
+            <Image src="/icon-192x192.png" alt="Audora" width={40} height={40} className="desktop-mark" priority />
+          )}
+        </div>
         <NowStage
           song={displaySong}
           isPlaying={isPlaying}
@@ -551,49 +619,38 @@ export default function EnhancedMusicPlayer() {
           onSkipPrevious={skipToPrevious}
           onSkipNext={skipToNext}
           onSeek={handleSeek}
+          volume={volume}
+          isMuted={isMuted}
+          onVolumeChange={changeVolume}
+          onToggleMute={toggleMute}
           onShowPage={showInLibrary}
-          coverRef={coverRef}
-          onOpenFullscreen={handleOpenFullscreen}
+          fullscreen={fullscreen.full}
+          onToggleFullscreen={fullscreen.toggle}
+          moreRef={stageMoreRef}
           onOpenSound={openSound}
           onOpenSync={openSync}
           syncConnected={syncConnected}
+          views={<SongViews value={view} onChange={showView} viewId={viewId} />}
         />
         <div className="desktop-side">
-          {searching ? (
-            <ViewHeader title="Search" meta={searchMeta}>
-              {!showOnline && <ViewModeToggle value={viewMode} onChange={setViewMode} />}
-            </ViewHeader>
-          ) : showSettings ? (
-            <ViewHeader title="Settings">
-              <button type="button" className="text-button" onClick={closeSettings}>
-                Done
-              </button>
-            </ViewHeader>
-          ) : (
-            <SideTabs value={sideTab} onChange={setSideTab} tabId={sideTabId} panelId={sidePanelId}>
-              {sideTab === "library" && (
-                <>
-                  {libraryMeta && <p className="view-meta type-data">{libraryMeta}</p>}
-                  <ViewModeToggle value={viewMode} onChange={setViewMode} />
-                </>
-              )}
-            </SideTabs>
-          )}
-          {/* The library stays mounted under the song's views, the search's
-              online results and Settings, so it comes back where it was left. */}
+          {/* Full screen has no library to head, only the song's open view. */}
+          {!fullscreen.full && sideHead}
+          {/* The library stays mounted under whatever opens in its place, so it
+              comes back where it was left. */}
           <div className="desktop-side-stack">
-            <StackLayer
-              covered={showView || showOnline || showSettings}
-              className="desktop-layer"
-              {...(sideTab === "library" && !searching && !showSettings
-                ? { role: "tabpanel", id: sidePanelId, "aria-labelledby": sideTabId("library") }
-                : undefined)}
-            >
+            <StackLayer covered={showResults || pane === "view" || pane === "settings"} className="desktop-layer desktop-library">
+              <UpNext
+                queued={now.queue.queued}
+                onPlayQueued={now.queue.onPlayQueued}
+                playNext={playNext}
+                addToQueue={addToQueue}
+                onDequeue={now.queue.onDequeue}
+                onClear={now.queue.onClear}
+              />
               <LibraryPanel
                 layout="desktop"
                 songs={sortedSongs}
                 viewMode={viewMode}
-                query={libraryQuery}
                 currentSongId={displaySong?.id}
                 playback={rowPlayback(isLoadingSong, isPlaying)}
                 loading={isLoadingSongs || isRestoringPlaylist || cloud.status === "loading"}
@@ -602,32 +659,32 @@ export default function EnhancedMusicPlayer() {
                 actions={libraryActions}
                 navigation={libraryNavigation}
                 emptyAction={addFolderAction}
-                noMatchesAction={searchOnline}
               />
             </StackLayer>
-            {showView && (
-              <div
-                key={sideTab}
-                className="desktop-layer side-view"
-                role="tabpanel"
-                id={sidePanelId}
-                aria-labelledby={sideTabId(sideTab)}
-              >
-                <LazyNowView tab={sideTab} {...now} />
-              </div>
-            )}
-            {showOnline && (
+            {showResults && (
               <div className="desktop-layer">
-                <OnlineSearchSidebar
-                  dab={tidalSearch}
-                  layout="desktop"
-                  hideSearch
+                <SearchPane
+                  query={search.query}
+                  songs={sortedSongs}
+                  viewMode={viewMode}
+                  onViewModeChange={setViewMode}
+                  currentSongId={displaySong?.id}
+                  playback={rowPlayback(isLoadingSong, isPlaying)}
+                  onSelect={handleSongSelect}
+                  actions={libraryActions}
+                  onShowPage={showInLibrary}
+                  online={tidalSearch}
                   pendingQuery={pendingOnline}
                   onSearchPending={search.submit}
                 />
               </div>
             )}
-            {showSettings && (
+            {pane === "view" && view && (
+              <section key={view} className="desktop-layer side-view" aria-label={NOW_TAB_LABELS[view]}>
+                <LazyNowView tab={view} {...now} />
+              </section>
+            )}
+            {pane === "settings" && (
               <div className="desktop-layer">
                 <SettingsView
                   soundPreset={soundPreset}
@@ -702,32 +759,6 @@ export default function EnhancedMusicPlayer() {
           <CloudLibraryPanel cloud={cloud} songs={songs} />
         </DialogContent>
       </Dialog>
-      <FullscreenPlayer
-        isOpen={isFullscreen}
-        onClose={() => setIsFullscreen(false)}
-        currentSong={displaySong}
-        isPlaying={isPlaying}
-        isLoading={isLoadingSong}
-        duration={duration}
-        volume={volume}
-        isMuted={isMuted}
-        shuffleMode={shuffleMode}
-        songs={songs}
-        sortedSongs={sortedSongs}
-        viewMode={viewMode}
-        onPlayPause={togglePlayPause}
-        onSkipNext={skipToNext}
-        onSkipPrevious={skipToPrevious}
-        onSeek={handleSeek}
-        onVolumeChange={changeVolume}
-        onToggleMute={toggleMute}
-        onToggleShuffle={toggleShuffle}
-        onSongSelect={handleSongSelect}
-        libraryActions={libraryActions}
-        onShowEqualizer={openSound}
-        now={now}
-        albumArtSourceRect={albumArtSourceRect}
-      />
       {draggingFiles && <DropOverlay busy={libraryBusy} />}
     </div>
   )

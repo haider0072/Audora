@@ -27,12 +27,18 @@ function renderStage(props: Partial<NowStageProps> = {}) {
     onSkipPrevious: jest.fn(),
     onSkipNext: jest.fn(),
     onSeek: jest.fn(),
+    volume: [64],
+    isMuted: false,
+    onVolumeChange: jest.fn(),
+    onToggleMute: jest.fn(),
     onShowPage: jest.fn(),
-    coverRef: createRef<HTMLButtonElement>(),
-    onOpenFullscreen: jest.fn(),
+    fullscreen: false,
+    onToggleFullscreen: jest.fn(),
+    moreRef: createRef<HTMLButtonElement>(),
     onOpenSound: jest.fn(),
     onOpenSync: jest.fn(),
     syncConnected: false,
+    views: <p>Song views</p>,
     ...props,
   }
   return { ...render(<NowStage {...all} />), props: all }
@@ -82,26 +88,48 @@ describe("NowStage", () => {
     expect(fullScreen).toHaveAttribute("data-disabled")
   })
 
-  it("opens full screen from its cover by pointer, and from More by keyboard", async () => {
+  it("goes full screen from its cover by pointer, and from More by keyboard", async () => {
     const { container, props } = renderStage()
     const cover = container.querySelector<HTMLButtonElement>(".stage-cover")
     expect(cover).toHaveAttribute("aria-hidden", "true")
     expect(cover).toHaveAttribute("tabindex", "-1")
-    expect(props.coverRef.current).toBe(cover)
 
     fireEvent.click(cover!)
-    expect(props.onOpenFullscreen).toHaveBeenCalledTimes(1)
+    expect(props.onToggleFullscreen).toHaveBeenCalledTimes(1)
 
     fireEvent.click(within(openMore()).getByRole("menuitem", { name: "Full screen" }))
-    await waitFor(() => expect(props.onOpenFullscreen).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(props.onToggleFullscreen).toHaveBeenCalledTimes(2))
   })
 
-  it("keeps the cover in sight, with no views or volume of its own", () => {
+  it("leaves full screen from More, its cover idle there", async () => {
+    const { container, props } = renderStage({ fullscreen: true })
+    const cover = container.querySelector<HTMLButtonElement>(".stage-cover")
+    expect(cover).toBeDisabled()
+    expect(cover).not.toHaveAttribute("title")
+
+    fireEvent.click(within(openMore()).getByRole("menuitem", { name: "Exit full screen" }))
+    await waitFor(() => expect(props.onToggleFullscreen).toHaveBeenCalledTimes(1))
+  })
+
+  it("keeps More beside the title, the volume at the end of the transport, and the views under it", () => {
     renderStage()
-    expect(screen.queryByRole("group", { name: "Show in place of the cover" })).not.toBeInTheDocument()
-    expect(screen.queryByRole("slider", { name: "Volume" })).not.toBeInTheDocument()
     const names = screen.getAllByRole("button").map((button) => button.getAttribute("aria-label") ?? button.textContent)
-    expect(names).toEqual(["Beach House", "Bloom", "Shuffle", "Previous track", "Play", "Next track", "More"])
+    expect(names).toEqual(["Beach House", "Bloom", "More", "Shuffle", "Previous track", "Play", "Next track", "Mute"])
+    expect(screen.getByRole("slider", { name: "Volume" })).toHaveAttribute("aria-orientation", "vertical")
+    expect(screen.getByText("Song views")).toBeInTheDocument()
+  })
+
+  it("mutes from its speaker, and reads a saved volume of nothing as muted", () => {
+    const onToggleMute = jest.fn()
+    const { rerender, props } = renderStage({ volume: [0], onToggleMute })
+    fireEvent.click(screen.getByRole("button", { name: "Unmute" }))
+    expect(onToggleMute).toHaveBeenCalledTimes(1)
+
+    rerender(<NowStage {...props} volume={[80]} isMuted />)
+    expect(screen.getByRole("button", { name: "Unmute" })).toBeInTheDocument()
+    const fader = screen.getByRole("slider", { name: "Volume" })
+    expect(fader).toHaveAttribute("aria-valuetext", "Muted")
+    expect(fader).toHaveAttribute("aria-valuenow", "80")
   })
 
   it("opens what its menu asks for once the menu has closed, with focus back on More", async () => {

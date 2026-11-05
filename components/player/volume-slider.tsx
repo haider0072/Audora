@@ -9,6 +9,8 @@ interface VolumeSliderProps {
   onValueChange: (value: number[]) => void
   /** Muted: the level keeps its place but dims, since unmuting brings it back. */
   muted?: boolean
+  /** Across, as in a bar, or up, as a fader. */
+  orientation?: "horizontal" | "vertical"
   className?: string
 }
 
@@ -16,13 +18,14 @@ interface VolumeSliderProps {
  * The volume: a thin track whose knob shows under the pointer or the
  * keyboard. Styled by `.volume` in app/globals.css.
  */
-export function VolumeSlider({ value, onValueChange, muted = false, className }: VolumeSliderProps) {
+export function VolumeSlider({ value, onValueChange, muted = false, orientation = "horizontal", className }: VolumeSliderProps) {
   return (
     <SliderPrimitive.Root
       className={cn("volume", className)}
       value={value}
       max={100}
       step={1}
+      orientation={orientation}
       onValueChange={onValueChange}
       data-muted={muted || undefined}
     >

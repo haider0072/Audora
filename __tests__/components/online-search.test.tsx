@@ -8,9 +8,10 @@ import type { OnlineActions } from "@/components/dab/online-rows"
 import { OnlineSearchSidebar } from "@/components/dab/online-search-sidebar"
 import { PasteLinkField } from "@/components/dab/paste-link"
 import { SearchResults } from "@/components/dab/search-results"
-import type { OnlineFailure, TidalView, UseTidalSearchReturn } from "@/hooks/use-tidal-search"
+import type { OnlineFailure, TidalView } from "@/hooks/use-tidal-search"
 import type { DownloadState, TidalAlbum, TidalSearchResult, TidalTrack } from "@/lib/tidal-types"
 import { stubLibraryDom } from "@/testing/library-dom"
+import { fakeOnlineSearch } from "@/testing/online-search"
 
 stubLibraryDom()
 
@@ -286,56 +287,14 @@ describe("PasteLinkField", () => {
   })
 })
 
-/** The online search's state as the hook hands it over, with nothing done yet. */
-function fakeDab(fields: Partial<UseTidalSearchReturn> = {}): UseTidalSearchReturn {
-  return {
-    searchQuery: "palette",
-    setSearchQuery: jest.fn(),
-    searchType: "all",
-    setSearchType: jest.fn(),
-    searchSource: "auto",
-    setSearchSource: jest.fn(),
-    searchResults: null,
-    isSearching: false,
-    search: jest.fn(),
-    currentView: "search",
-    previousView: "search",
-    selectedAlbum: null,
-    selectedArtist: null,
-    isLoadingDetail: false,
-    viewAlbum: jest.fn(),
-    viewArtist: jest.fn(),
-    goBack: jest.fn(),
-    downloads: new Map(),
-    downloadTrack: jest.fn(),
-    downloadFromUrl: jest.fn(),
-    isResolvingUrl: false,
-    downloadAlbum: jest.fn(),
-    cancelDownload: jest.fn(),
-    activeDownloadCount: 0,
-    isInLibrary: () => false,
-    quality: "HI_RES_LOSSLESS",
-    setQuality: jest.fn(),
-    error: null,
-    retry: jest.fn(),
-    isOnline: true,
-    previewTrackId: null,
-    previewIsPlaying: false,
-    previewIsLoading: false,
-    togglePreview: jest.fn(),
-    stopPreview: jest.fn(),
-    ...fields,
-  }
-}
-
 describe("OnlineSearchSidebar", () => {
   it("says it can't search while offline", () => {
-    render(<OnlineSearchSidebar dab={fakeDab({ isOnline: false })} layout="desktop" />)
+    render(<OnlineSearchSidebar dab={fakeOnlineSearch({ isOnline: false })} layout="desktop" />)
     expect(screen.getByText("You're offline")).toBeInTheDocument()
   })
 
   it("searches from its own field, where it has one", () => {
-    const dab = fakeDab()
+    const dab = fakeOnlineSearch()
     render(<OnlineSearchSidebar dab={dab} layout="phone" />)
     const field = screen.getByRole("searchbox", { name: "Search online" })
     fireEvent.submit(field.closest("form")!)
@@ -346,7 +305,7 @@ describe("OnlineSearchSidebar", () => {
     const onSearchPending = jest.fn()
     render(
       <OnlineSearchSidebar
-        dab={fakeDab({ searchResults: RESULTS })}
+        dab={fakeOnlineSearch({ searchResults: RESULTS })}
         layout="desktop"
         hideSearch
         pendingQuery="palette iu"
@@ -365,7 +324,7 @@ describe("OnlineSearchSidebar", () => {
       request: { kind: "search", query: "palette" },
       retryable: true,
     }
-    const dab = fakeDab({ searchResults: RESULTS, error })
+    const dab = fakeOnlineSearch({ searchResults: RESULTS, error })
     render(<OnlineSearchSidebar dab={dab} layout="desktop" hideSearch />)
     expect(screen.getByText("Couldn't search online")).toBeInTheDocument()
     fireEvent.click(screen.getByRole("button", { name: "Try again" }))
@@ -379,7 +338,7 @@ describe("OnlineSearchSidebar", () => {
       request: { kind: "album", id: "al-palette" },
       retryable: false,
     }
-    render(<OnlineSearchSidebar dab={fakeDab({ searchResults: RESULTS, error })} layout="desktop" hideSearch />)
+    render(<OnlineSearchSidebar dab={fakeOnlineSearch({ searchResults: RESULTS, error })} layout="desktop" hideSearch />)
     const albums = screen.getByRole("region", { name: "Albums 1" })
     expect(within(albums).getByText("Not available")).toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "Try again" })).not.toBeInTheDocument()
@@ -389,7 +348,7 @@ describe("OnlineSearchSidebar", () => {
   it("opens an album over the results, and Back hands focus to the row that opened it", async () => {
     function Harness() {
       const [view, setView] = useState<TidalView>("search")
-      const dab = fakeDab({
+      const dab = fakeOnlineSearch({
         searchResults: RESULTS,
         currentView: view,
         selectedAlbum: view === "album" ? ALBUM : null,

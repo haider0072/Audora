@@ -494,7 +494,7 @@ export default function MobileMusicPlayer() {
               {displaySong?.artist && <p className="truncate text-sm text-muted-foreground">{displaySong.artist}</p>}
             </SheetHeader>
             <div className="flex min-h-0 flex-1 flex-col px-3 pb-[env(safe-area-inset-bottom)]">
-              <LazyNowPanel layout="sheet" tab={nowTab} onTabChange={setNowTab} {...now} />
+              <LazyNowPanel tab={nowTab} onTabChange={setNowTab} {...now} />
             </div>
           </SheetContent>
         </Sheet>

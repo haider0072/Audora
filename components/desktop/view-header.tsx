@@ -1,7 +1,7 @@
 "use client"
 
 import type { ReactNode } from "react"
-import { Disc3, List } from "lucide-react"
+import { ChevronLeft, Disc3, List } from "lucide-react"
 
 import { TransportButton } from "@/components/player/transport-button"
 import type { LibraryViewMode } from "@/lib/library-rows"
@@ -14,11 +14,40 @@ interface ViewHeaderProps {
   children?: ReactNode
 }
 
-/** The head of the desktop's right half: its title, what it holds, then its tools. Styled by `.view-head`. */
+/**
+ * The head of the desktop's right half: its title, what it holds, then its
+ * tools, level with the brand over the song. Styled by `.view-head`.
+ */
 export function ViewHeader({ title, meta, children }: ViewHeaderProps) {
   return (
     <header className="view-head">
       <h1 className="view-title">{title}</h1>
+      {meta && <p className="view-meta type-data">{meta}</p>}
+      {children && <div className="view-tools">{children}</div>}
+    </header>
+  )
+}
+
+interface BackHeaderProps {
+  /** Where Back goes, as the button says it. */
+  to: string
+  onBack: () => void
+  /** What the view shows, set as data. */
+  meta?: string
+  /** Back takes focus as the head shows: for something opened over the control that opened it. */
+  autoFocus?: boolean
+  children?: ReactNode
+}
+
+/** The head of something opened in the library's place: the way back to it first, then what it shows and its tools. */
+export function BackHeader({ to, onBack, meta, autoFocus, children }: BackHeaderProps) {
+  return (
+    <header className="view-head">
+      <button type="button" className="view-back" onClick={onBack} autoFocus={autoFocus}>
+        <ChevronLeft aria-hidden="true" />
+        <span className="sr-only">Back to </span>
+        {to}
+      </button>
       {meta && <p className="view-meta type-data">{meta}</p>}
       {children && <div className="view-tools">{children}</div>}
     </header>

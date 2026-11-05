@@ -1,9 +1,9 @@
 "use client"
 
-import { useRef, useState, type KeyboardEvent, type PointerEvent } from "react"
+import { useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode } from "react"
 
 import { usePlaybackTime } from "@/hooks/use-playback-time"
-import { cn, formatTime } from "@/lib/utils"
+import { formatTime } from "@/lib/utils"
 
 /** Arrow keys move this far; Page Up and Page Down six times as far. */
 const KEY_STEP_SECONDS = 5
@@ -17,8 +17,8 @@ interface SeekBarProps {
   /** While playing, the elapsed part takes the song's colour. */
   isPlaying?: boolean
   disabled?: boolean
-  /** Elapsed and remaining time: under the track, or either side of it in a tight row. */
-  timesPosition?: "below" | "sides"
+  /** Set between the times under the track, such as the song's quality. */
+  between?: ReactNode
   className?: string
 }
 
@@ -35,7 +35,7 @@ export function SeekBar({
   onSeek,
   isPlaying = false,
   disabled = false,
-  timesPosition = "below",
+  between,
   className,
 }: SeekBarProps) {
   const currentTime = usePlaybackTime()
@@ -121,7 +121,7 @@ export function SeekBar({
       aria-disabled={inactive || undefined}
       data-playing={isPlaying || undefined}
       data-scrubbing={scrubTime !== null || undefined}
-      className="seek-bar flex-1"
+      className="seek-bar"
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={(event) => endScrub(event, true)}
@@ -148,21 +148,12 @@ export function SeekBar({
     </div>
   )
 
-  const timeStyle = "type-data text-muted-foreground"
-  if (timesPosition === "sides") {
-    return (
-      <div className={cn("flex items-center gap-3", timeStyle, className)}>
-        <span className="w-10 text-right">{elapsed}</span>
-        {bar}
-        <span className="w-10">{remaining}</span>
-      </div>
-    )
-  }
   return (
     <div className={className}>
       {bar}
-      <div className={cn("-mt-1 flex justify-between", timeStyle)}>
+      <div className="type-data -mt-1 flex items-center justify-between gap-3 text-muted-foreground">
         {elapsed}
+        {between}
         {remaining}
       </div>
     </div>

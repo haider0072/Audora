@@ -29,7 +29,7 @@ interface AddMusicMenuProps {
 }
 
 /**
- * Add music, in the header: songs, a folder, or a folder kept in sync. While
+ * Add music, among the library's tools: songs, a folder, or a folder kept in sync. While
  * songs come in, an arc turns around it and it waits; it keeps focus rather
  * than dropping it, as a disabled button would.
  */
@@ -53,12 +53,12 @@ export function AddMusicMenu({
             label="Add music"
             title={syncing ? "Syncing a folder" : busy ? "Adding songs" : "Add music"}
             size="md"
-            className="header-icon"
+            className="tool-button"
             aria-disabled={busy || undefined}
             data-busy={busy || undefined}
           >
-            <Plus className="h-5 w-5" />
-            <BusyArc className="header-icon-arc" radius={9} />
+            <Plus aria-hidden="true" />
+            <BusyArc className="tool-arc" radius={9} />
           </TransportButton>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">

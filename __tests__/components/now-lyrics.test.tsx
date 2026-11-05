@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen } from "@testing-library/react"
 
-import { lineAt, NowLyrics } from "@/components/now/now-lyrics"
+import { lineAt, lineDistance, NowLyrics } from "@/components/now/now-lyrics"
 import { LyricsService, type LyricLine, type LyricsData } from "@/lib/lyrics-service"
 import { resetPlaybackTime, setPlaybackTime } from "@/lib/playback-time-store"
 import type { Song } from "@/lib/song"
@@ -48,6 +48,20 @@ describe("lineAt", () => {
     expect(lineAt(LINES, 25)).toBe(1)
     expect(lineAt(LINES, 30)).toBe(2)
     expect(lineAt(LINES, 999)).toBe(2)
+  })
+})
+
+describe("lineDistance", () => {
+  it("steps the next three lines back one by one, then the rest at once", () => {
+    expect([5, 6, 7, 8, 9, 20].map((index) => lineDistance(index, 5))).toEqual([undefined, "1", "2", "3", "far", "far"])
+  })
+
+  it("leaves the last two lines sung as they are, and sends older ones far", () => {
+    expect([4, 3, 2, 0].map((index) => lineDistance(index, 5))).toEqual([undefined, undefined, "far", "far"])
+  })
+
+  it("counts from before the first line while nothing is being sung", () => {
+    expect([0, 1, 2, 3].map((index) => lineDistance(index, -1))).toEqual(["1", "2", "3", "far"])
   })
 })
 

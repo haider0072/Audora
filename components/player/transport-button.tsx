@@ -52,6 +52,27 @@ interface SkipIconProps {
   className?: string
 }
 
+/**
+ * Skip glyph for a player set straight on the song's colour: two solid
+ * triangles, nose to tail, as large as the transport is. `back` mirrors it.
+ */
+export function SkipGlyph({ direction, className }: Omit<SkipIconProps, "size">) {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" className={className}>
+      <g
+        transform={direction === "back" ? "translate(24 0) scale(-1 1)" : undefined}
+        fill="currentColor"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinejoin="round"
+      >
+        <path d="M3.6 6.6v10.8L11.2 12Z" />
+        <path d="M12.8 6.6v10.8L20.4 12Z" />
+      </g>
+    </svg>
+  )
+}
+
 /** Skip glyph: a filled triangle against a bar. `back` mirrors it. */
 export function SkipIcon({ direction, size = "md", className }: SkipIconProps) {
   return (

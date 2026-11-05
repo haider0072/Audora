@@ -10,7 +10,7 @@ const NowPanel = lazy(() => import("./now-panel"))
 export function LazyNowPanel(props: NowPanelProps) {
   return (
     // The panel's place is held while its code loads, so nothing around it moves.
-    <Suspense fallback={<div className="now" data-layout={props.layout} />}>
+    <Suspense fallback={<div className="now" />}>
       <NowPanel {...props} />
     </Suspense>
   )

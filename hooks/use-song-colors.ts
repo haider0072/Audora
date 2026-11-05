@@ -3,7 +3,15 @@
 import { useEffect, useMemo, useState, type CSSProperties } from "react"
 
 import { AlbumArtCache } from "@/lib/album-art-cache"
-import { accentColor, accentTextColor, auraColors, paletteFromPixels, ringColors, type SongPalette } from "@/lib/song-palette"
+import {
+  accentColor,
+  accentTextColor,
+  auraColors,
+  paletteFromPixels,
+  ringColors,
+  roomColor,
+  type SongPalette,
+} from "@/lib/song-palette"
 
 /** Covers are read at this size: every hue that matters survives, and the read costs nothing. */
 const SAMPLE_SIZE = 24
@@ -79,10 +87,10 @@ async function readPalette(cacheKey: string, url: string): Promise<SongPalette |
 
 /**
  * The song's colours as CSS custom properties, for a `.song-scope` element to
- * turn into `--song-accent` and `--song-accent-text`, the desktop's aura and,
- * while playing, the wordmark ring's lights. Undefined until the cover has been read, and for a
- * song whose cover has no colour to speak of: the scope then falls back to
- * the neutral accent and a graphite aura.
+ * turn into `--song-accent` and `--song-accent-text`, the desktop's room and
+ * its aura and, while playing, the wordmark ring's lights. Undefined until the
+ * cover has been read, and for a song whose cover has no colour to speak of:
+ * the scope then falls back to the neutral accent and a graphite room.
  */
 export function useSongColors(song: CoverSource | null): CSSProperties | undefined {
   const cover = song ? coverOf(song) : null
@@ -117,6 +125,7 @@ export function useSongColors(song: CoverSource | null): CSSProperties | undefin
     const [paperRing1, paperRing2, paperRing3] = ringColors(palette, "paper")
     const [aura1, aura2, aura3] = auraColors(palette)
     return {
+      "--song-room": roomColor(palette),
       "--song-aura-1": aura1,
       "--song-aura-2": aura2,
       "--song-aura-3": aura3,
