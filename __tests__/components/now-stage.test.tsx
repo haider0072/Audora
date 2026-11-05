@@ -1,4 +1,3 @@
-import { createRef } from "react"
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 
 import { NowStage, type NowStageProps } from "@/components/desktop/now-stage"
@@ -32,8 +31,8 @@ function renderStage(props: Partial<NowStageProps> = {}) {
     onVolumeChange: jest.fn(),
     onToggleMute: jest.fn(),
     onShowPage: jest.fn(),
-    coverRef: createRef<HTMLButtonElement>(),
-    onOpenFullscreen: jest.fn(),
+    fullscreen: false,
+    onToggleFullscreen: jest.fn(),
     onOpenSound: jest.fn(),
     onOpenSync: jest.fn(),
     syncConnected: false,
@@ -87,18 +86,27 @@ describe("NowStage", () => {
     expect(fullScreen).toHaveAttribute("data-disabled")
   })
 
-  it("opens full screen from its cover by pointer, and from More by keyboard", async () => {
+  it("goes full screen from its cover by pointer, and from More by keyboard", async () => {
     const { container, props } = renderStage()
     const cover = container.querySelector<HTMLButtonElement>(".stage-cover")
     expect(cover).toHaveAttribute("aria-hidden", "true")
     expect(cover).toHaveAttribute("tabindex", "-1")
-    expect(props.coverRef.current).toBe(cover)
 
     fireEvent.click(cover!)
-    expect(props.onOpenFullscreen).toHaveBeenCalledTimes(1)
+    expect(props.onToggleFullscreen).toHaveBeenCalledTimes(1)
 
     fireEvent.click(within(openMore()).getByRole("menuitem", { name: "Full screen" }))
-    await waitFor(() => expect(props.onOpenFullscreen).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(props.onToggleFullscreen).toHaveBeenCalledTimes(2))
+  })
+
+  it("leaves full screen from More, its cover idle there", async () => {
+    const { container, props } = renderStage({ fullscreen: true })
+    const cover = container.querySelector<HTMLButtonElement>(".stage-cover")
+    expect(cover).toBeDisabled()
+    expect(cover).not.toHaveAttribute("title")
+
+    fireEvent.click(within(openMore()).getByRole("menuitem", { name: "Exit full screen" }))
+    await waitFor(() => expect(props.onToggleFullscreen).toHaveBeenCalledTimes(1))
   })
 
   it("keeps More beside the title, the volume at the end of the transport, and the views under it", () => {

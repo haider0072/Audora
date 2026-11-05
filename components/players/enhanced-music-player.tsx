@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback, useId, useLayoutEffect, useMemo, type ReactNode, type RefObject } from "react"
 import Image from "next/image"
-import { Maximize2, Settings } from "lucide-react"
+import { Maximize2, Settings, X } from "lucide-react"
 
 import { toast } from "@/hooks/use-toast"
 import { ToastAction } from "@/components/ui/toast"
@@ -35,6 +35,7 @@ import { StackLayer } from "@/components/stack-layer"
 import { useNowPlayer } from "@/components/now/use-now-player"
 import { SoundPanel } from "@/components/sound/sound-panel"
 import { useBodyClass } from "@/hooks/use-body-class"
+import { useDesktopFullscreen } from "@/hooks/use-desktop-fullscreen"
 import { useDesktopPane } from "@/hooks/use-desktop-pane"
 import { useDesktopSearch } from "@/hooks/use-desktop-search"
 import { useSearchShortcut } from "@/hooks/use-search-shortcut"
@@ -58,7 +59,7 @@ import { getAllPresets, type EqPreset, type EqualizerBand } from "@/lib/eq-prese
 import type { LibraryPage } from "@/lib/library-pages"
 import { resetPlaybackTime } from "@/lib/playback-time-store"
 import { formatCount, formatTotalDuration } from "@/lib/utils"
-import { FullscreenPlayer } from "@/components/fullscreen-player"
+import { withViewTransition } from "@/lib/view-transition"
 import { SyncPanel } from "@/components/sync-panel"
 import { CloudLibraryPanel } from "@/components/cloud-library-panel"
 import { useCloudLibrary } from "@/hooks/use-cloud-library"
@@ -77,8 +78,6 @@ const CROSSFADE_MANUAL_SECONDS = 0.4
 export default function EnhancedMusicPlayer() {
   // The desktop is always night, and its menus and dialogs open in the body, outside it.
   useBodyClass("dark")
-  const [isFullscreen, setIsFullscreen] = useState(false);
-  const [albumArtSourceRect, setAlbumArtSourceRect] = useState<DOMRect | null>(null);
   const [showSync, setShowSync] = useState(false);
   const [showCloud, setShowCloud] = useState(false);
   // The Sound sheet, two-device playback and the cloud library open from a
@@ -87,10 +86,12 @@ export default function EnhancedMusicPlayer() {
   const returnFocus = useReturnFocus()
   const viewIds = useId()
 
-  const coverRef = useRef<HTMLButtonElement>(null)
   const searchInputRef = useRef<HTMLInputElement>(null)
   const searchButtonRef = useRef<HTMLButtonElement>(null)
   const settingsToggleRef = useRef<HTMLButtonElement>(null)
+  // Full screen's way in, in a view's head, and its way out, in the brand's corner.
+  const fullscreenButtonRef = useRef<HTMLButtonElement>(null)
+  const fullscreenExitRef = useRef<HTMLButtonElement>(null)
   // A tool in the library's head to hand focus to once the head is back, as
   // the search or Settings closes from the keyboard.
   const focusOnLibrary = useRef<RefObject<HTMLElement> | null>(null)
@@ -169,17 +170,23 @@ export default function EnhancedMusicPlayer() {
   // right half, which shows the library or one thing at a time in its place.
   const search = useDesktopSearch(tidalSearch)
   const panes = useDesktopPane(search)
+  // Full screen: the frame without the library, the song alone or beside its open view.
+  const fullscreen = useDesktopFullscreen({ exitRef: fullscreenExitRef, returnRef: fullscreenButtonRef })
+  const { exit: exitFullscreen } = fullscreen
   const libraryNavigation = useLibraryNavigation(sortedSongs)
   const { show: showLibraryPage } = libraryNavigation
   const { showLibrary } = panes
 
-  /** Show an artist's or an album's page, from the player or the search: in the library, in place of anything open there. */
+  /** Show an artist's or an album's page, from the player or the search: in the library, in place of anything open there, and out of full screen. */
   const showInLibrary = useCallback((page: LibraryPage) => {
+    exitFullscreen()
     showLibrary()
     showLibraryPage(page)
-  }, [showLibrary, showLibraryPage])
+  }, [exitFullscreen, showLibrary, showLibraryPage])
 
   useSearchShortcut(() => {
+    // The search is the library's, so it brings the library back.
+    exitFullscreen()
     if (!search.active) {
       // The field takes focus as it comes out.
       panes.startSearch()
@@ -439,13 +446,6 @@ export default function EnhancedMusicPlayer() {
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps -- intentional: cleanup only on unmount
 
-  const handleOpenFullscreen = useCallback(() => {
-    if (coverRef.current) {
-      setAlbumArtSourceRect(coverRef.current.getBoundingClientRect())
-    }
-    setIsFullscreen(true)
-  }, [])
-
   const songColors = useSongColors(displaySong)
 
   const totalDuration = useMemo(() => songs.reduce((total, song) => total + (song.duration || 0), 0), [songs])
@@ -463,6 +463,16 @@ export default function EnhancedMusicPlayer() {
   // The right half of the window: the library, or in its place the search's
   // results once something is typed, one of the song's views, or Settings.
   const { pane, view } = panes
+  // Full screen with no view open: the song alone, the right half out of
+  // sight and so out of reach, as CSS hides it (`[data-solo]`). Hidden by
+  // style rather than made inert, so it is back within reach in the same
+  // commit that brings it back, before what mounts in it asks for focus.
+  const solo = fullscreen.full && pane !== "view"
+  const showView = (next: DesktopView | null) => {
+    // In full screen a view opening or closing moves the song, so it glides there.
+    if (fullscreen.full) withViewTransition(() => panes.setView(next))
+    else panes.setView(next)
+  }
   const typed = search.query.trim()
   const showResults = pane === "search" && typed !== ""
   // Typed since the last online search: the results offer to look for it.
@@ -506,7 +516,14 @@ export default function EnhancedMusicPlayer() {
   } else if (pane === "view" && view) {
     sideHead = (
       <BackHeader to="Library" onBack={closeView} meta={VIEW_SOURCES[view]}>
-        <TransportButton label="Full screen" size="sm" className="view-round" disabled={!displaySong} onClick={handleOpenFullscreen}>
+        <TransportButton
+          ref={fullscreenButtonRef}
+          label="Full screen"
+          size="sm"
+          className="view-round"
+          disabled={!displaySong}
+          onClick={fullscreen.enter}
+        >
           <Maximize2 className="h-4 w-4" />
         </TransportButton>
       </BackHeader>
@@ -538,7 +555,14 @@ export default function EnhancedMusicPlayer() {
   return (
     // The desktop sits on ink lit by the song's colours in both themes, so it
     // takes the dark theme's tokens whatever the app theme is.
-    <div className="dark song-scope desktop-frame" style={songColors} data-playing={isPlaying || undefined}>
+    <div
+      className="dark song-scope desktop-frame"
+      style={songColors}
+      data-playing={isPlaying || undefined}
+      data-full={fullscreen.full || undefined}
+      data-solo={solo || undefined}
+      data-idle={fullscreen.idle || undefined}
+    >
       <SongRoom />
       {/* crossOrigin: cloud songs stream from R2, and Web Audio outputs silence for a cross-origin element without CORS */}
       <audio ref={audioRef} preload="metadata" crossOrigin="anonymous" className="hidden" />
@@ -548,9 +572,22 @@ export default function EnhancedMusicPlayer() {
         {currentSong && `Now playing: ${currentSong.title}${currentSong.artist ? ` by ${currentSong.artist}` : ""}`}
       </div>
       <main className="desktop-body">
-        {/* No header bar: the brand sits over the song, the library's tools in its own head. */}
+        {/* No header bar: the brand sits over the song, the library's tools in
+            its own head. In full screen the way out takes the brand's place. */}
         <div className="desktop-corner">
-          <Image src="/icon-192x192.png" alt="Audora" width={40} height={40} className="desktop-mark" priority />
+          {fullscreen.full ? (
+            <TransportButton
+              ref={fullscreenExitRef}
+              label="Exit full screen"
+              size="md"
+              className="full-exit"
+              onClick={fullscreen.exit}
+            >
+              <X className="h-5 w-5" aria-hidden="true" />
+            </TransportButton>
+          ) : (
+            <Image src="/icon-192x192.png" alt="Audora" width={40} height={40} className="desktop-mark" priority />
+          )}
         </div>
         <NowStage
           song={displaySong}
@@ -570,15 +607,16 @@ export default function EnhancedMusicPlayer() {
           onVolumeChange={changeVolume}
           onToggleMute={toggleMute}
           onShowPage={showInLibrary}
-          coverRef={coverRef}
-          onOpenFullscreen={handleOpenFullscreen}
+          fullscreen={fullscreen.full}
+          onToggleFullscreen={fullscreen.toggle}
           onOpenSound={openSound}
           onOpenSync={openSync}
           syncConnected={syncConnected}
-          views={<SongViews value={view} onChange={panes.setView} viewId={viewId} />}
+          views={<SongViews value={view} onChange={showView} viewId={viewId} />}
         />
         <div className="desktop-side">
-          {sideHead}
+          {/* Full screen has no library to head, only the song's open view. */}
+          {!fullscreen.full && sideHead}
           {/* The library stays mounted under whatever opens in its place, so it
               comes back where it was left. */}
           <div className="desktop-side-stack">
@@ -703,32 +741,6 @@ export default function EnhancedMusicPlayer() {
           <CloudLibraryPanel cloud={cloud} songs={songs} />
         </DialogContent>
       </Dialog>
-      <FullscreenPlayer
-        isOpen={isFullscreen}
-        onClose={() => setIsFullscreen(false)}
-        currentSong={displaySong}
-        isPlaying={isPlaying}
-        isLoading={isLoadingSong}
-        duration={duration}
-        volume={volume}
-        isMuted={isMuted}
-        shuffleMode={shuffleMode}
-        songs={songs}
-        sortedSongs={sortedSongs}
-        viewMode={viewMode}
-        onPlayPause={togglePlayPause}
-        onSkipNext={skipToNext}
-        onSkipPrevious={skipToPrevious}
-        onSeek={handleSeek}
-        onVolumeChange={changeVolume}
-        onToggleMute={toggleMute}
-        onToggleShuffle={toggleShuffle}
-        onSongSelect={handleSongSelect}
-        libraryActions={libraryActions}
-        onShowEqualizer={openSound}
-        now={now}
-        albumArtSourceRect={albumArtSourceRect}
-      />
       {draggingFiles && <DropOverlay busy={libraryBusy} />}
     </div>
   )

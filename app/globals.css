@@ -530,6 +530,8 @@
     --border: 40 10% 93% / 0.12;
     --frame-gutter: 40px;
     --frame-gap: 56px;
+    /* Room under the two halves, and over the song standing alone in full screen. */
+    --frame-foot: 24px;
     /* The row the brand and the library's head share. */
     --head-height: 64px;
     position: relative;
@@ -657,6 +659,46 @@
   .desktop-mark {
     border-radius: 11px;
     box-shadow: 0 8px 24px -10px hsl(var(--ink-0) / 0.6);
+  }
+
+  /* Full screen (hooks/use-desktop-fullscreen.ts): the frame without the
+     library. The way out takes the brand's corner and fades while the
+     pointer rests. The song keeps its place beside its open view, or, with
+     none open, stands alone in the middle of the window, as tall as the
+     window allows. It glides between the two (lib/view-transition.ts) while
+     the rest of the window cross-fades. */
+  .desktop-frame[data-full] .desktop-corner {
+    position: relative;
+    z-index: 1;
+  }
+  .full-exit {
+    background-color: hsl(var(--foreground) / 0.12);
+    color: hsl(var(--foreground));
+    transition:
+      background-color var(--motion-release) var(--ease-release),
+      opacity var(--motion-release) var(--ease-release),
+      transform var(--motion-pluck) var(--ease-pluck);
+  }
+  .full-exit:hover:not(:disabled) {
+    background-color: hsl(var(--foreground) / 0.2);
+  }
+  .desktop-frame[data-idle] .full-exit:not(:hover, :focus-visible) {
+    opacity: 0;
+    transition-duration: var(--motion-release), var(--motion-swell), var(--motion-pluck);
+  }
+  .desktop-frame[data-solo] .stage {
+    grid-area: 1 / 1 / 3 / 3;
+    padding-top: var(--frame-foot);
+  }
+  /* Hidden is out of reach too: of the pointer, the keyboard and assistive
+     technology. Nothing in the library's half sets itself visible again. */
+  .desktop-frame[data-solo] .desktop-side {
+    visibility: hidden;
+  }
+  ::view-transition-group(root),
+  ::view-transition-group(now-stage) {
+    animation-duration: var(--motion-release);
+    animation-timing-function: var(--ease-decay);
   }
 
   /* The library's tools, in its head (components/desktop/library-tools.tsx):
@@ -912,7 +954,7 @@
     grid-template-rows: var(--head-height) minmax(0, 1fr);
     column-gap: var(--frame-gap);
     min-height: 0;
-    padding: 0 var(--frame-gutter) 24px;
+    padding: 0 var(--frame-gutter) var(--frame-foot);
   }
 
   /* The stage (components/desktop/now-stage.tsx): the cover as large as its
@@ -947,6 +989,8 @@
     flex-direction: column;
     width: max(var(--cover), min(420px, 100cqw));
     min-width: 0;
+    /* Named, so it glides as full screen moves it (lib/view-transition.ts). */
+    view-transition-name: now-stage;
   }
   .stage-square {
     position: relative;
@@ -971,6 +1015,10 @@
   .stage-cover {
     display: block;
     cursor: zoom-in;
+  }
+  /* In full screen already. */
+  .stage-cover:disabled {
+    cursor: default;
   }
   .stage-cover:active {
     transform: scale(0.985);
@@ -1320,6 +1368,8 @@
     align-self: center;
   }
   .desktop-side-stack {
+    /* Under the head's row whether or not a head is there: full screen has none. */
+    grid-row: 2;
     display: grid;
     grid-template: minmax(0, 1fr) / minmax(0, 1fr);
     min-height: 0;

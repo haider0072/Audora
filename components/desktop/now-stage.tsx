@@ -1,7 +1,7 @@
 "use client"
 
-import { useRef, type ReactNode, type RefObject } from "react"
-import { Maximize2, MonitorSpeaker, MoreHorizontal, Shuffle, SlidersHorizontal } from "lucide-react"
+import { useRef, type ReactNode } from "react"
+import { Maximize2, Minimize2, MonitorSpeaker, MoreHorizontal, Shuffle, SlidersHorizontal } from "lucide-react"
 
 import { AlbumArtDisplay } from "@/components/album-art-display"
 import { VolumePop } from "@/components/desktop/volume-pop"
@@ -44,9 +44,10 @@ export interface NowStageProps {
   onToggleMute: () => void
   /** Show the song's artist or album in the library. */
   onShowPage: (page: LibraryPage) => void
-  /** The cover, which full screen grows out of. */
-  coverRef: RefObject<HTMLButtonElement>
-  onOpenFullscreen: () => void
+  /** The frame shows the song alone. */
+  fullscreen: boolean
+  /** Into full screen from the cover or More, and back out from More. */
+  onToggleFullscreen: () => void
   /** The equalizer and the rest of the sound settings. */
   onOpenSound: () => void
   onOpenSync: () => void
@@ -61,7 +62,9 @@ export interface NowStageProps {
  * artist and album, with More beside them; the seek bar, with the song's
  * quality between its times; the transport, its volume collapsed to the
  * speaker at its end; and the song's views. Everything sits straight on the
- * song's colour, with no boxes. Styled by `.stage` in app/globals.css.
+ * song's colour, with no boxes. In full screen it keeps its place beside the
+ * open view, or stands alone in the middle of the window. Styled by `.stage`
+ * in app/globals.css.
  */
 export function NowStage({
   song,
@@ -81,8 +84,8 @@ export function NowStage({
   onVolumeChange,
   onToggleMute,
   onShowPage,
-  coverRef,
-  onOpenFullscreen,
+  fullscreen,
+  onToggleFullscreen,
   onOpenSound,
   onOpenSync,
   syncConnected,
@@ -100,13 +103,13 @@ export function NowStage({
           {song ? (
             // A pointer's way into full screen; the keyboard's is in More.
             <button
-              ref={coverRef}
               type="button"
               className="stage-cover"
               tabIndex={-1}
               aria-hidden="true"
-              title="Full screen"
-              onClick={onOpenFullscreen}
+              title={fullscreen ? undefined : "Full screen"}
+              disabled={fullscreen}
+              onClick={onToggleFullscreen}
             >
               <AlbumArtDisplay
                 songId={song.id}
@@ -203,13 +206,13 @@ export function NowStage({
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem
-                disabled={!song}
+                disabled={!song && !fullscreen}
                 onSelect={() => {
-                  afterMenu.current = onOpenFullscreen
+                  afterMenu.current = onToggleFullscreen
                 }}
               >
-                <Maximize2 />
-                Full screen
+                {fullscreen ? <Minimize2 /> : <Maximize2 />}
+                {fullscreen ? "Exit full screen" : "Full screen"}
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
