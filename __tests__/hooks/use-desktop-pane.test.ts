@@ -7,8 +7,10 @@ import { useDesktopPane } from "@/hooks/use-desktop-pane"
 function renderPanes() {
   return renderHook(() => {
     const [active, setActive] = useState(false)
-    const panes = useDesktopPane({ active, start: () => setActive(true), close: () => setActive(false) })
-    return { ...panes, searching: active }
+    const open = () => setActive(true)
+    const close = () => setActive(false)
+    const panes = useDesktopPane({ active, start: open, showOnline: open, close })
+    return { ...panes, searching: active, closeSearch: close }
   })
 }
 
@@ -48,6 +50,20 @@ describe("useDesktopPane", () => {
     act(() => result.current.toggleSettings())
     expect(result.current).toMatchObject({ pane: "settings", view: null })
     act(() => result.current.toggleSettings())
+    expect(result.current.pane).toBe("library")
+  })
+
+  it("brings back the online search in place of a view or Settings", () => {
+    const { result } = renderPanes()
+    act(() => result.current.setView("lyrics"))
+    act(() => result.current.showOnline())
+    expect(result.current).toMatchObject({ pane: "search", view: null, searching: true })
+
+    act(() => result.current.closeSearch())
+    act(() => result.current.toggleSettings())
+    act(() => result.current.showOnline())
+    expect(result.current.pane).toBe("search")
+    act(() => result.current.closeSearch())
     expect(result.current.pane).toBe("library")
   })
 

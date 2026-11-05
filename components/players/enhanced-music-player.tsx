@@ -550,7 +550,7 @@ export default function EnhancedMusicPlayer() {
       <ViewHeader title="Library" meta={libraryMeta}>
         <ViewModeToggle value={viewMode} onChange={setViewMode} />
         <SearchButton ref={searchButtonRef} onOpen={panes.startSearch} />
-        <DownloadsButton count={downloads} onOpen={search.showOnline} />
+        <DownloadsButton count={downloads} onOpen={panes.showOnline} />
         <CloudButton status={cloud.status} onOpen={openCloud} />
         <AddMusicMenu
           busy={libraryBusy}

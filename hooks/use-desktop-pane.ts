@@ -20,6 +20,8 @@ export interface DesktopPanes {
   closeSearchAndSettings: () => void
   /** Bring the search out, in place of whatever is open. */
   startSearch: () => void
+  /** Bring back the last online search, to see its downloads, in place of whatever is open. */
+  showOnline: () => void
   /** Back to the library, closing whatever is open in its place. */
   showLibrary: () => void
 }
@@ -28,10 +30,10 @@ export interface DesktopPanes {
  * The desktop's right half: the library, or one thing at a time in its place,
  * the search, a song's view or Settings. Opening one closes the others.
  */
-export function useDesktopPane(search: Pick<DesktopSearch, "active" | "start" | "close">): DesktopPanes {
+export function useDesktopPane(search: Pick<DesktopSearch, "active" | "start" | "showOnline" | "close">): DesktopPanes {
   const [view, setViewState] = useState<DesktopView | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
-  const { active, start, close } = search
+  const { active, start, showOnline: showSearchOnline, close } = search
 
   const setView = useCallback(
     (next: DesktopView | null) => {
@@ -61,6 +63,12 @@ export function useDesktopPane(search: Pick<DesktopSearch, "active" | "start" | 
     start()
   }, [start])
 
+  const showOnline = useCallback(() => {
+    setViewState(null)
+    setSettingsOpen(false)
+    showSearchOnline()
+  }, [showSearchOnline])
+
   const showLibrary = useCallback(() => {
     close()
     setViewState(null)
@@ -73,7 +81,7 @@ export function useDesktopPane(search: Pick<DesktopSearch, "active" | "start" | 
   else if (view) pane = "view"
 
   return useMemo(
-    () => ({ pane, view, setView, toggleSettings, closeSettings, closeSearchAndSettings, startSearch, showLibrary }),
-    [pane, view, setView, toggleSettings, closeSettings, closeSearchAndSettings, startSearch, showLibrary],
+    () => ({ pane, view, setView, toggleSettings, closeSettings, closeSearchAndSettings, startSearch, showOnline, showLibrary }),
+    [pane, view, setView, toggleSettings, closeSettings, closeSearchAndSettings, startSearch, showOnline, showLibrary],
   )
 }
