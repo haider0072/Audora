@@ -11,10 +11,13 @@ import { AddMusicMenu } from "@/components/desktop/add-music-menu"
 import { DesktopHeader } from "@/components/desktop/desktop-header"
 import { CloudButton, DownloadsButton } from "@/components/desktop/header-status"
 import { HeaderSearch } from "@/components/desktop/header-search"
-import { NowStage, type StageMode } from "@/components/desktop/now-stage"
-import { SearchTabs } from "@/components/desktop/search-tabs"
+import { HeaderVolume } from "@/components/desktop/header-volume"
+import { NowStage } from "@/components/desktop/now-stage"
 import { SettingsView } from "@/components/desktop/settings-view"
+import { SideTabs } from "@/components/desktop/side-tabs"
 import { ViewHeader, ViewModeToggle } from "@/components/desktop/view-header"
+import { LazyNowView } from "@/components/now/lazy-now-view"
+import type { NowTab } from "@/components/now/now-tabs"
 import { TransportButton } from "@/components/player/transport-button"
 import { DropOverlay } from "@/components/library/drop-overlay"
 import { LibraryPanel } from "@/components/library/library-panel"
@@ -66,8 +69,8 @@ const CROSSFADE_MANUAL_SECONDS = 0.4
 export default function EnhancedMusicPlayer() {
   // The desktop is always night, and its menus and dialogs open in the body, outside it.
   useBodyClass("dark")
-  // What shows in the cover's place, kept from song to song.
-  const [stageMode, setStageMode] = useState<StageMode>("cover")
+  // The right half's tab: the library, or one of the song's views, kept from song to song.
+  const [sideTab, setSideTab] = useState<NowTab>("library")
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [albumArtSourceRect, setAlbumArtSourceRect] = useState<DOMRect | null>(null);
   // Settings takes the library's place, until Done or its button in the header.
@@ -79,6 +82,7 @@ export default function EnhancedMusicPlayer() {
   // opened them.
   const returnFocus = useReturnFocus()
   const searchIds = useId()
+  const sideIds = useId()
 
   const coverRef = useRef<HTMLButtonElement>(null)
   const searchInputRef = useRef<HTMLInputElement>(null)
@@ -162,10 +166,11 @@ export default function EnhancedMusicPlayer() {
   const { show: showLibraryPage } = libraryNavigation
   const { close: closeSearch } = search
 
-  /** Show an artist's or an album's page, from the player: in the library, in place of any search or Settings. */
+  /** Show an artist's or an album's page, from the player: in the library, in place of any view, search or Settings. */
   const showInLibrary = useCallback((page: LibraryPage) => {
     closeSearch()
     setSettingsOpen(false)
+    setSideTab("library")
     showLibraryPage(page, "")
   }, [closeSearch, showLibraryPage])
 
@@ -435,21 +440,27 @@ export default function EnhancedMusicPlayer() {
     [sortedSongs, libraryQuery],
   )
 
-  // The right half of the window: the library, or the search's results, or Settings.
+  // The right half of the window: its tab, the library or one of the song's
+  // views; or over them, the search's results, or Settings.
   const searching = search.open
   const showOnline = searching && search.tab === "online"
   const showSettings = settingsOpen && !searching
+  const showView = sideTab !== "library" && !searching && !showSettings
   // Typed since the last online search: the results offer to look for it.
   const typed = search.query.trim()
   const pendingOnline = typed !== "" && typed !== tidalSearch.searchQuery ? typed : undefined
-  const searchTabId = (tab: SearchTab) => `${searchIds}-${tab}`
-  const searchPanelId = `${searchIds}-results`
+  const whereId = (place: SearchTab) => `${searchIds}-${place}`
+  const sideTabId = (tab: NowTab) => `${sideIds}-${tab}`
+  const sidePanelId = `${sideIds}-panel`
+  let searchMeta: string | undefined
+  if (showOnline) searchMeta = downloads > 0 ? `${formatCount(downloads, "song")} downloading` : "Qobuz and Amazon"
+  else if (matches !== undefined) searchMeta = `${formatCount(matches, "song")} in your library`
   const searchOnline = {
     label: "Search online",
     onClick: () => {
       search.setTab("online")
       // The library's results go from view, and this button with them.
-      document.getElementById(searchTabId("online"))?.focus()
+      document.getElementById(whereId("online"))?.focus()
     },
   }
   const toggleSettings = () => {
@@ -488,12 +499,16 @@ export default function EnhancedMusicPlayer() {
             onSubmit={search.submit}
             open={searching}
             onClose={closeSearch}
+            where={search.tab}
+            onWhereChange={search.setTab}
+            whereId={whereId}
             inputRef={searchInputRef}
           />
         }
       >
         <DownloadsButton count={downloads} onOpen={search.showOnline} />
         <CloudButton status={cloud.status} onOpen={openCloud} />
+        <HeaderVolume volume={volume} isMuted={isMuted} onVolumeChange={changeVolume} onToggleMute={toggleMute} />
         <AddMusicMenu
           busy={libraryBusy}
           syncing={isSyncing}
@@ -532,35 +547,15 @@ export default function EnhancedMusicPlayer() {
           onShowPage={showInLibrary}
           coverRef={coverRef}
           onOpenFullscreen={handleOpenFullscreen}
-          mode={stageMode}
-          onModeChange={setStageMode}
-          now={now}
-          volume={volume}
-          isMuted={isMuted}
-          onVolumeChange={changeVolume}
-          onToggleMute={toggleMute}
           onOpenSound={openSound}
           onOpenSync={openSync}
           syncConnected={syncConnected}
         />
         <div className="desktop-side">
           {searching ? (
-            <div className="view-head">
-              <h1 className="sr-only">Search</h1>
-              <SearchTabs
-                value={search.tab}
-                onChange={search.setTab}
-                matches={matches}
-                downloads={downloads}
-                tabId={searchTabId}
-                panelId={searchPanelId}
-              />
-              {!showOnline && (
-                <div className="view-tools">
-                  <ViewModeToggle value={viewMode} onChange={setViewMode} />
-                </div>
-              )}
-            </div>
+            <ViewHeader title="Search" meta={searchMeta}>
+              {!showOnline && <ViewModeToggle value={viewMode} onChange={setViewMode} />}
+            </ViewHeader>
           ) : showSettings ? (
             <ViewHeader title="Settings">
               <button type="button" className="text-button" onClick={closeSettings}>
@@ -568,18 +563,23 @@ export default function EnhancedMusicPlayer() {
               </button>
             </ViewHeader>
           ) : (
-            <ViewHeader title="Library" meta={libraryMeta}>
-              <ViewModeToggle value={viewMode} onChange={setViewMode} />
-            </ViewHeader>
+            <SideTabs value={sideTab} onChange={setSideTab} tabId={sideTabId} panelId={sidePanelId}>
+              {sideTab === "library" && (
+                <>
+                  {libraryMeta && <p className="view-meta type-data">{libraryMeta}</p>}
+                  <ViewModeToggle value={viewMode} onChange={setViewMode} />
+                </>
+              )}
+            </SideTabs>
           )}
-          {/* The library stays mounted under the search's online results and
-              Settings, so it comes back where it was left. */}
+          {/* The library stays mounted under the song's views, the search's
+              online results and Settings, so it comes back where it was left. */}
           <div className="desktop-side-stack">
             <StackLayer
-              covered={showOnline || showSettings}
+              covered={showView || showOnline || showSettings}
               className="desktop-layer"
-              {...(searching && !showOnline
-                ? { role: "tabpanel", id: searchPanelId, "aria-labelledby": searchTabId("library") }
+              {...(sideTab === "library" && !searching && !showSettings
+                ? { role: "tabpanel", id: sidePanelId, "aria-labelledby": sideTabId("library") }
                 : undefined)}
             >
               <LibraryPanel
@@ -598,13 +598,19 @@ export default function EnhancedMusicPlayer() {
                 noMatchesAction={searchOnline}
               />
             </StackLayer>
-            {showOnline && (
+            {showView && (
               <div
-                className="desktop-layer"
+                key={sideTab}
+                className="desktop-layer side-view"
                 role="tabpanel"
-                id={searchPanelId}
-                aria-labelledby={searchTabId("online")}
+                id={sidePanelId}
+                aria-labelledby={sideTabId(sideTab)}
               >
+                <LazyNowView tab={sideTab} {...now} />
+              </div>
+            )}
+            {showOnline && (
+              <div className="desktop-layer">
                 <OnlineSearchSidebar
                   dab={tidalSearch}
                   layout="desktop"

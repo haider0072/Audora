@@ -1,18 +1,14 @@
 "use client"
 
-import { useId, useRef, type RefObject } from "react"
-import { Maximize2, MonitorSpeaker, MoreHorizontal, Shuffle, SlidersHorizontal, Volume2, VolumeX } from "lucide-react"
+import { useRef, type RefObject } from "react"
+import { Maximize2, MonitorSpeaker, MoreHorizontal, Shuffle, SlidersHorizontal } from "lucide-react"
 
 import { AlbumArtDisplay } from "@/components/album-art-display"
-import { LazyNowView } from "@/components/now/lazy-now-view"
-import type { NowPlayerProps } from "@/components/now/now-panel"
-import { NOW_TAB_LABELS, NOW_TABS, type NowViewTab } from "@/components/now/now-tabs"
 import { PlayButton } from "@/components/player/play-button"
 import { QualityLabel } from "@/components/player/quality-label"
 import { RollingText, type RollDirection } from "@/components/player/rolling-text"
 import { SeekBar } from "@/components/player/seek-bar"
 import { SkipIcon, TransportButton } from "@/components/player/transport-button"
-import { VolumeSlider } from "@/components/player/volume-slider"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -22,9 +18,6 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { albumPage, artistPage, type LibraryPage } from "@/lib/library-pages"
 import type { Song } from "@/lib/song"
-
-/** What the stage shows: the cover, or one of the song's views in its place. */
-export type StageMode = "cover" | NowViewTab
 
 export interface NowStageProps {
   /** The song on screen: a pick shows from the moment it is made. */
@@ -49,14 +42,6 @@ export interface NowStageProps {
   /** The cover, which full screen grows out of. */
   coverRef: RefObject<HTMLButtonElement>
   onOpenFullscreen: () => void
-  mode: StageMode
-  onModeChange: (mode: StageMode) => void
-  /** What the song's views need. */
-  now: NowPlayerProps
-  volume: number[]
-  isMuted: boolean
-  onVolumeChange: (value: number[]) => void
-  onToggleMute: () => void
   /** The equalizer and the rest of the sound settings. */
   onOpenSound: () => void
   onOpenSync: () => void
@@ -65,9 +50,9 @@ export interface NowStageProps {
 
 /**
  * The desktop's player, the left half of the window: the cover as large as the
- * window allows, or in its place the song's lyrics, queue, about or video;
- * under it what is playing, its quality and the way to its artist and album,
- * the seek bar, the transport, and the volume. Styled by `.stage` in
+ * window allows, always in sight; under it what is playing, its quality and
+ * the way to its artist and album, the seek bar, and the transport. The song's
+ * views open beside it, in the right half. Styled by `.stage` in
  * app/globals.css.
  */
 export function NowStage({
@@ -86,27 +71,17 @@ export function NowStage({
   onShowPage,
   coverRef,
   onOpenFullscreen,
-  mode,
-  onModeChange,
-  now,
-  volume,
-  isMuted,
-  onVolumeChange,
-  onToggleMute,
   onOpenSound,
   onOpenSync,
   syncConnected,
 }: NowStageProps) {
-  const viewId = useId()
-  // A saved volume of nothing is as silent as a mute, and reads as one.
-  const silent = isMuted || volume[0] === 0
   // What the menu asks for opens once the menu has closed, with focus back on
   // the menu's button, so a dialog can hand it back there.
   const afterMenu = useRef<(() => void) | null>(null)
   const moreRef = useRef<HTMLButtonElement>(null)
 
   return (
-    <section className="stage" aria-label="Now playing" data-mode={mode}>
+    <section className="stage" aria-label="Now playing">
       <div className="stage-stack">
         <div className="stage-square">
           {song ? (
@@ -138,11 +113,6 @@ export function NowStage({
               <p className="stage-empty-detail">Pick a song from your library.</p>
             </div>
           )}
-          {mode !== "cover" && (
-            <div id={viewId} className="stage-view" role="region" aria-label={NOW_TAB_LABELS[mode]}>
-              <LazyNowView tab={mode} {...now} />
-            </div>
-          )}
         </div>
 
         <div className="stage-info">
@@ -153,6 +123,7 @@ export function NowStage({
               </h2>
               <p className="stage-credits">
                 <RollingText text={[song.artist, song.album].filter(Boolean).join(" — ")} direction={direction}>
+                  {/* Each name keeps its own ellipsis, the artist's given room first, so a long album never hides both. */}
                   {song.artist && (
                     <button
                       type="button"
@@ -163,7 +134,11 @@ export function NowStage({
                       {song.artist}
                     </button>
                   )}
-                  {song.artist && song.album && " — "}
+                  {song.artist && song.album && (
+                    <span className="stage-credits-sep" aria-hidden="true">
+                      —
+                    </span>
+                  )}
                   {song.album && (
                     <button
                       type="button"
@@ -245,29 +220,6 @@ export function NowStage({
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
-        </div>
-
-        <div className="stage-tools">
-          <div className="stage-modes" role="group" aria-label="Show in place of the cover">
-            {NOW_TABS.map((tab) => (
-              <button
-                key={tab}
-                type="button"
-                className="led-choice"
-                aria-pressed={mode === tab}
-                aria-controls={mode === tab ? viewId : undefined}
-                onClick={() => onModeChange(mode === tab ? "cover" : tab)}
-              >
-                {NOW_TAB_LABELS[tab]}
-              </button>
-            ))}
-          </div>
-          <div className="stage-volume">
-            <TransportButton label={silent ? "Unmute" : "Mute"} size="sm" onClick={onToggleMute} className="stage-quiet">
-              {silent ? <VolumeX className="h-[18px] w-[18px]" /> : <Volume2 className="h-[18px] w-[18px]" />}
-            </TransportButton>
-            <VolumeSlider className="stage-volume-slider" value={volume} onValueChange={onVolumeChange} muted={isMuted} />
-          </div>
         </div>
       </div>
     </section>

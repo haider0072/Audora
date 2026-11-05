@@ -45,6 +45,25 @@ describe("useDesktopSearch", () => {
     expect(search).toHaveBeenLastCalledWith("air moon")
   })
 
+  it("opens online at once when picked, before anything is typed, without a search", () => {
+    const { result, search } = renderSearch()
+    act(() => result.current.setTab("online"))
+    expect(result.current).toMatchObject({ open: true, tab: "online" })
+    expect(search).not.toHaveBeenCalled()
+  })
+
+  it("closes when the library is picked with nothing typed, and stays open with words to look for", () => {
+    const { result } = renderSearch()
+    act(() => result.current.setTab("online"))
+    act(() => result.current.setTab("library"))
+    expect(result.current).toMatchObject({ open: false, tab: "library" })
+
+    act(() => result.current.setQuery("air"))
+    act(() => result.current.setTab("online"))
+    act(() => result.current.setTab("library"))
+    expect(result.current).toMatchObject({ open: true, tab: "library" })
+  })
+
   it("searches online again on Return, for a retry", () => {
     const { result, search } = renderSearch()
     act(() => result.current.setQuery("air"))

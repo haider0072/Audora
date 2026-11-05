@@ -22,7 +22,7 @@ export function CloudButton({ status, onOpen }: { status: CloudLibraryStatus; on
   return (
     <button type="button" className="header-button" aria-haspopup="dialog" title={`Cloud library: ${label}`} onClick={onOpen}>
       <Cloud aria-hidden="true" />
-      Cloud
+      <span className="header-button-label">Cloud</span>
       {progress === null ? (
         <>
           <StatusLed state={cloudLed(status)} />
@@ -49,7 +49,7 @@ export function DownloadsButton({ count, onOpen }: { count: number; onOpen: () =
       <svg className="busy-arc" viewBox="0 0 20 20" aria-hidden="true">
         <circle cx="10" cy="10" r="7" />
       </svg>
-      Downloading
+      <span className="header-button-label">Downloading</span>
       <span className="type-data">{count}</span>
     </button>
   )

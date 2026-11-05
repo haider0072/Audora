@@ -13,13 +13,18 @@ export type OnlineSearch = Pick<UseTidalSearchReturn, "search" | "searchQuery" |
 export interface DesktopSearch {
   /** What is typed in the header's field. */
   query: string
-  /** The results show in place of the library, from the first letter typed until the search is closed. */
+  /** The results show in place of the library, from the first letter typed, or Online picked, until the search is closed. */
   open: boolean
   tab: SearchTab
   setQuery: (value: string) => void
-  /** Return pressed: the Online tab searches for what is typed; the library already shows it. */
+  /** Return pressed: online, searches for what is typed; the library already shows it. */
   submit: () => void
-  /** Switching to Online searches there, unless it already holds results for what is typed. */
+  /**
+   * Online opens the search at once, so its downloads and pasted links are in
+   * reach before anything is typed, and searches for what is typed unless it
+   * already holds results for it. The library with nothing typed closes the
+   * search, as there is nothing to look for.
+   */
   setTab: (tab: SearchTab) => void
   /** Bring back the last online search, to see its downloads. */
   showOnline: () => void
@@ -59,7 +64,12 @@ export function useDesktopSearch({ search, searchQuery: searchedOnline, setSearc
   const setTab = useCallback(
     (next: SearchTab) => {
       setTabState(next)
-      if (next === "online" && query.trim() !== searchedOnline) sendOnline(query)
+      if (next === "online") {
+        setOpen(true)
+        if (query.trim() !== searchedOnline) sendOnline(query)
+      } else if (!query.trim()) {
+        setOpen(false)
+      }
     },
     [query, searchedOnline, sendOnline],
   )

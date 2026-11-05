@@ -18,6 +18,10 @@ interface ChoiceGroupProps<T extends string> {
   className?: string
   /** Each choice's class; the chosen one has `aria-checked="true"`. */
   choiceClassName?: string
+  /** Each choice's id, so focus can be handed to it from elsewhere. */
+  choiceId?: (value: T) => string
+  /** A choice clicked, rather than reached with the arrow keys: focus may move on. */
+  onPick?: (value: T) => void
 }
 
 /**
@@ -31,6 +35,8 @@ export function ChoiceGroup<T extends string>({
   onChange,
   className,
   choiceClassName,
+  choiceId,
+  onPick,
 }: ChoiceGroupProps<T>) {
   const refs = useRef<Array<HTMLButtonElement | null>>([])
 
@@ -53,12 +59,16 @@ export function ChoiceGroup<T extends string>({
             ref={(element) => {
               refs.current[index] = element
             }}
+            id={choiceId?.(choice.value)}
             type="button"
             role="radio"
             aria-checked={checked}
             tabIndex={checked ? 0 : -1}
             className={choiceClassName}
-            onClick={() => onChange(choice.value)}
+            onClick={() => {
+              onChange(choice.value)
+              onPick?.(choice.value)
+            }}
           >
             {choice.label}
           </button>

@@ -2,19 +2,14 @@ import { createRef } from "react"
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 
 import { NowStage, type NowStageProps } from "@/components/desktop/now-stage"
-import type { NowPlayerProps } from "@/components/now/now-panel"
 import { albumPage, artistPage } from "@/lib/library-pages"
 import type { Song } from "@/lib/song"
 import { stubLibraryDom } from "@/testing/library-dom"
 
 stubLibraryDom()
 
-// The cover draws from the art cache, and the views load on demand; the stage
-// around them is what is under test.
+// The cover draws from the art cache; the stage around it is what is under test.
 jest.mock("@/components/album-art-display", () => ({ AlbumArtDisplay: () => null }))
-jest.mock("@/components/now/lazy-now-view", () => ({
-  LazyNowView: ({ tab }: { tab: string }) => <p>The {tab} view</p>,
-}))
 
 const SONG = { id: "a", url: "blob:a", title: "Myth", artist: "Beach House", album: "Bloom", duration: 258 } as Song
 
@@ -35,13 +30,6 @@ function renderStage(props: Partial<NowStageProps> = {}) {
     onShowPage: jest.fn(),
     coverRef: createRef<HTMLButtonElement>(),
     onOpenFullscreen: jest.fn(),
-    mode: "cover",
-    onModeChange: jest.fn(),
-    now: {} as NowPlayerProps,
-    volume: [80],
-    isMuted: false,
-    onVolumeChange: jest.fn(),
-    onToggleMute: jest.fn(),
     onOpenSound: jest.fn(),
     onOpenSync: jest.fn(),
     syncConnected: false,
@@ -65,6 +53,21 @@ describe("NowStage", () => {
     expect(props.onShowPage).toHaveBeenLastCalledWith(artistPage(SONG))
     fireEvent.click(screen.getByRole("button", { name: "Bloom" }))
     expect(props.onShowPage).toHaveBeenLastCalledWith(albumPage(SONG))
+  })
+
+  it("keeps the artist and the album apart, so each can shorten on its own", () => {
+    const { container } = renderStage()
+    const credits = container.querySelector(".stage-credits .roll > span")
+    const [artist, separator, album] = Array.from(credits?.children ?? [])
+    expect(artist).toHaveTextContent("Beach House")
+    expect(separator).toHaveAttribute("aria-hidden", "true")
+    expect(album).toHaveTextContent("Bloom")
+  })
+
+  it("shows the artist alone when the song has no album", () => {
+    renderStage({ song: { ...SONG, album: "" } })
+    expect(screen.getByRole("button", { name: "Beach House" })).toBeInTheDocument()
+    expect(screen.queryByText("—")).not.toBeInTheDocument()
   })
 
   it("says nothing is playing, and offers nothing to play or open, before a song is picked", () => {
@@ -93,45 +96,12 @@ describe("NowStage", () => {
     await waitFor(() => expect(props.onOpenFullscreen).toHaveBeenCalledTimes(2))
   })
 
-  it("reads a saved volume of nothing as muted", () => {
-    const { rerender, props } = renderStage({ volume: [0], isMuted: false })
-    fireEvent.click(screen.getByRole("button", { name: "Unmute" }))
-    expect(props.onToggleMute).toHaveBeenCalledTimes(1)
-
-    rerender(<NowStage {...props} volume={[80]} />)
-    expect(screen.getByRole("button", { name: "Mute" })).toBeInTheDocument()
-    expect(screen.getByRole("slider", { name: "Volume" })).toHaveAttribute("aria-valuetext", "80%")
-  })
-
-  it("says a muted volume is muted, keeping its level to come back to", () => {
-    renderStage({ volume: [80], isMuted: true })
-    expect(screen.getByRole("button", { name: "Unmute" })).toBeInTheDocument()
-    expect(screen.getByRole("slider", { name: "Volume" })).toHaveAttribute("aria-valuetext", "Muted")
-    expect(screen.getByRole("slider", { name: "Volume" })).toHaveAttribute("aria-valuenow", "80")
-  })
-
-  it("shows a view in the cover's place, and the cover again on a second press", () => {
-    const { rerender, props } = renderStage()
-    const views = screen.getByRole("group", { name: "Show in place of the cover" })
-    expect(within(views).getAllByRole("button").map((button) => button.textContent)).toEqual([
-      "Lyrics",
-      "Queue",
-      "About",
-      "Video",
-    ])
-    fireEvent.click(screen.getByRole("button", { name: "Lyrics" }))
-    expect(props.onModeChange).toHaveBeenLastCalledWith("lyrics")
-
-    rerender(<NowStage {...props} mode="lyrics" />)
-    const lyrics = screen.getByRole("button", { name: "Lyrics" })
-    expect(lyrics).toHaveAttribute("aria-pressed", "true")
-    const region = screen.getByRole("region", { name: "Lyrics" })
-    expect(lyrics).toHaveAttribute("aria-controls", region.id)
-    expect(within(region).getByText("The lyrics view")).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "Queue" })).not.toHaveAttribute("aria-controls")
-
-    fireEvent.click(lyrics)
-    expect(props.onModeChange).toHaveBeenLastCalledWith("cover")
+  it("keeps the cover in sight, with no views or volume of its own", () => {
+    renderStage()
+    expect(screen.queryByRole("group", { name: "Show in place of the cover" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("slider", { name: "Volume" })).not.toBeInTheDocument()
+    const names = screen.getAllByRole("button").map((button) => button.getAttribute("aria-label") ?? button.textContent)
+    expect(names).toEqual(["Beach House", "Bloom", "Shuffle", "Previous track", "Play", "Next track", "More"])
   })
 
   it("opens what its menu asks for once the menu has closed, with focus back on More", async () => {
