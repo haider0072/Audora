@@ -9,7 +9,6 @@ import {
   isArtPointer,
   isArtPointerKey,
   isLegacyArt,
-  songIdFromArtPointerKey,
   type ArtBlobRecord,
   type ArtPointerRecord,
   type AudioRecord,
@@ -495,29 +494,6 @@ export class PlaylistStorage {
     })
 
     return { audio, artPointers, artBlobs }
-  }
-
-  /**
-   * Album art entries for the manager UI. `size` is the bytes this song's art
-   * actually occupies: shared covers report their real size, but the cost is
-   * paid once across every song pointing at them.
-   */
-  static async getAllAlbumArtEntries(): Promise<Array<{ id: string; songId: string; size: number }>> {
-    try {
-      const { artPointers, artBlobs } = await this.scanStore()
-
-      return artPointers.map((pointer) => {
-        const shared = pointer.artHash ? artBlobs.get(artBlobKey(pointer.artHash)) : undefined
-        return {
-          id: pointer.id,
-          songId: pointer.songId || songIdFromArtPointerKey(pointer.id),
-          size: shared?.size ?? pointer.size ?? 0,
-        }
-      })
-    } catch (error) {
-      console.error("Error getting album art entries:", error)
-      return []
-    }
   }
 
   /**

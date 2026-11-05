@@ -1,13 +1,15 @@
 "use client"
 
-import { Fragment, useState, useRef, useEffect, useCallback, useMemo } from "react"
+import { useState, useRef, useEffect, useCallback, useMemo } from "react"
 import { X } from "lucide-react"
 
 import { toast } from "@/hooks/use-toast"
 import { ToastAction } from "@/components/ui/toast"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { DesktopSidebar, type DesktopView } from "@/components/desktop/desktop-sidebar"
 import { PlayerBar } from "@/components/desktop/player-bar"
+import { SettingsView } from "@/components/desktop/settings-view"
 import { SearchField, ViewHeader, ViewModeToggle } from "@/components/desktop/view-header"
 import { TransportButton } from "@/components/player/transport-button"
 import { DropOverlay } from "@/components/library/drop-overlay"
@@ -18,7 +20,6 @@ import type { NowTab } from "@/components/now/now-tabs"
 import { useNowPlayer } from "@/components/now/use-now-player"
 import { RefinedEqualizer, type EqualizerBand } from "@/components/refined-equalizer"
 import { AlbumArtBackground } from "@/components/album-art-background"
-import { PlaylistManager } from "@/components/playlist-manager"
 import { useBodyClass } from "@/hooks/use-body-class"
 import { useReturnFocus } from "@/hooks/use-return-focus"
 import { useAlbumArtPreloader } from "@/hooks/use-album-art-preloader"
@@ -69,8 +70,9 @@ export default function EnhancedMusicPlayer() {
   const [view, setView] = useState<DesktopView>("library")
   const [showSync, setShowSync] = useState(false);
   const [showCloud, setShowCloud] = useState(false);
-  // The equalizer, two-device playback and the cloud library open from a
-  // menu, the sidebar or full screen, and hand focus back to what opened them.
+  // The Sound sheet, two-device playback and the cloud library open from a
+  // menu, the sidebar, Settings or full screen, and hand focus back to what
+  // opened them.
   const returnFocus = useReturnFocus()
   const [searchQuery, setSearchQuery] = useState("")
 
@@ -156,6 +158,8 @@ export default function EnhancedMusicPlayer() {
   }, [preampDb, engineSetPreamp])
 
   const eqPresets = useMemo(() => getAllPresets(customEqPresets), [customEqPresets])
+  // As the equalizer itself names it.
+  const soundPreset = eqPresets.find((preset) => preset.id === activeEqPresetId)?.name ?? "Custom"
 
   // Manual band edits detach from the selected preset.
   const handleBandChange = useCallback((index: number, gain: number) => {
@@ -409,6 +413,12 @@ export default function EnhancedMusicPlayer() {
   if (isRestoringPlaylist) libraryMeta = "Restoring…"
   else if (songs.length > 0) libraryMeta = `${formatCount(songs.length, "song")} · ${formatTotalDuration(totalDuration)}`
   const downloads = tidalSearch.activeDownloadCount
+  // Declared last: the compiler takes a call into returnFocus as able to change
+  // what it is given, so declared earlier these would hold the memoized
+  // callbacks above back from being memoized.
+  const openSound = () => returnFocus.open(setShowEqualizer)
+  const openSync = () => returnFocus.open(setShowSync)
+  const openCloud = () => returnFocus.open(setShowCloud)
 
   return (
     // The desktop sits on artwork darkened to ink in both themes, so it takes
@@ -432,13 +442,14 @@ export default function EnhancedMusicPlayer() {
           onViewChange={setView}
           downloads={downloads}
           cloudStatus={cloud.status}
-          onOpenCloud={() => returnFocus.open(setShowCloud)}
+          onOpenCloud={openCloud}
         />
         <main className="desktop-main">
-          {/* Keyed, so a view mounts afresh rather than taking over the other's
-              header: the online search field takes focus as its view opens. */}
-          {view === "library" ? (
-            <Fragment key="library">
+          {/* A slot for each view, so a view mounts afresh rather than taking
+              over another's header: the online search field takes focus as its
+              view opens. */}
+          {view === "library" && (
+            <>
               <ViewHeader title="Library" meta={libraryMeta}>
                 <SearchField label="Search your library" value={searchQuery} onChange={setSearchQuery} />
                 <ViewModeToggle value={viewMode} onChange={setViewMode} />
@@ -453,11 +464,6 @@ export default function EnhancedMusicPlayer() {
                   handleFolderSync={handleFolderSync}
                   isSyncing={isSyncing}
                   loadingProgress={loadingProgress}
-                />
-                <PlaylistManager
-                  songCount={songs.length}
-                  songs={songs.map((s) => ({ id: s.id, title: s.title, artist: s.artist, albumArt: s.albumArt }))}
-                  onPlaylistReset={resetPlaylist}
                 />
               </ViewHeader>
               <div className="desktop-view">
@@ -476,9 +482,10 @@ export default function EnhancedMusicPlayer() {
                   emptyAction={addFolderAction}
                 />
               </div>
-            </Fragment>
-          ) : (
-            <Fragment key="online">
+            </>
+          )}
+          {view === "online" && (
+            <>
               <ViewHeader title="Search online" meta={downloads > 0 ? `${formatCount(downloads, "song")} downloading` : undefined}>
                 <SearchField
                   label="Search online"
@@ -491,7 +498,21 @@ export default function EnhancedMusicPlayer() {
               <div className="desktop-view" data-view="online">
                 <OnlineSearchSidebar dab={tidalSearch} hideSearch />
               </div>
-            </Fragment>
+            </>
+          )}
+          {view === "settings" && (
+            <SettingsView
+              soundPreset={soundPreset}
+              normalization={normalizationEnabled}
+              onOpenSound={openSound}
+              cloudStatus={cloud.status}
+              cloudSongCount={cloud.songCount}
+              onOpenCloud={openCloud}
+              syncConnected={syncConnected}
+              onOpenSync={openSync}
+              songCount={songs.length}
+              onReset={resetPlaylist}
+            />
           )}
         </main>
         {nowOpen && (
@@ -540,16 +561,21 @@ export default function EnhancedMusicPlayer() {
           isMuted={isMuted}
           onVolumeChange={changeVolume}
           onToggleMute={toggleMute}
-          onOpenSound={() => returnFocus.open(setShowEqualizer)}
-          onOpenSync={() => returnFocus.open(setShowSync)}
+          onOpenSound={openSound}
+          onOpenSync={openSync}
           syncConnected={syncConnected}
         />
       </div>
-      <Dialog open={showEqualizer} onOpenChange={setShowEqualizer}>
-        <DialogContent onCloseAutoFocus={returnFocus.onCloseAutoFocus}>
-          <DialogHeader>
-            <DialogTitle>Equalizer</DialogTitle>
-          </DialogHeader>
+      <Sheet open={showEqualizer} onOpenChange={setShowEqualizer}>
+        {/* Wide enough for the ten bands side by side. */}
+        <SheetContent
+          className="w-[min(600px,calc(100vw-48px))] overflow-y-auto sm:max-w-none"
+          onCloseAutoFocus={returnFocus.onCloseAutoFocus}
+        >
+          <SheetHeader>
+            <SheetTitle>Sound</SheetTitle>
+            <SheetDescription>The equalizer and its preamp, and loudness normalization.</SheetDescription>
+          </SheetHeader>
           <RefinedEqualizer
             bands={equalizerBands}
             onBandChange={handleBandChange}
@@ -564,10 +590,11 @@ export default function EnhancedMusicPlayer() {
             onPresetSave={handlePresetSave}
             onPresetDelete={handlePresetDelete}
           />
-        </DialogContent>
-      </Dialog>
+        </SheetContent>
+      </Sheet>
       <Dialog open={showSync} onOpenChange={setShowSync}>
-        <DialogContent onCloseAutoFocus={returnFocus.onCloseAutoFocus}>
+        {/* Its panel explains itself, so the dialog has no separate description. */}
+        <DialogContent aria-describedby={undefined} onCloseAutoFocus={returnFocus.onCloseAutoFocus}>
           <DialogHeader>
             <DialogTitle>Two-device playback</DialogTitle>
           </DialogHeader>
@@ -575,7 +602,8 @@ export default function EnhancedMusicPlayer() {
         </DialogContent>
       </Dialog>
       <Dialog open={showCloud} onOpenChange={setShowCloud}>
-        <DialogContent onCloseAutoFocus={returnFocus.onCloseAutoFocus}>
+        {/* Its panel explains itself, so the dialog has no separate description. */}
+        <DialogContent aria-describedby={undefined} onCloseAutoFocus={returnFocus.onCloseAutoFocus}>
           <DialogHeader>
             <DialogTitle>Cloud library</DialogTitle>
           </DialogHeader>
@@ -604,7 +632,7 @@ export default function EnhancedMusicPlayer() {
         onToggleShuffle={toggleShuffle}
         onSongSelect={handleSongSelect}
         libraryActions={libraryActions}
-        onShowEqualizer={() => returnFocus.open(setShowEqualizer)}
+        onShowEqualizer={openSound}
         now={now}
         albumArtSourceRect={albumArtSourceRect}
       />

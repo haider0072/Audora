@@ -571,19 +571,45 @@
     margin-left: auto;
     color: hsl(var(--muted-foreground));
   }
-  /* The cloud at a glance: lit while connected, red when it could not connect. */
-  .desktop-nav-dot {
-    margin-left: auto;
+  /* Settings, at the sidebar's foot. */
+  .desktop-nav-foot {
+    margin-top: auto;
+  }
+  /* An LED (components/desktop/status-led.tsx): dark, lit, or a fault. */
+  .status-led {
+    flex: none;
     width: 6px;
     height: 6px;
     border-radius: 9999px;
     background: hsl(var(--muted-foreground) / 0.5);
   }
-  .desktop-nav-dot[data-status="ready"] {
+  .status-led[data-state="on"] {
     background: hsl(var(--foreground));
   }
-  .desktop-nav-dot[data-status="error"] {
+  .status-led[data-state="error"] {
     background: hsl(var(--destructive));
+  }
+  .desktop-nav-dot {
+    margin-left: auto;
+  }
+  /* The cloud while files go up: a ring that fills as they do. */
+  .desktop-nav-ring {
+    flex: none;
+    width: 16px;
+    height: 16px;
+    margin-left: auto;
+    transform: rotate(-90deg);
+  }
+  .desktop-nav-ring circle {
+    fill: none;
+    stroke-width: 2;
+  }
+  .desktop-nav-ring-track {
+    stroke: hsl(var(--foreground) / 0.15);
+  }
+  .desktop-nav-ring-fill {
+    stroke: hsl(var(--foreground));
+    stroke-linecap: round;
   }
   .desktop-main {
     grid-area: 1 / 2;
@@ -691,6 +717,82 @@
   }
   .search-field input::placeholder {
     color: hsl(var(--muted-foreground));
+  }
+
+  /* Settings (components/desktop/settings-view.tsx): sections of rows, each
+     saying how a thing stands, as data, and offering the change. A section's
+     values and changes line up in columns of their own. */
+  .settings {
+    container-type: inline-size;
+    display: grid;
+    align-content: start;
+    gap: 36px;
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 4px 24px 48px;
+  }
+  .settings-section {
+    display: grid;
+    gap: 10px;
+    max-width: 840px;
+  }
+  .settings-rows {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    column-gap: 24px;
+    border-top: 1px solid hsl(var(--border));
+  }
+  .settings-row {
+    display: grid;
+    grid-column: 1 / -1;
+    grid-template-columns: subgrid;
+    align-items: center;
+    row-gap: 6px;
+    min-height: 60px;
+    padding: 12px 0;
+    border-bottom: 1px solid hsl(var(--border));
+  }
+  .settings-row-text {
+    grid-column: 1;
+    min-width: 0;
+  }
+  .settings-row-label {
+    font-size: 0.875rem; /* 14px */
+    font-weight: 500;
+  }
+  .settings-row-detail {
+    margin-top: 2px;
+    max-width: 62ch;
+    font-size: 0.8125rem; /* 13px */
+    color: hsl(var(--muted-foreground));
+  }
+  .settings-row-value {
+    display: flex;
+    grid-column: 2;
+    align-items: center;
+    gap: 8px;
+    color: hsl(var(--muted-foreground));
+    white-space: nowrap;
+  }
+  .settings-row-action {
+    grid-column: 3;
+    justify-self: end;
+  }
+  /* Narrow, as beside an open Now panel: the value goes under the words. */
+  @container (max-width: 600px) {
+    .settings-rows {
+      grid-template-columns: minmax(0, 1fr) auto;
+    }
+    .settings-row-value {
+      grid-column: 1;
+      grid-row: 2;
+      white-space: normal;
+    }
+    .settings-row-action {
+      grid-column: 2;
+      grid-row: 1 / span 2;
+    }
   }
 
   /* The player bar: what is playing, the transport, and the player's tools. */
@@ -1458,6 +1560,41 @@
     }
   }
 
+  /* A quiet button that says what it does: a message's way forward, or the
+     change a setting offers. */
+  .text-button {
+    height: 32px;
+    padding: 0 14px;
+    border-radius: calc(var(--radius) - 2px);
+    background: hsl(var(--foreground) / 0.08);
+    font-size: 0.8125rem; /* 13px */
+    font-weight: 600;
+    white-space: nowrap;
+    transition:
+      background-color var(--motion-release) var(--ease-release),
+      transform var(--motion-pluck) var(--ease-pluck);
+  }
+  .text-button:active:not([aria-disabled="true"]) {
+    transform: scale(0.97);
+    transition: transform var(--motion-attack) var(--ease-attack);
+  }
+  .text-button:focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 2px;
+  }
+  /* Unavailable, it stays focusable (aria-disabled rather than disabled), so
+     focus on it, or handed back to it by a dialog, isn't dropped. */
+  .text-button[aria-disabled="true"] {
+    opacity: 0.45;
+    cursor: default;
+  }
+  @media (hover: hover) {
+    .text-button:hover:not([aria-disabled="true"]) {
+      background: hsl(var(--foreground) / 0.12);
+      transition-duration: var(--motion-attack);
+    }
+  }
+
   /* What a view says when it has nothing to show (components/status-message.tsx):
      centred in the space it has. Inline, it stands in for one section of a
      view instead, and sits at the section's start. */
@@ -1494,36 +1631,15 @@
   .status-message[data-inline] .status-message-detail {
     max-width: none;
   }
+  /* A .text-button: a size up where the message has the view to itself. */
   .status-message-action {
+    margin-top: 6px;
+  }
+  .status-message:not([data-inline]) .status-message-action {
     height: 36px;
     margin-top: 10px;
     padding: 0 16px;
-    border-radius: calc(var(--radius) - 2px);
-    background: hsl(var(--foreground) / 0.08);
     font-size: 0.875rem; /* 14px */
-    font-weight: 600;
-    transition:
-      background-color var(--motion-release) var(--ease-release),
-      transform var(--motion-pluck) var(--ease-pluck);
-  }
-  .status-message[data-inline] .status-message-action {
-    height: 32px;
-    margin-top: 6px;
-    padding: 0 14px;
-  }
-  .status-message-action:active {
-    transform: scale(0.97);
-    transition: transform var(--motion-attack) var(--ease-attack);
-  }
-  .status-message-action:focus-visible {
-    outline: 2px solid hsl(var(--ring));
-    outline-offset: 2px;
-  }
-  @media (hover: hover) {
-    .status-message-action:hover {
-      background: hsl(var(--foreground) / 0.12);
-      transition-duration: var(--motion-attack);
-    }
   }
 
   /* Over the whole window while files are dragged in from outside. */
@@ -1840,7 +1956,9 @@
     gap: 14px;
     min-width: 0;
   }
-  .about-heading {
+  /* A section's label, small and spaced: About's parts, and Settings'. */
+  .about-heading,
+  .settings-heading {
     font-size: 0.6875rem; /* 11px */
     font-weight: 600;
     letter-spacing: 0.08em;
@@ -2260,7 +2378,7 @@
   }
   .library-row-main:active,
   .library-page-play:active,
-  .status-message-action:active,
+  .text-button:active,
   .video-poster:active .video-play {
     transform: none;
   }
