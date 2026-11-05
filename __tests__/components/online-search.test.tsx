@@ -306,6 +306,7 @@ function fakeDab(fields: Partial<UseTidalSearchReturn> = {}): UseTidalSearchRetu
     viewAlbum: jest.fn(),
     viewArtist: jest.fn(),
     goBack: jest.fn(),
+    closePages: jest.fn(),
     downloads: new Map(),
     downloadTrack: jest.fn(),
     downloadFromUrl: jest.fn(),

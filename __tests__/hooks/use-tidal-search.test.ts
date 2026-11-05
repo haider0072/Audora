@@ -2,7 +2,7 @@ import { act, renderHook, waitFor } from "@testing-library/react"
 
 import { useTidalSearch } from "@/hooks/use-tidal-search"
 import { TidalService } from "@/lib/tidal-service"
-import type { TidalAlbum, TidalSearchResult } from "@/lib/tidal-types"
+import type { TidalAlbum, TidalDiscographyResult, TidalSearchResult } from "@/lib/tidal-types"
 
 jest.mock("@/hooks/use-toast", () => ({ toast: jest.fn() }))
 jest.mock("@/hooks/use-online-status", () => ({ useOnlineStatus: () => true }))
@@ -16,6 +16,7 @@ jest.mock("@/lib/flac-art-embedder", () => ({ embedFlacMetadata: jest.fn() }))
 
 const search = jest.mocked(TidalService.search)
 const getAlbum = jest.mocked(TidalService.getAlbum)
+const getDiscography = jest.mocked(TidalService.getDiscography)
 
 function results(fields: Partial<TidalSearchResult> = {}): TidalSearchResult {
   return {
@@ -30,14 +31,25 @@ function results(fields: Partial<TidalSearchResult> = {}): TidalSearchResult {
 }
 
 const ALBUM = { id: "al", title: "Palette", artist: "IU", artistId: "ar", tracks: [] } as unknown as TidalAlbum
+const ARTIST = { artist: { id: "ar", name: "IU" }, albums: [] } as unknown as TidalDiscographyResult
 
 function renderSearch() {
   return renderHook(() => useTidalSearch({ songs: [], onSongDownloaded: jest.fn() }))
 }
 
+/** A store's answer that comes only when told to. */
+function answerLater<T>() {
+  let answer: (value: T) => void = () => {}
+  const promise = new Promise<T>((resolve) => {
+    answer = resolve
+  })
+  return { promise, answer }
+}
+
 beforeEach(() => {
   search.mockReset()
   getAlbum.mockReset()
+  getDiscography.mockReset()
   localStorage.clear()
 })
 
@@ -161,5 +173,74 @@ describe("useTidalSearch, albums", () => {
     getAlbum.mockResolvedValueOnce(ALBUM)
     act(() => result.current.retry())
     await waitFor(() => expect(result.current.currentView).toBe("album"))
+  })
+})
+
+describe("useTidalSearch, pages over the results", () => {
+  it("goes back to the results from however many pages are open", async () => {
+    getAlbum.mockResolvedValue(ALBUM)
+    getDiscography.mockResolvedValue(ARTIST)
+    const { result } = renderSearch()
+    await act(() => result.current.viewAlbum("al"))
+    await act(() => result.current.viewArtist("ar"))
+    expect(result.current).toMatchObject({ currentView: "artist", previousView: "album" })
+
+    act(() => result.current.closePages())
+    expect(result.current).toMatchObject({ currentView: "search", previousView: "search" })
+  })
+
+  it("drops a page that answers after the results came back", async () => {
+    const album = answerLater<TidalAlbum>()
+    getAlbum.mockReturnValueOnce(album.promise)
+    const { result } = renderSearch()
+    let opening: Promise<void> = Promise.resolve()
+    act(() => {
+      opening = result.current.viewAlbum("al")
+    })
+    expect(result.current.isLoadingDetail).toBe(true)
+
+    act(() => result.current.closePages())
+    expect(result.current.isLoadingDetail).toBe(false)
+    await act(async () => {
+      album.answer(ALBUM)
+      await opening
+    })
+    expect(result.current).toMatchObject({ currentView: "search", isLoadingDetail: false, error: null })
+  })
+
+  it("drops a page that answers after Back", async () => {
+    getAlbum.mockResolvedValue(ALBUM)
+    const artist = answerLater<TidalDiscographyResult>()
+    getDiscography.mockReturnValueOnce(artist.promise)
+    const { result } = renderSearch()
+    await act(() => result.current.viewAlbum("al"))
+    let opening: Promise<void> = Promise.resolve()
+    act(() => {
+      opening = result.current.viewArtist("ar")
+    })
+
+    act(() => result.current.goBack())
+    await act(async () => {
+      artist.answer(ARTIST)
+      await opening
+    })
+    expect(result.current).toMatchObject({ currentView: "search", isLoadingDetail: false })
+  })
+
+  it("opens only the last of two pages asked for at once", async () => {
+    const first = answerLater<TidalAlbum>()
+    const second = { ...ALBUM, id: "al-2", title: "Lilac" } as TidalAlbum
+    getAlbum.mockReturnValueOnce(first.promise).mockResolvedValueOnce(second)
+    const { result } = renderSearch()
+    let openingFirst: Promise<void> = Promise.resolve()
+    act(() => {
+      openingFirst = result.current.viewAlbum("al")
+    })
+    await act(() => result.current.viewAlbum("al-2"))
+    await act(async () => {
+      first.answer(ALBUM)
+      await openingFirst
+    })
+    expect(result.current).toMatchObject({ currentView: "album", previousView: "search", selectedAlbum: second })
   })
 })

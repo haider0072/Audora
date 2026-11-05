@@ -6,11 +6,12 @@ import { useDesktopSearch } from "@/hooks/use-desktop-search"
 /** The search over a stand-in for the online search, which keeps the query it was last sent as state, as it does. */
 function renderSearch() {
   const search = jest.fn(async () => {})
+  const closePages = jest.fn()
   const hook = renderHook(() => {
     const [searchQuery, setSearchQuery] = useState("")
-    return useDesktopSearch({ search, searchQuery, setSearchQuery })
+    return useDesktopSearch({ search, searchQuery, setSearchQuery, closePages })
   })
-  return { ...hook, search }
+  return { ...hook, search, closePages }
 }
 
 describe("useDesktopSearch", () => {
@@ -62,6 +63,19 @@ describe("useDesktopSearch", () => {
     act(() => result.current.setQuery("air"))
     act(() => result.current.close())
     expect(result.current).toMatchObject({ query: "", active: false })
+  })
+
+  it("brings back the online results from a page open over them whenever the words change", () => {
+    const { result, closePages } = renderSearch()
+    act(() => result.current.start())
+    expect(closePages).not.toHaveBeenCalled()
+
+    act(() => result.current.setQuery("air"))
+    expect(closePages).toHaveBeenCalledTimes(1)
+    act(() => result.current.close())
+    expect(closePages).toHaveBeenCalledTimes(2)
+    act(() => result.current.showOnline())
+    expect(closePages).toHaveBeenCalledTimes(3)
   })
 
   it("brings back the last online search without asking again", () => {

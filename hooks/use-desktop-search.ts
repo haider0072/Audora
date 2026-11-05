@@ -4,8 +4,8 @@ import { useCallback, useMemo, useState } from "react"
 
 import type { UseTidalSearchReturn } from "@/hooks/use-tidal-search"
 
-/** What the search needs of the online search: a query it was last sent, and a way to send another. */
-export type OnlineSearch = Pick<UseTidalSearchReturn, "search" | "searchQuery" | "setSearchQuery">
+/** What the search needs of the online search: a query it was last sent, a way to send another, and a way back to its results. */
+export type OnlineSearch = Pick<UseTidalSearchReturn, "search" | "searchQuery" | "setSearchQuery" | "closePages">
 
 export interface DesktopSearch {
   /** What is typed in the field. */
@@ -29,16 +29,26 @@ export interface DesktopSearch {
  * The desktop's one search, across the library and online. The library is
  * searched as you type. Online is searched only when asked, by Return or by
  * the offer to look online, since every search there is a request to a
- * service that limits them.
+ * service that limits them. An online album or artist page lasts only as long
+ * as the words it was found by: whatever changes them brings back the results.
  */
-export function useDesktopSearch({ search, searchQuery: searchedOnline, setSearchQuery }: OnlineSearch): DesktopSearch {
+export function useDesktopSearch({
+  search,
+  searchQuery: searchedOnline,
+  setSearchQuery,
+  closePages,
+}: OnlineSearch): DesktopSearch {
   const [query, setQueryState] = useState("")
   const [active, setActive] = useState(false)
 
-  const setQuery = useCallback((value: string) => {
-    setQueryState(value)
-    if (value.trim()) setActive(true)
-  }, [])
+  const setQuery = useCallback(
+    (value: string) => {
+      setQueryState(value)
+      if (value.trim()) setActive(true)
+      closePages()
+    },
+    [closePages],
+  )
 
   const submit = useCallback(() => {
     const trimmed = query.trim()
@@ -53,12 +63,14 @@ export function useDesktopSearch({ search, searchQuery: searchedOnline, setSearc
   const showOnline = useCallback(() => {
     setQueryState(searchedOnline)
     setActive(true)
-  }, [searchedOnline])
+    closePages()
+  }, [searchedOnline, closePages])
 
   const close = useCallback(() => {
     setQueryState("")
     setActive(false)
-  }, [])
+    closePages()
+  }, [closePages])
 
   return useMemo(
     () => ({ query, active, setQuery, submit, start, showOnline, close }),

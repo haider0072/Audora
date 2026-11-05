@@ -78,6 +78,22 @@ export function useTidalSearch(options: UseTidalSearchOptions) {
   const [selectedArtist, setSelectedArtist] = useState<TidalDiscographyResult | null>(null)
   const [isLoadingDetail, setIsLoadingDetail] = useState(false)
   const [navigationStack, setNavigationStack] = useState<TidalView[]>([])
+  // Only the page asked for last may open: one that answers after Back, after
+  // another page was asked for, or after the results came back, is dropped.
+  const pageSeq = useRef(0)
+
+  // Forget a page on its way: what it would open over has changed.
+  const dropPendingPage = useCallback(() => {
+    pageSeq.current += 1
+    setIsLoadingDetail(false)
+  }, [])
+
+  // Back to the results, from any page open over them.
+  const closePages = useCallback(() => {
+    dropPendingPage()
+    setNavigationStack((stack) => (stack.length > 0 ? [] : stack))
+    setCurrentView("search")
+  }, [dropPendingPage])
 
   // Download state
   const [downloads, setDownloads] = useState<Map<string, DownloadState>>(new Map())
@@ -202,8 +218,7 @@ export function useTidalSearch(options: UseTidalSearchOptions) {
         if (seq !== searchSeq.current) return
         if (data) {
           setSearchResults(data)
-          setNavigationStack([])
-          setCurrentView("search")
+          closePages()
         } else {
           // The service answers null for a search that failed, and has logged why.
           setError({ title: "Couldn't search online", detail: TRY_AGAIN, request, retryable: true })
@@ -221,7 +236,7 @@ export function useTidalSearch(options: UseTidalSearchOptions) {
         if (seq === searchSeq.current) setIsSearching(false)
       }
     },
-    [searchQuery, searchType, searchSource]
+    [searchQuery, searchType, searchSource, closePages]
   )
 
   // Results for one kind can't show another: look again for what is asked.
@@ -252,12 +267,14 @@ export function useTidalSearch(options: UseTidalSearchOptions) {
 
   // View album detail
   const viewAlbum = useCallback(async (albumId: string) => {
+    const seq = ++pageSeq.current
     setIsLoadingDetail(true)
     setError(null)
 
     const request: OnlineRequest = { kind: "album", id: albumId }
     try {
       const data = await TidalService.getAlbum(albumId)
+      if (seq !== pageSeq.current) return
       if (!data) {
         setError({ title: "This album isn't available", detail: "The store didn't send its songs.", request, retryable: false })
         return
@@ -266,21 +283,24 @@ export function useTidalSearch(options: UseTidalSearchOptions) {
       setNavigationStack((prev) => [...prev, currentView])
       setCurrentView("album")
     } catch (err) {
+      if (seq !== pageSeq.current) return
       console.error("Album failed to load:", err)
       setError({ title: "Couldn't open the album", detail: TRY_AGAIN, request, retryable: true })
     } finally {
-      setIsLoadingDetail(false)
+      if (seq === pageSeq.current) setIsLoadingDetail(false)
     }
   }, [currentView])
 
   // View artist discography
   const viewArtist = useCallback(async (artistId: string) => {
+    const seq = ++pageSeq.current
     setIsLoadingDetail(true)
     setError(null)
 
     const request: OnlineRequest = { kind: "artist", id: artistId }
     try {
       const data = await TidalService.getDiscography(artistId)
+      if (seq !== pageSeq.current) return
       if (!data) {
         setError({ title: "This artist isn't available", detail: "The store didn't send their albums.", request, retryable: false })
         return
@@ -289,10 +309,11 @@ export function useTidalSearch(options: UseTidalSearchOptions) {
       setNavigationStack((prev) => [...prev, currentView])
       setCurrentView("artist")
     } catch (err) {
+      if (seq !== pageSeq.current) return
       console.error("Artist failed to load:", err)
       setError({ title: "Couldn't open the artist", detail: TRY_AGAIN, request, retryable: true })
     } finally {
-      setIsLoadingDetail(false)
+      if (seq === pageSeq.current) setIsLoadingDetail(false)
     }
   }, [currentView])
 
@@ -310,9 +331,10 @@ export function useTidalSearch(options: UseTidalSearchOptions) {
 
   // Go back in navigation
   const goBack = useCallback(() => {
+    dropPendingPage()
     setNavigationStack((stack) => stack.slice(0, -1))
     setCurrentView(previousView)
-  }, [previousView])
+  }, [previousView, dropPendingPage])
 
   // Check if track is already in library
   const isInLibrary = useCallback(
@@ -781,6 +803,7 @@ export function useTidalSearch(options: UseTidalSearchOptions) {
     viewAlbum,
     viewArtist,
     goBack,
+    closePages,
 
     // Downloads
     downloads,
