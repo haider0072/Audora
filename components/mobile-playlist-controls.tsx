@@ -2,7 +2,6 @@
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Badge } from "@/components/ui/badge"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import {
   AlertDialog,
@@ -19,13 +18,11 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
   Search,
   Shuffle,
-  ShuffleIcon as ShuffleOff,
   Music,
   List,
   MoreVertical,
   RotateCcw,
   AlertTriangle,
-  Clock,
   Library,
   Globe,
 } from "lucide-react"
@@ -97,54 +94,50 @@ export function MobilePlaylistControls({
           />
         </div>
 
-        {/* Controls Row */}
-        <div className="flex items-center justify-between gap-2">
-          {/* View Mode Buttons */}
-          <div className="flex items-center gap-1">
+        {/* Controls Row: the view, what the library holds, then shuffle and more */}
+        <div className="flex items-center gap-2">
+          <div className="flex flex-none items-center gap-1" role="group" aria-label="View">
             <Button
               variant={viewMode === "grouped" ? "default" : "outline"}
               size="sm"
               onClick={() => onViewModeChange("grouped")}
-              className="h-8 px-3"
+              className="h-8 w-8 p-0"
+              aria-label="Grouped by artist"
+              aria-pressed={viewMode === "grouped"}
             >
-              <Music className="w-3 h-3 mr-1" />
-              <span className="text-xs">Grouped</span>
+              <Music className="w-3.5 h-3.5" />
             </Button>
             <Button
               variant={viewMode === "list" ? "default" : "outline"}
               size="sm"
               onClick={() => onViewModeChange("list")}
-              className="h-8 px-3"
+              className="h-8 w-8 p-0"
+              aria-label="All songs"
+              aria-pressed={viewMode === "list"}
             >
-              <List className="w-3 h-3 mr-1" />
-              <span className="text-xs">List</span>
+              <List className="w-3.5 h-3.5" />
             </Button>
           </div>
 
-          {/* Song count and duration */}
-          <div className="flex items-center gap-1 text-xs text-muted-foreground">
-            <span>{songCount} song{songCount !== 1 ? "s" : ""}</span>
-            <span>·</span>
-            <Clock className="w-3 h-3" />
-            <span>{totalDuration}</span>
-          </div>
+          <p className="type-data min-w-0 flex-1 truncate text-muted-foreground">
+            {songCount} song{songCount !== 1 ? "s" : ""} · {totalDuration}
+          </p>
 
-          {/* Right Controls */}
-          <div className="flex items-center gap-2">
-            {/* Shuffle Button */}
+          <div className="flex flex-none items-center gap-2">
             <Button
               variant={shuffleMode ? "default" : "outline"}
               size="sm"
               onClick={onShuffleToggle}
-              className="h-8 px-3"
+              className="h-8 w-8 p-0"
+              aria-label="Shuffle"
+              aria-pressed={shuffleMode}
             >
-              {shuffleMode ? <Shuffle className="w-3 h-3" /> : <ShuffleOff className="w-3 h-3" />}
+              <Shuffle className="w-3.5 h-3.5" />
             </Button>
 
-            {/* More Options */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="sm" className="h-8 w-8 p-0 bg-transparent">
+                <Button variant="outline" size="sm" className="h-8 w-8 p-0 bg-transparent" aria-label="More library options">
                   <MoreVertical className="w-3 h-3" />
                 </Button>
               </DropdownMenuTrigger>
@@ -187,15 +180,6 @@ export function MobilePlaylistControls({
             </DropdownMenu>
           </div>
         </div>
-
-        {/* Status Badges */}
-        {shuffleMode && (
-          <div className="flex gap-2">
-            <Badge variant="secondary" className="text-xs">
-              Shuffle Mode
-            </Badge>
-          </div>
-        )}
         </>
         )}
       </div>

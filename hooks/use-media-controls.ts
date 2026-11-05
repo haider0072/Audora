@@ -1,5 +1,5 @@
 import { useEffect } from "react"
-import type { Song } from "@/components/enhanced-playlist"
+import type { Song } from "@/lib/song"
 
 export interface UseMediaControlsOptions {
   currentSong: Song | null

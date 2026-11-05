@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useRef } from "react"
+import { useCallback, useRef, useState } from "react"
 
 const ALPHABET = [
   "#",
@@ -8,18 +8,20 @@ const ALPHABET = [
 ]
 
 interface AlphabetSidebarProps {
-  availableLetters: Set<string>
+  availableLetters: ReadonlySet<string>
   activeLetter: string
   onLetterClick: (letter: string) => void
-  className?: string
+  /** Shown while the list scrolls; otherwise it waits, hidden, for a pointer to come near. */
+  visible: boolean
 }
 
-export function AlphabetSidebar({
-  availableLetters,
-  activeLetter,
-  onLetterClick,
-  className = "",
-}: AlphabetSidebarProps) {
+/**
+ * The A–Z scrubber beside the library: tap a letter, or slide a finger down
+ * it. It stays up for as long as a finger is on it. Styled by
+ * `.library-scrubber` in app/globals.css.
+ */
+export function AlphabetSidebar({ availableLetters, activeLetter, onLetterClick, visible }: AlphabetSidebarProps) {
+  const [scrubbing, setScrubbing] = useState(false)
   const lastTouchLetter = useRef<string | null>(null)
 
   const handleLetterFromPoint = useCallback(
@@ -34,9 +36,10 @@ export function AlphabetSidebar({
     [availableLetters, onLetterClick],
   )
 
+  // `touch-action: none` keeps the page from panning, so these need not cancel anything.
   const handleTouchStart = useCallback(
     (e: React.TouchEvent) => {
-      e.preventDefault()
+      setScrubbing(true)
       lastTouchLetter.current = null
       const touch = e.touches[0]
       handleLetterFromPoint(touch.clientX, touch.clientY)
@@ -46,47 +49,38 @@ export function AlphabetSidebar({
 
   const handleTouchMove = useCallback(
     (e: React.TouchEvent) => {
-      e.preventDefault()
       const touch = e.touches[0]
       handleLetterFromPoint(touch.clientX, touch.clientY)
     },
     [handleLetterFromPoint],
   )
 
+  const handleTouchEnd = useCallback(() => setScrubbing(false), [])
+
   return (
     <div
-      className={`flex flex-col items-center py-1 select-none touch-none ${className}`}
+      className="library-scrubber"
+      data-visible={visible || undefined}
+      data-scrubbing={scrubbing || undefined}
       onTouchStart={handleTouchStart}
       onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
+      onTouchCancel={handleTouchEnd}
     >
-      {ALPHABET.map((letter) => {
-        const isAvailable = availableLetters.has(letter)
-        const isActive = activeLetter === letter
-
-        return (
-          <button
-            key={letter}
-            data-sidebar-letter={letter}
-            onClick={() => isAvailable && onLetterClick(letter)}
-            disabled={!isAvailable}
-            className={`
-              w-5 flex items-center justify-center text-[10px] font-semibold leading-[16px]
-              rounded-sm transition-colors duration-100
-              ${isActive ? "text-primary bg-primary/10 scale-110" : ""}
-              ${isAvailable && !isActive ? "text-muted-foreground/70 hover:text-primary hover:bg-primary/5 cursor-pointer" : ""}
-              ${!isAvailable ? "text-muted-foreground/20 cursor-default" : ""}
-            `}
-            aria-label={`Jump to ${letter === "#" ? "symbols" : letter}`}
-          >
-            {letter}
-          </button>
-        )
-      })}
+      {ALPHABET.map((letter) => (
+        <button
+          key={letter}
+          type="button"
+          className="library-scrubber-letter"
+          data-sidebar-letter={letter}
+          data-active={activeLetter === letter || undefined}
+          onClick={() => onLetterClick(letter)}
+          disabled={!availableLetters.has(letter)}
+          aria-label={`Jump to ${letter === "#" ? "symbols" : letter}`}
+        >
+          {letter}
+        </button>
+      ))}
     </div>
   )
-}
-
-export function getArtistLetter(artist: string): string {
-  const firstChar = artist.charAt(0).toUpperCase()
-  return /[A-Z]/.test(firstChar) ? firstChar : "#"
 }

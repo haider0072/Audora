@@ -481,6 +481,466 @@
   .roll-in {
     animation: roll-in 520ms var(--ease-decay) 60ms backwards;
   }
+
+  /* The library. The list is as long as the whole library but drawn a
+     screenful at a time: each row sits at a fixed place, from heights kept in
+     components/library/library-list.tsx. An artist's header holds the top
+     while their songs pass under it, until the next artist pushes it off. */
+  .library-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    height: 100%;
+    min-height: 0;
+    padding: 0 12px 0 24px;
+  }
+  .library-panel[data-layout="phone"] {
+    flex: 1;
+    padding: 0 4px 0 12px;
+  }
+  .library {
+    display: flex;
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+  }
+  .library-scroll {
+    flex: 1;
+    min-width: 0;
+    height: 100%;
+  }
+  /* Clear of the overlaid scrollbar, with a little room past the last row. */
+  .library-canvas {
+    position: relative;
+    margin: 0 12px 24px 0;
+  }
+  .library[data-layout="phone"] .library-canvas {
+    margin: 0 8px 16px 0;
+  }
+  .library-group,
+  .library-slot {
+    position: absolute;
+    left: 0;
+    right: 0;
+  }
+  .library-sticky {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+  }
+
+  .library-artist {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 12px;
+    height: 100%;
+    padding: 0 10px 8px;
+    background: hsl(var(--background) / 0.82);
+    -webkit-backdrop-filter: blur(16px);
+    backdrop-filter: blur(16px);
+  }
+  .library-artist-name {
+    @apply font-display;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 1.0625rem; /* 17px */
+    font-weight: 600;
+    letter-spacing: -0.015em;
+  }
+  .library-album {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    height: 100%;
+    padding: 0 10px;
+  }
+  .library-album-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.6875rem; /* 11px */
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: hsl(var(--muted-foreground));
+  }
+  .library-count {
+    @apply font-mono tabular-nums;
+    flex: none;
+    font-size: 0.6875rem; /* 11px */
+    color: hsl(var(--muted-foreground));
+  }
+
+  /* A song. Hover tints it; the current song takes the song's colour, and its
+     number turns into an arc while it loads and three bars while it plays.
+     The two tints are inset a pixel so neighbouring rows never touch. */
+  .library-row {
+    position: relative;
+    display: flex;
+    align-items: center;
+    height: 100%;
+    border-radius: calc(var(--radius) - 2px);
+    isolation: isolate;
+    -webkit-tap-highlight-color: transparent;
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  .library-row::before,
+  .library-row::after {
+    content: "";
+    position: absolute;
+    inset: 1px 0;
+    z-index: -1;
+    border-radius: inherit;
+    opacity: 0;
+    pointer-events: none;
+    transition:
+      opacity var(--motion-release) var(--ease-release),
+      transform var(--motion-release) var(--ease-release);
+  }
+  .library-row::before {
+    background: hsl(var(--foreground) / 0.06);
+  }
+  .library-row::after {
+    background: color-mix(in oklab, var(--song-accent) 17%, transparent);
+    transform: scaleX(0.96);
+  }
+  .library-row[data-playback]::after {
+    opacity: 1;
+    transform: none;
+    transition-duration: var(--motion-attack);
+    transition-timing-function: var(--ease-attack);
+  }
+  .library-row-main {
+    display: grid;
+    grid-template-columns: 22px 40px minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 12px;
+    flex: 1;
+    min-width: 0;
+    height: 100%;
+    padding: 0 4px 0 10px;
+    border-radius: inherit;
+    text-align: left;
+    transition: transform var(--motion-pluck) var(--ease-pluck);
+  }
+  .library-row-main:active {
+    transform: scale(0.985);
+    transition: transform var(--motion-attack) var(--ease-attack);
+  }
+  .library-row-main:focus-visible,
+  .library-row-more:focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: -2px;
+  }
+  .library-row-index {
+    display: grid;
+    place-items: center;
+    width: 22px;
+    height: 22px;
+    color: hsl(var(--muted-foreground));
+  }
+  .library-row-index > * {
+    grid-area: 1 / 1;
+    transition: opacity var(--motion-decay) var(--ease-decay);
+  }
+  .library-row-number {
+    @apply font-mono tabular-nums;
+    font-size: 0.6875rem; /* 11px */
+  }
+  .library-row-arc {
+    width: 18px;
+    height: 18px;
+    fill: none;
+    stroke: var(--row-mark, var(--song-accent));
+    stroke-width: 2.2;
+    stroke-linecap: round;
+    stroke-dasharray: 16 60;
+    opacity: 0;
+  }
+  .library-row-bars {
+    display: flex;
+    align-items: flex-end;
+    gap: 2px;
+    height: 12px;
+    opacity: 0;
+  }
+  .library-row-bars > i {
+    width: 3px;
+    height: 100%;
+    border-radius: 2px;
+    background: var(--row-mark, var(--song-accent));
+    transform: scaleY(0.4);
+    transform-origin: bottom;
+  }
+  .library-row[data-playback] .library-row-number {
+    opacity: 0;
+  }
+  .library-row[data-playback="loading"] .library-row-arc {
+    opacity: 1;
+    animation: play-arc-turn 0.9s linear infinite;
+  }
+  .library-row[data-playback="playing"] .library-row-bars,
+  .library-row[data-playback="paused"] .library-row-bars {
+    opacity: 1;
+  }
+  .library-row[data-playback="playing"] .library-row-bars > i {
+    animation: library-bar 1s ease-in-out infinite alternate;
+  }
+  .library-row[data-playback="playing"] .library-row-bars > i:nth-child(2) {
+    animation-duration: 0.8s;
+    animation-delay: -0.4s;
+  }
+  .library-row[data-playback="playing"] .library-row-bars > i:nth-child(3) {
+    animation-duration: 1.2s;
+    animation-delay: -0.7s;
+  }
+  .library-row-text {
+    display: grid;
+    min-width: 0;
+  }
+  .library-row-title,
+  .library-row-sub {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .library-row-title {
+    font-size: 0.90625rem; /* 14.5px */
+    font-weight: 500;
+    transition: color var(--motion-release) var(--ease-release);
+  }
+  .library-row[data-playback] .library-row-title {
+    color: var(--song-accent);
+    transition-duration: var(--motion-attack);
+  }
+  .library-row-sub {
+    font-size: 0.78125rem; /* 12.5px */
+    color: hsl(var(--muted-foreground));
+  }
+  .library-row-duration {
+    @apply font-mono tabular-nums;
+    font-size: 0.71875rem; /* 11.5px */
+    color: hsl(var(--muted-foreground));
+  }
+  /* ⋯ waits for the pointer on the desktop; a finger needs it in sight. */
+  .library-row-more {
+    display: grid;
+    place-items: center;
+    flex: none;
+    width: 34px;
+    height: 34px;
+    margin-right: 4px;
+    border-radius: 9999px;
+    color: hsl(var(--muted-foreground));
+    opacity: 0;
+    transition:
+      opacity var(--motion-release) var(--ease-release),
+      background-color var(--motion-release) var(--ease-release),
+      color var(--motion-release) var(--ease-release);
+  }
+  .library-row-more > svg {
+    width: 16px;
+    height: 16px;
+  }
+  .library-row-more:focus-visible,
+  .library-row-more[data-state="open"],
+  .library-row[data-layout="phone"] .library-row-more {
+    opacity: 1;
+  }
+  .library-row-more[data-state="open"] {
+    background-color: hsl(var(--foreground) / 0.08);
+    color: hsl(var(--foreground));
+  }
+  @media (hover: hover) {
+    .library-row:hover::before {
+      opacity: 1;
+      transition-duration: var(--motion-attack);
+    }
+    .library-row:hover .library-row-more {
+      opacity: 1;
+      transition-duration: var(--motion-attack);
+    }
+    .library-row-more:hover {
+      background-color: hsl(var(--foreground) / 0.08);
+      color: hsl(var(--foreground));
+      transition-duration: var(--motion-attack);
+    }
+  }
+  @media (hover: none) {
+    .library-row-more {
+      opacity: 1;
+    }
+  }
+
+  /* On the phone the number gives way to the cover; while a song loads or
+     plays, its arc or bars sit on the cover, over a shade of ink. */
+  .library-row[data-layout="phone"] .library-row-main {
+    grid-template-columns: 40px minmax(0, 1fr) auto;
+    padding-left: 8px;
+  }
+  .library-row[data-layout="phone"] .library-row-art,
+  .library-row[data-layout="phone"] .library-row-index {
+    grid-area: 1 / 1;
+  }
+  .library-row[data-layout="phone"] .library-row-index {
+    --row-mark: hsl(var(--paper));
+    z-index: 1;
+    width: 40px;
+    height: 40px;
+    border-radius: calc(var(--radius) - 2px);
+    background: hsl(var(--ink-0) / 0.55);
+    opacity: 0;
+  }
+  .library-row[data-layout="phone"][data-playback] .library-row-index {
+    opacity: 1;
+  }
+  .library-row[data-layout="phone"] .library-row-number {
+    display: none;
+  }
+
+  /* The A–Z scrubber: out of sight until the list moves or a pointer comes
+     near. A finger can only grab it while it shows. */
+  .library-scrubber {
+    display: flex;
+    flex: none;
+    flex-direction: column;
+    justify-content: center;
+    width: 20px;
+    padding-block: 8px;
+    touch-action: none;
+    -webkit-user-select: none;
+    user-select: none;
+    opacity: 0;
+    transition: opacity var(--motion-release) var(--ease-release);
+  }
+  .library-scrubber[data-visible],
+  .library-scrubber[data-scrubbing],
+  .library-scrubber:focus-within {
+    opacity: 1;
+    transition-duration: var(--motion-attack);
+  }
+  @media (hover: hover) {
+    .library-scrubber:hover {
+      opacity: 1;
+      transition-duration: var(--motion-attack);
+    }
+  }
+  @media (hover: none) {
+    .library-scrubber:not([data-visible]):not([data-scrubbing]) {
+      pointer-events: none;
+    }
+  }
+  .library-scrubber-letter {
+    @apply font-mono;
+    flex: 1 1 0;
+    min-height: 0;
+    max-height: 18px;
+    font-size: 0.625rem; /* 10px */
+    line-height: 1;
+    color: hsl(var(--muted-foreground));
+    transition: color var(--motion-release) var(--ease-release);
+  }
+  .library-scrubber-letter:disabled {
+    opacity: 0.3;
+  }
+  .library-scrubber-letter[data-active] {
+    color: var(--song-accent);
+    font-weight: 700;
+    transition-duration: var(--motion-attack);
+  }
+  .library-scrubber-letter:focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: -1px;
+    border-radius: 4px;
+  }
+
+  /* Where a jump landed: a tint in the song's colour that holds, then fades. */
+  .library-slot[data-flash]::after,
+  .library-sticky[data-flash]::after {
+    content: "";
+    position: absolute;
+    inset: 1px 0;
+    z-index: 1;
+    border-radius: calc(var(--radius) - 2px);
+    background: color-mix(in oklab, var(--song-accent) 20%, transparent);
+    box-shadow: inset 0 0 0 1.5px color-mix(in oklab, var(--song-accent) 70%, transparent);
+    pointer-events: none;
+    animation: library-flash 1600ms var(--ease-release) forwards;
+  }
+
+  .library-empty {
+    display: grid;
+    justify-items: center;
+    gap: 6px;
+    padding: 64px 24px;
+    text-align: center;
+  }
+  .library-empty-title {
+    @apply font-display;
+    font-size: 1.0625rem; /* 17px */
+    font-weight: 600;
+  }
+  .library-empty-hint {
+    max-width: 32ch;
+    font-size: 0.875rem; /* 14px */
+    color: hsl(var(--muted-foreground));
+  }
+
+  .library-import {
+    display: grid;
+    gap: 8px;
+    padding: 12px 14px;
+    border-radius: var(--radius);
+    background: hsl(var(--foreground) / 0.05);
+    font-size: 0.875rem; /* 14px */
+  }
+  .library-import-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .library-import-head .type-data {
+    color: hsl(var(--muted-foreground));
+  }
+  .library-import-track {
+    height: 4px;
+    border-radius: 4px;
+    overflow: hidden;
+    background: hsl(var(--foreground) / 0.12);
+  }
+  .library-import-fill {
+    height: 100%;
+    background: hsl(var(--primary));
+    transform-origin: left;
+    transition: transform var(--motion-decay) var(--ease-decay);
+  }
+}
+
+@keyframes library-bar {
+  from {
+    transform: scaleY(0.25);
+  }
+  to {
+    transform: scaleY(1);
+  }
+}
+
+@keyframes library-flash {
+  0%,
+  40% {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
 }
 
 @keyframes wordmark-ring-turn {
@@ -535,11 +995,16 @@
   .song-scope[data-playing] .wordmark-ring {
     animation: none;
   }
-  .play-button[data-loading] .play-button-arc {
+  .play-button[data-loading] .play-button-arc,
+  .library-row[data-playback="loading"] .library-row-arc {
     animation-duration: 2.4s;
   }
-  .quality[data-rise] .quality-bars > span {
+  .quality[data-rise] .quality-bars > span,
+  .library-row[data-playback="playing"] .library-row-bars > i {
     animation: none;
+  }
+  .library-row-main:active {
+    transform: none;
   }
   .roll-out {
     animation: fade-out var(--motion-attack) linear forwards;

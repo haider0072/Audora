@@ -7,7 +7,7 @@ import { QualityLabel } from "@/components/player/quality-label"
 import { formatKilohertz } from "@/lib/audio-quality"
 import { SpotifyService, type SpotifyResult } from "@/lib/spotify-service"
 import { Loader2, User, X, RefreshCw, AlertCircle, ExternalLink, Disc3, Music, Calendar, HardDrive, FileAudio, Volume2 } from "lucide-react"
-import type { Song } from "./enhanced-playlist"
+import type { Song } from "@/lib/song"
 
 interface ArtistInfoDisplayProps {
   isVisible: boolean

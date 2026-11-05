@@ -35,6 +35,7 @@ interface StoredSong {
   artists?: string[]
   album?: string
   year?: string
+  trackNumber?: string
   genre?: string
   bitrate?: number
   sampleRate?: number

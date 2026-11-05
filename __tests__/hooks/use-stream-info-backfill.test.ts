@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { act, renderHook, waitFor } from '@testing-library/react'
 
-import type { Song } from '@/components/enhanced-playlist'
+import type { Song } from '@/lib/song'
 import type { ByteSource } from '@/lib/metadata-extractor'
 import { useStreamInfoBackfill } from '@/hooks/use-stream-info-backfill'
 import { byteSource } from '@/testing/byte-source'

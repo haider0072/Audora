@@ -1,4 +1,4 @@
-import type { Song } from "@/components/enhanced-playlist"
+import type { Song } from "@/lib/song"
 import { trackSyncKey } from "@/lib/sync/song-match"
 
 import type { CloudSong, CloudSongRef } from "./types"
@@ -109,7 +109,12 @@ export function mergeCloudLibrary(current: Song[], cloud: readonly CloudSong[]):
 
     const match = track ? cloudByTrack.get(track) : undefined
     const wanted = match ? cloudRef(match) : undefined
-    merged.push(sameRef(song.cloud, wanted) ? song : { ...song, cloud: wanted })
+    // Songs saved on this device before track numbers were kept came back
+    // without theirs; the cloud copy of the same file still has it.
+    const trackNumber = song.trackNumber ?? match?.trackNumber
+    merged.push(
+      sameRef(song.cloud, wanted) && trackNumber === song.trackNumber ? song : { ...song, cloud: wanted, trackNumber },
+    )
   }
 
   for (const [track, entry] of cloudByTrack) {

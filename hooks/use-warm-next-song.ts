@@ -3,7 +3,7 @@
 import { useEffect } from "react"
 
 import { warmSong } from "@/lib/song-warmup"
-import type { Song } from "@/components/enhanced-playlist"
+import type { Song } from "@/lib/song"
 
 /**
  * Once the current song has been playing for a moment, warm the one after

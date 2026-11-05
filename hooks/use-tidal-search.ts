@@ -8,7 +8,7 @@ import { PlaylistStorage } from "@/lib/playlist-storage"
 import { storedArtRef } from "@/lib/album-art-ref"
 import { embedFlacMetadata } from "@/lib/flac-art-embedder"
 import { hasRoomFor, StorageFullError, formatBytes } from "@/lib/storage-quota"
-import type { Song } from "@/components/enhanced-playlist"
+import type { Song } from "@/lib/song"
 import type {
   TidalTrack,
   TidalAlbum,

@@ -4,7 +4,7 @@ import { useState, type FormEvent } from "react"
 import { Cloud, CloudOff, Loader2, LogOut, RefreshCw } from "lucide-react"
 
 import { CloudUploadSection } from "@/components/cloud-upload-section"
-import type { Song } from "@/components/enhanced-playlist"
+import type { Song } from "@/lib/song"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"

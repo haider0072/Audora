@@ -18,7 +18,9 @@ import { QualityLabel } from "@/components/player/quality-label"
 import { RollingText } from "@/components/player/rolling-text"
 import { SeekBar } from "@/components/player/seek-bar"
 import { SkipIcon, TransportButton } from "@/components/player/transport-button"
-import { EnhancedPlaylist, type PlaylistScrollTarget } from "@/components/enhanced-playlist"
+import { LibraryPanel } from "@/components/library/library-panel"
+import type { LibraryJump } from "@/components/library/library-list"
+import { rowPlayback } from "@/components/library/song-row"
 import { RefinedEqualizer, type EqualizerBand } from "@/components/refined-equalizer"
 import { AlbumArtBackground } from "@/components/album-art-background"
 import { AlbumArtDisplay } from "@/components/album-art-display"
@@ -38,7 +40,9 @@ import { useTidalSearch } from "@/hooks/use-tidal-search"
 import { OnlineSearchSidebar } from "@/components/dab/online-search-sidebar"
 import { AlbumArtCache } from "@/lib/album-art-cache"
 import { getAllPresets, type EqPreset } from "@/lib/eq-presets"
+import { matchesQuery } from "@/lib/library-rows"
 import { resetPlaybackTime } from "@/lib/playback-time-store"
+import type { Song } from "@/lib/song"
 import { AddMusicControls } from "@/components/add-music-control"
 import { FullscreenPlayer } from "@/components/fullscreen-player"
 import { SyncPanel } from "@/components/sync-panel"
@@ -81,19 +85,15 @@ export default function EnhancedMusicPlayer() {
   const [showSync, setShowSync] = useState(false);
   const [showCloud, setShowCloud] = useState(false);
   const [searchQuery, setSearchQuery] = useState("")
-  const [playlistScrollTarget, setPlaylistScrollTarget] = useState<PlaylistScrollTarget | null>(null)
+  const [libraryJump, setLibraryJump] = useState<LibraryJump | null>(null)
 
-  const jumpToArtist = useCallback((artist: string) => {
-    if (!artist) return
+  /** Show a song's artist or album in the library, clearing a search that would hide it. */
+  const revealInLibrary = useCallback((to: LibraryJump["to"], song: Song) => {
     setSidebarMode("library")
-    setPlaylistScrollTarget({ type: "artist", name: artist, nonce: Date.now() })
+    setSearchQuery((query) => (matchesQuery(song, query) ? query : ""))
+    setLibraryJump({ to, song })
   }, [])
-
-  const jumpToAlbum = useCallback((album: string) => {
-    if (!album) return
-    setSidebarMode("library")
-    setPlaylistScrollTarget({ type: "album", name: album, nonce: Date.now() })
-  }, [])
+  const clearLibraryJump = useCallback(() => setLibraryJump(null), [])
 
   const albumArtRef = useRef<HTMLDivElement>(null)
   const audioRef = useRef<HTMLAudioElement>(null)
@@ -148,8 +148,9 @@ export default function EnhancedMusicPlayer() {
     songs, setSongs, currentSong, setCurrentSong,
     shuffleMode, setShuffleMode, viewMode, setViewMode,
     sortedSongs, peekNextSong,
-    toggleShuffle, removeSong, resetPlaylist, playNext,
+    toggleShuffle, removeSong, resetPlaylist, playNext, addToQueue,
   } = playlist
+  const libraryActions = useMemo(() => ({ playNext, addToQueue, removeSong }), [playNext, addToQueue, removeSong])
 
   const {
     showEqualizer, setShowEqualizer,
@@ -618,7 +619,7 @@ export default function EnhancedMusicPlayer() {
                               {displaySong.artist && (
                                 <button
                                   type="button"
-                                  onClick={() => jumpToArtist(displaySong.artist!)}
+                                  onClick={() => revealInLibrary("artist", displaySong)}
                                   className={JUMP_LINK_CLASS}
                                   title={`Jump to ${displaySong.artist}`}
                                 >
@@ -629,7 +630,7 @@ export default function EnhancedMusicPlayer() {
                               {displaySong.album && (
                                 <button
                                   type="button"
-                                  onClick={() => jumpToAlbum(displaySong.album!)}
+                                  onClick={() => revealInLibrary("album", displaySong)}
                                   className={JUMP_LINK_CLASS}
                                   title={`Jump to ${displaySong.album}`}
                                 >
@@ -766,24 +767,28 @@ export default function EnhancedMusicPlayer() {
             )}
           </div>
           <div className="h-full bg-transparent overflow-hidden">
-            <EnhancedPlaylist
-              songs={songs}
-              currentSong={displaySong}
-              onSongSelect={handleSongSelect}
-              onSongRemove={removeSong}
-              onSongPlayNext={playNext}
-              isLoading={isLoadingSongs || isRestoringPlaylist}
-              loadingProgress={loadingProgress}
-              viewMode={viewMode}
-              onViewModeChange={setViewMode}
-              sortedSongs={sortedSongs}
-              sidebarMode={sidebarMode}
-              onSidebarModeChange={setSidebarMode}
-              activeDownloadCount={tidalSearch.activeDownloadCount}
-              onlineSearchContent={<OnlineSearchSidebar dab={tidalSearch} hideSearch />}
-              searchQuery={searchQuery}
-              scrollTarget={playlistScrollTarget}
-            />
+            {sidebarMode === "online" ? (
+              <div className="flex h-full flex-col px-6">
+                <div className="min-h-0 flex-1">
+                  <OnlineSearchSidebar dab={tidalSearch} hideSearch />
+                </div>
+              </div>
+            ) : (
+              <LibraryPanel
+                layout="desktop"
+                songs={sortedSongs}
+                viewMode={viewMode}
+                query={searchQuery}
+                currentSongId={displaySong?.id}
+                playback={rowPlayback(isLoadingSong, isPlaying)}
+                loading={isLoadingSongs || isRestoringPlaylist}
+                importProgress={isLoadingSongs ? loadingProgress : null}
+                onSelect={handleSongSelect}
+                actions={libraryActions}
+                jump={libraryJump}
+                onJumpDone={clearLibraryJump}
+              />
+            )}
           </div>
         </div>
       </div>
@@ -800,7 +805,6 @@ export default function EnhancedMusicPlayer() {
         songs={songs}
         sortedSongs={sortedSongs}
         viewMode={viewMode}
-        onViewModeChange={setViewMode}
         onPlayPause={togglePlayPause}
         onSkipNext={skipToNext}
         onSkipPrevious={skipToPrevious}
@@ -809,8 +813,7 @@ export default function EnhancedMusicPlayer() {
         onToggleMute={toggleMute}
         onToggleShuffle={toggleShuffle}
         onSongSelect={handleSongSelect}
-        onSongRemove={removeSong}
-        onSongPlayNext={playNext}
+        libraryActions={libraryActions}
         onShowEqualizer={() => setShowEqualizer(true)}
         onShowLyrics={() => setActiveView("lyrics")}
         onShowYoutube={() => setActiveView("youtube")}

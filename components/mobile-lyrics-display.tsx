@@ -7,7 +7,7 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { LyricsService, type LyricsData } from "@/lib/lyrics-service"
 import { Loader2, Mic, X, RefreshCw } from "lucide-react"
 import { usePlaybackTime } from "@/hooks/use-playback-time"
-import type { Song } from "@/components/enhanced-playlist"
+import type { Song } from "@/lib/song"
 
 interface MobileLyricsDisplayProps {
   isOpen: boolean

@@ -4,7 +4,7 @@ import { StorageManager } from "@/lib/storage"
 import { PlaylistStorage } from "@/lib/playlist-storage"
 import { isStoredArtRef, storedArtRef } from "@/lib/album-art-ref"
 import { requestPersistentStorage, formatBytes } from "@/lib/storage-quota"
-import type { Song } from "@/components/enhanced-playlist"
+import type { Song } from "@/lib/song"
 import type { EqualizerBand } from "@/components/refined-equalizer"
 import { isValidPreset, type EqPreset } from "@/lib/eq-presets"
 import { isCloudOnlySong } from "@/lib/cloud/merge"
@@ -244,6 +244,7 @@ export function usePlaylistPersistence(
       artists: song.artists,
       album: song.album,
       year: song.year,
+      trackNumber: song.trackNumber,
       genre: song.genre,
       bitrate: song.bitrate,
       sampleRate: song.sampleRate,

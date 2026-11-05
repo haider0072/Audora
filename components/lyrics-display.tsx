@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button"
 import { LyricsService, type LyricsData, type LyricLine } from "@/lib/lyrics-service"
 import { Loader2, Mic, X, RefreshCw } from "lucide-react"
 import { usePlaybackTime } from "@/hooks/use-playback-time"
-import type { Song } from "./enhanced-playlist"
+import type { Song } from "@/lib/song"
 
 interface LyricsDisplayProps {
   isVisible: boolean

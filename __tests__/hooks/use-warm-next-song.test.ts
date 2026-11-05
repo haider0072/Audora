@@ -1,7 +1,7 @@
 import { renderHook } from "@testing-library/react"
 
 import { useWarmNextSong } from "@/hooks/use-warm-next-song"
-import type { Song } from "@/components/enhanced-playlist"
+import type { Song } from "@/lib/song"
 import { warmSong } from "@/lib/song-warmup"
 
 jest.mock("@/lib/song-warmup", () => ({ warmSong: jest.fn() }))

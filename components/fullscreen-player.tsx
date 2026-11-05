@@ -8,12 +8,15 @@ import {
 } from "lucide-react"
 import { AlbumArtDisplay } from "./album-art-display"
 import { AlbumArtBackground } from "./album-art-background"
-import { EnhancedPlaylist, type Song } from "./enhanced-playlist"
+import { LibraryPanel } from "./library/library-panel"
+import type { LibraryActions } from "./library/library-list"
+import { rowPlayback } from "./library/song-row"
+import type { Song } from "@/lib/song"
 import { PlayButton } from "./player/play-button"
 import { QualityLabel } from "./player/quality-label"
 import { SeekBar } from "./player/seek-bar"
 import { SkipIcon, TransportButton } from "./player/transport-button"
-import { useState, useEffect, useLayoutEffect, useCallback, useRef } from "react"
+import { useState, useEffect, useLayoutEffect, useRef } from "react"
 
 interface FullscreenPlayerProps {
   isOpen: boolean
@@ -29,7 +32,6 @@ interface FullscreenPlayerProps {
   songs: Song[]
   sortedSongs: Song[]
   viewMode: "grouped" | "list"
-  onViewModeChange: (mode: "grouped" | "list") => void
   onPlayPause: () => void
   onSkipNext: () => void
   onSkipPrevious: () => void
@@ -38,8 +40,8 @@ interface FullscreenPlayerProps {
   onToggleMute: () => void
   onToggleShuffle: () => void
   onSongSelect: (song: Song) => void
-  onSongRemove: (songId: string) => void
-  onSongPlayNext: (song: Song) => void
+  /** What a song's menu in the library can do. */
+  libraryActions: LibraryActions
   onShowEqualizer: () => void
   onShowLyrics: () => void
   onShowYoutube: () => void
@@ -61,7 +63,6 @@ export function FullscreenPlayer({
   songs,
   sortedSongs,
   viewMode,
-  onViewModeChange,
   onPlayPause,
   onSkipNext,
   onSkipPrevious,
@@ -70,8 +71,7 @@ export function FullscreenPlayer({
   onToggleMute,
   onToggleShuffle,
   onSongSelect,
-  onSongRemove,
-  onSongPlayNext,
+  libraryActions,
   onShowEqualizer,
   onShowLyrics,
   onShowYoutube,
@@ -163,16 +163,13 @@ export function FullscreenPlayer({
     return () => window.removeEventListener("keydown", handleKey)
   }, [isOpen, onClose])
 
-  const handleSongSelect = useCallback((song: Song) => {
-    onSongSelect(song)
-  }, [onSongSelect])
-
   if (!mounted) return null
 
   const hasSourceRect = !!sourceRectRef.current
 
   return (
-    <div className="fixed inset-0 z-50 bg-black">
+    // Always night: the dark theme's colours, and the song's colours for ink, whatever the app's theme.
+    <div className="song-scope dark fixed inset-0 z-50 bg-black">
       {/* Background - instant on open, fades out on close */}
       <div className={`absolute inset-0 ${!isOpen && mounted ? "transition-opacity duration-500 ease-out opacity-0" : ""}`}>
         <AlbumArtBackground
@@ -278,15 +275,14 @@ export function FullscreenPlayer({
           </Button>
         </div>
         <div className="h-[calc(100%-56px)] overflow-hidden">
-          <EnhancedPlaylist
-            songs={songs}
-            currentSong={currentSong}
-            onSongSelect={handleSongSelect}
-            onSongRemove={onSongRemove}
-            onSongPlayNext={onSongPlayNext}
+          <LibraryPanel
+            layout="desktop"
+            songs={sortedSongs}
             viewMode={viewMode}
-            onViewModeChange={onViewModeChange}
-            sortedSongs={sortedSongs}
+            currentSongId={currentSong?.id}
+            playback={rowPlayback(isLoading, isPlaying)}
+            onSelect={onSongSelect}
+            actions={libraryActions}
           />
         </div>
       </div>

@@ -1,6 +1,6 @@
 import { renderHook, act } from '@testing-library/react'
 import { usePlaylistManager } from '@/hooks/use-playlist-manager'
-import type { Song } from '@/components/enhanced-playlist'
+import type { Song } from '@/lib/song'
 
 // Mock dependencies
 jest.mock('@/hooks/use-toast', () => ({
@@ -386,6 +386,55 @@ describe('usePlaylistManager', () => {
       })
 
       expect(result.current.currentSong).toBe(current)
+    })
+  })
+
+  describe('the queue', () => {
+    function withSongs() {
+      const songs = [makeSong({ id: '1' }), makeSong({ id: '2' }), makeSong({ id: '3' }), makeSong({ id: '4' })]
+      const { result } = renderHook(() => usePlaylistManager())
+      act(() => {
+        result.current.setSongs(songs)
+        result.current.setCurrentSong(songs[0])
+      })
+      return { result, songs }
+    }
+
+    it('plays queued songs in the order they were added, before the library goes on', () => {
+      const { result, songs } = withSongs()
+      act(() => {
+        result.current.addToQueue(songs[3])
+        result.current.addToQueue(songs[2])
+      })
+      expect(result.current.peekNextSong()?.id).toBe('4')
+
+      act(() => result.current.notifySongSelected(songs[3], true))
+      expect(result.current.peekNextSong()?.id).toBe('3')
+
+      act(() => result.current.notifySongSelected(songs[2], true))
+      expect(result.current.peekNextSong()?.id).toBe('2')
+    })
+
+    it('moves a song queued again to the end', () => {
+      const { result, songs } = withSongs()
+      act(() => {
+        result.current.addToQueue(songs[3])
+        result.current.addToQueue(songs[2])
+        result.current.addToQueue(songs[3])
+      })
+      act(() => result.current.notifySongSelected(songs[2], true))
+      expect(result.current.peekNextSong()?.id).toBe('4')
+      act(() => result.current.notifySongSelected(songs[3], true))
+      expect(result.current.peekNextSong()?.id).toBe('2')
+    })
+
+    it('lets "play next" go ahead of what is already queued', () => {
+      const { result, songs } = withSongs()
+      act(() => {
+        result.current.addToQueue(songs[3])
+        result.current.playNext(songs[2])
+      })
+      expect(result.current.peekNextSong()?.id).toBe('3')
     })
   })
 })

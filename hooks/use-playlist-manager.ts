@@ -2,7 +2,7 @@ import { useState, useCallback, useMemo } from "react"
 import { toast } from "@/hooks/use-toast"
 import { PlaylistStorage } from "@/lib/playlist-storage"
 import { AlbumArtCache } from "@/lib/album-art-cache"
-import type { Song } from "@/components/enhanced-playlist"
+import type { Song } from "@/lib/song"
 import { isCloudOnlySong } from "@/lib/cloud/merge"
 
 export interface UsePlaylistManagerOptions {
@@ -48,6 +48,8 @@ export interface UsePlaylistManagerReturn {
   removeSong: (songId: string) => Promise<void>
   resetPlaylist: () => Promise<void>
   playNext: (song: Song) => void
+  /** Queue a song after the ones already queued. */
+  addToQueue: (song: Song) => void
 }
 
 /** `song` with its list entry's stream info, or `song` itself when they already agree. */
@@ -303,6 +305,15 @@ export function usePlaylistManager(options: UsePlaylistManagerOptions = {}): Use
   }, [])
 
   /**
+   * Add a song to the end of the manual queue (FIFO).
+   * If the song is already queued, it moves to the end.
+   */
+  const addToQueue = useCallback((song: Song) => {
+    setManualQueue((prev) => [...prev.filter((s) => s.id !== song.id), song])
+    toast({ title: "Added to queue", description: song.title })
+  }, [])
+
+  /**
    * Remove a song from the playlist
    */
   const removeSong = useCallback(
@@ -452,5 +463,6 @@ export function usePlaylistManager(options: UsePlaylistManagerOptions = {}): Use
     removeSong,
     resetPlaylist,
     playNext,
+    addToQueue,
   }
 }

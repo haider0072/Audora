@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react"
 
-import type { Song } from "@/components/enhanced-playlist"
+import type { Song } from "@/lib/song"
 import { clearLibrarySnapshot, readLibrarySnapshot, saveLibrarySnapshot } from "@/lib/cloud/library-snapshot"
 import { mergeCloudLibrary } from "@/lib/cloud/merge"
 import { preconnect } from "@/lib/cloud/preconnect"
