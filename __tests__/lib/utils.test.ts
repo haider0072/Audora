@@ -1,10 +1,22 @@
-import { formatCount, formatTime, formatTotalDuration, waitForCanPlay } from '@/lib/utils'
+import { formatCount, formatDetails, formatTime, formatTotalDuration, waitForCanPlay } from '@/lib/utils'
 
 describe('formatCount', () => {
   it('names one of a thing in the singular, and any other count in the plural', () => {
     expect(formatCount(1, 'song')).toBe('1 song')
     expect(formatCount(12, 'album')).toBe('12 albums')
     expect(formatCount(0, 'song')).toBe('0 songs')
+  })
+})
+
+describe('formatDetails', () => {
+  it('puts the facts on one line, leaving out the ones missing', () => {
+    expect(formatDetails(2019, 'K-Pop', '12 songs')).toBe('2019 · K-Pop · 12 songs')
+    expect(formatDetails(undefined, '', null, false, '12 songs')).toBe('12 songs')
+    expect(formatDetails()).toBe('')
+  })
+
+  it('keeps a count of nothing, which is a fact', () => {
+    expect(formatDetails(0, 'songs')).toBe('0 · songs')
   })
 })
 

@@ -13,11 +13,11 @@ function song(id: string, fields: Partial<Song> = {}): Song {
 }
 
 /**
- * In playback order. Grouped, with desktop heights (artist 52, album 32,
- * song 56), the rows start at:
- *   0 Air 0 · 1 Moon Safari 52 · 2 La femme d'argent 84 · 3 Sexy Boy 140 ·
- *   4 Beach House 196 · 5 Bloom 248 · 6 Myth 280 ·
- *   7 Cocteau Twins 336 · 8 Treasure 388 · 9 Lorelei 420 · 10 Heaven or Las Vegas 476 · 11 Cherry-coloured Funk 508
+ * In playback order. Grouped, with desktop heights (artist 56, album 32,
+ * song 64), the rows start at:
+ *   0 Air 0 · 1 Moon Safari 56 · 2 La femme d'argent 88 · 3 Sexy Boy 152 ·
+ *   4 Beach House 216 · 5 Bloom 272 · 6 Myth 304 ·
+ *   7 Cocteau Twins 368 · 8 Treasure 424 · 9 Lorelei 456 · 10 Heaven or Las Vegas 520 · 11 Cherry-coloured Funk 552
  */
 const LIBRARY: Song[] = [
   song("air-1", { title: "La femme d'argent", artist: "Air", album: "Moon Safari", trackNumber: "1" }),
@@ -79,11 +79,11 @@ describe("LibraryList, grouped", () => {
     renderList()
     const slot = (title: string) => screen.getByText(title).closest(".library-slot") as HTMLElement
     const group = (artist: string) => screen.getByRole("heading", { level: 3, name: artist }).closest(".library-group") as HTMLElement
-    expect(group("Cocteau Twins").style.top).toBe("336px")
-    expect(group("Cocteau Twins").style.height).toBe("228px")
+    expect(group("Cocteau Twins").style.top).toBe("368px")
+    expect(group("Cocteau Twins").style.height).toBe("248px")
     // Inside its artist's block, from the block's top.
-    expect(slot("Cherry-coloured Funk").style.top).toBe("172px")
-    expect(slot("Cherry-coloured Funk").style.height).toBe("56px")
+    expect(slot("Cherry-coloured Funk").style.top).toBe("184px")
+    expect(slot("Cherry-coloured Funk").style.height).toBe("64px")
   })
 
   it("marks the current song with how it is doing, and no other", () => {
@@ -156,7 +156,7 @@ describe("LibraryList, moving around", () => {
   it("jumps to a letter at once", () => {
     renderList()
     fireEvent.click(screen.getByRole("button", { name: "Jump to C" }))
-    expect(scrollTo).toHaveBeenLastCalledWith({ top: 336, behavior: "instant" })
+    expect(scrollTo).toHaveBeenLastCalledWith({ top: 368, behavior: "instant" })
   })
 
   it("offers only the letters the library has", () => {
@@ -178,7 +178,7 @@ describe("LibraryList, moving around", () => {
     fireEvent.click(screen.getByRole("button", { name: "Jump to C" }))
     rerenderWith({ viewMode: "list" })
     // In the list view Lorelei is the fourth song.
-    expect(scrollTo).toHaveBeenLastCalledWith({ top: 3 * 56, behavior: "instant" })
+    expect(scrollTo).toHaveBeenLastCalledWith({ top: 3 * 64, behavior: "instant" })
   })
 })
 

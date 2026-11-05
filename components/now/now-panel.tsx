@@ -4,11 +4,9 @@ import type { ReactNode } from "react"
 import * as Tabs from "@radix-ui/react-tabs"
 
 import type { Song } from "@/lib/song"
-import { NowAbout } from "./now-about"
-import { NowLyrics } from "./now-lyrics"
-import { NowQueue, type NowQueueProps } from "./now-queue"
+import type { NowQueueProps } from "./now-queue"
 import { NOW_TAB_LABELS, NOW_TABS, type NowLayout, type NowTab } from "./now-tabs"
-import { NowVideo } from "./now-video"
+import NowView from "./now-view"
 
 /**
  * The player's side of the panel: the song on screen and its clock, the
@@ -46,20 +44,14 @@ export interface NowPanelProps extends NowPlayerProps {
  * `.now` in app/globals.css.
  */
 export default function NowPanel({
-  song,
-  following,
   tabs = NOW_TABS,
   tab,
   onTabChange,
-  onSeek,
-  queue,
-  musicPlaying,
-  onVideoPlay,
   library,
   trailing,
   layout,
+  ...player
 }: NowPanelProps) {
-  const offered = new Set(tabs)
   return (
     <Tabs.Root className="now" data-layout={layout} value={tab} onValueChange={(value) => onTabChange(value as NowTab)}>
       <div className="now-head">
@@ -72,30 +64,18 @@ export default function NowPanel({
         </Tabs.List>
         {trailing}
       </div>
-      {offered.has("lyrics") && (
-        <Tabs.Content value="lyrics" className="now-content">
-          <NowLyrics song={song} following={following} onSeek={onSeek} />
-        </Tabs.Content>
-      )}
-      {offered.has("queue") && (
-        <Tabs.Content value="queue" className="now-content">
-          <NowQueue {...queue} />
-        </Tabs.Content>
-      )}
-      {offered.has("about") && (
-        <Tabs.Content value="about" className="now-content">
-          <NowAbout song={song} />
-        </Tabs.Content>
-      )}
-      {offered.has("video") && (
-        <Tabs.Content value="video" className="now-content">
-          <NowVideo song={song} musicPlaying={musicPlaying} onVideoPlay={onVideoPlay} />
-        </Tabs.Content>
-      )}
-      {offered.has("library") && library && (
-        <Tabs.Content value="library" className="now-content">
-          {library}
-        </Tabs.Content>
+      {tabs.map((id) =>
+        id === "library" ? (
+          library && (
+            <Tabs.Content key={id} value={id} className="now-content">
+              {library}
+            </Tabs.Content>
+          )
+        ) : (
+          <Tabs.Content key={id} value={id} className="now-content">
+            <NowView tab={id} {...player} />
+          </Tabs.Content>
+        ),
       )}
     </Tabs.Root>
   )

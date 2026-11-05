@@ -6,6 +6,7 @@ const SIZES = {
   xs: "h-8 w-8",
   sm: "h-9 w-9",
   md: "h-11 w-11",
+  lg: "h-12 w-12",
 } as const
 
 interface TransportButtonProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, "type" | "aria-label"> {
@@ -42,6 +43,7 @@ export const TransportButton = forwardRef<HTMLButtonElement, TransportButtonProp
 const ICON_SIZES = {
   sm: "h-[18px] w-[18px]",
   md: "h-[22px] w-[22px]",
+  lg: "h-[26px] w-[26px]",
 } as const
 
 interface SkipIconProps {

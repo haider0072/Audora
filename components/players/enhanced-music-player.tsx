@@ -1,26 +1,30 @@
 "use client"
 
-import { useState, useRef, useEffect, useCallback, useMemo } from "react"
-import { X } from "lucide-react"
+import { useState, useRef, useEffect, useCallback, useId, useMemo } from "react"
+import { Settings } from "lucide-react"
 
 import { toast } from "@/hooks/use-toast"
 import { ToastAction } from "@/components/ui/toast"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet"
-import { DesktopSidebar, type DesktopView } from "@/components/desktop/desktop-sidebar"
-import { PlayerBar } from "@/components/desktop/player-bar"
+import { AddMusicMenu } from "@/components/desktop/add-music-menu"
+import { DesktopHeader } from "@/components/desktop/desktop-header"
+import { CloudButton, DownloadsButton } from "@/components/desktop/header-status"
+import { HeaderSearch } from "@/components/desktop/header-search"
+import { NowStage, type StageMode } from "@/components/desktop/now-stage"
+import { SearchTabs } from "@/components/desktop/search-tabs"
 import { SettingsView } from "@/components/desktop/settings-view"
-import { SearchField, ViewHeader, ViewModeToggle } from "@/components/desktop/view-header"
+import { ViewHeader, ViewModeToggle } from "@/components/desktop/view-header"
 import { TransportButton } from "@/components/player/transport-button"
 import { DropOverlay } from "@/components/library/drop-overlay"
 import { LibraryPanel } from "@/components/library/library-panel"
 import { rowPlayback } from "@/components/library/song-row"
-import { LazyNowPanel } from "@/components/now/lazy-now-panel"
-import type { NowTab } from "@/components/now/now-tabs"
+import { StackLayer } from "@/components/stack-layer"
 import { useNowPlayer } from "@/components/now/use-now-player"
 import { RefinedEqualizer, type EqualizerBand } from "@/components/refined-equalizer"
-import { AlbumArtBackground } from "@/components/album-art-background"
 import { useBodyClass } from "@/hooks/use-body-class"
+import { useDesktopSearch, type SearchTab } from "@/hooks/use-desktop-search"
+import { useSearchShortcut } from "@/hooks/use-search-shortcut"
 import { useReturnFocus } from "@/hooks/use-return-focus"
 import { useAlbumArtPreloader } from "@/hooks/use-album-art-preloader"
 import { useFolderSync } from "@/hooks/use-folder-sync"
@@ -39,10 +43,10 @@ import { useTidalSearch } from "@/hooks/use-tidal-search"
 import { OnlineSearchSidebar } from "@/components/dab/online-search-sidebar"
 import { AlbumArtCache } from "@/lib/album-art-cache"
 import { getAllPresets, type EqPreset } from "@/lib/eq-presets"
+import { matchesQuery } from "@/lib/library-groups"
 import type { LibraryPage } from "@/lib/library-pages"
 import { resetPlaybackTime } from "@/lib/playback-time-store"
 import { formatCount, formatTotalDuration } from "@/lib/utils"
-import { AddMusicControls } from "@/components/add-music-control"
 import { FullscreenPlayer } from "@/components/fullscreen-player"
 import { SyncPanel } from "@/components/sync-panel"
 import { CloudLibraryPanel } from "@/components/cloud-library-panel"
@@ -62,22 +66,23 @@ const CROSSFADE_MANUAL_SECONDS = 0.4
 export default function EnhancedMusicPlayer() {
   // The desktop is always night, and its menus and dialogs open in the body, outside it.
   useBodyClass("dark")
-  // The Now panel opens as a column beside the library, and keeps the tab last opened.
-  const [nowOpen, setNowOpen] = useState(false)
-  const [nowTab, setNowTab] = useState<NowTab>("lyrics")
+  // What shows in the cover's place, kept from song to song.
+  const [stageMode, setStageMode] = useState<StageMode>("cover")
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [albumArtSourceRect, setAlbumArtSourceRect] = useState<DOMRect | null>(null);
-  const [view, setView] = useState<DesktopView>("library")
+  // Settings takes the library's place, until Done or its button in the header.
+  const [settingsOpen, setSettingsOpen] = useState(false)
   const [showSync, setShowSync] = useState(false);
   const [showCloud, setShowCloud] = useState(false);
   // The Sound sheet, two-device playback and the cloud library open from a
-  // menu, the sidebar, Settings or full screen, and hand focus back to what
+  // menu, the header, Settings or full screen, and hand focus back to what
   // opened them.
   const returnFocus = useReturnFocus()
-  const [searchQuery, setSearchQuery] = useState("")
+  const searchIds = useId()
 
   const coverRef = useRef<HTMLButtonElement>(null)
-  const nowToggleRef = useRef<HTMLButtonElement>(null)
+  const searchInputRef = useRef<HTMLInputElement>(null)
+  const settingsToggleRef = useRef<HTMLButtonElement>(null)
   const audioRef = useRef<HTMLAudioElement>(null)
   const secondaryAudioRef = useRef<HTMLAudioElement>(null)
   // Mirrors the sync role for the auto-advance guard in the playback
@@ -133,14 +138,41 @@ export default function EnhancedMusicPlayer() {
     toggleShuffle, removeSong, resetPlaylist, playNext, addToQueue,
   } = playlist
   const libraryActions = useMemo(() => ({ playNext, addToQueue, removeSong }), [playNext, addToQueue, removeSong])
-  const libraryNavigation = useLibraryNavigation(sortedSongs, searchQuery)
-  const { show: showLibraryPage } = libraryNavigation
 
-  /** Show an artist's or an album's page, from the player. */
+  // Tidal online search & download
+  const tidalSearch = useTidalSearch({
+    songs,
+    onSongDownloaded: (newSong) => {
+      setSongs((prev) => [...prev, newSong])
+    },
+    // Whenever a search-result preview starts, silence the main library
+    // playback so the two streams don't overlap.
+    onPreviewStart: () => {
+      if (audioRef.current && !audioRef.current.paused) {
+        pause()
+      }
+    },
+  })
+
+  // One search, in the header, for the library and online. While its results
+  // show, the library is searched for what is typed.
+  const search = useDesktopSearch(tidalSearch)
+  const libraryQuery = search.open ? search.query : ""
+  const libraryNavigation = useLibraryNavigation(sortedSongs, libraryQuery)
+  const { show: showLibraryPage } = libraryNavigation
+  const { close: closeSearch } = search
+
+  /** Show an artist's or an album's page, from the player: in the library, in place of any search or Settings. */
   const showInLibrary = useCallback((page: LibraryPage) => {
-    setView("library")
-    showLibraryPage(page)
-  }, [showLibraryPage])
+    closeSearch()
+    setSettingsOpen(false)
+    showLibraryPage(page, "")
+  }, [closeSearch, showLibraryPage])
+
+  useSearchShortcut(() => {
+    searchInputRef.current?.focus()
+    searchInputRef.current?.select()
+  })
 
   const {
     showEqualizer, setShowEqualizer,
@@ -369,22 +401,7 @@ export default function EnhancedMusicPlayer() {
     enableExtendedShortcuts: true,
   })
 
-  // Tidal online search & download
-  const tidalSearch = useTidalSearch({
-    songs,
-    onSongDownloaded: (newSong) => {
-      setSongs((prev) => [...prev, newSong])
-    },
-    // Whenever a search-result preview starts, silence the main library
-    // playback so the two streams don't overlap.
-    onPreviewStart: () => {
-      if (audioRef.current && !audioRef.current.paused) {
-        pause()
-      }
-    },
-  })
-
-  // And the inverse: when library playback resumes, kill any preview stream.
+  // When library playback resumes, kill any preview stream.
   useEffect(() => {
     if (isPlaying && tidalSearch.previewTrackId) {
       tidalSearch.stopPreview()
@@ -413,6 +430,37 @@ export default function EnhancedMusicPlayer() {
   if (isRestoringPlaylist) libraryMeta = "Restoring…"
   else if (songs.length > 0) libraryMeta = `${formatCount(songs.length, "song")} · ${formatTotalDuration(totalDuration)}`
   const downloads = tidalSearch.activeDownloadCount
+  const matches = useMemo(
+    () => (libraryQuery.trim() ? sortedSongs.filter((song) => matchesQuery(song, libraryQuery)).length : undefined),
+    [sortedSongs, libraryQuery],
+  )
+
+  // The right half of the window: the library, or the search's results, or Settings.
+  const searching = search.open
+  const showOnline = searching && search.tab === "online"
+  const showSettings = settingsOpen && !searching
+  // Typed since the last online search: the results offer to look for it.
+  const typed = search.query.trim()
+  const pendingOnline = typed !== "" && typed !== tidalSearch.searchQuery ? typed : undefined
+  const searchTabId = (tab: SearchTab) => `${searchIds}-${tab}`
+  const searchPanelId = `${searchIds}-results`
+  const searchOnline = {
+    label: "Search online",
+    onClick: () => {
+      search.setTab("online")
+      // The library's results go from view, and this button with them.
+      document.getElementById(searchTabId("online"))?.focus()
+    },
+  }
+  const toggleSettings = () => {
+    if (searching) closeSearch()
+    setSettingsOpen(!showSettings)
+  }
+  const closeSettings = () => {
+    setSettingsOpen(false)
+    // Done goes with Settings; its button in the header brings it back.
+    settingsToggleRef.current?.focus()
+  }
   // Declared last: the compiler takes a call into returnFocus as able to change
   // what it is given, so declared earlier these would hold the memoized
   // callbacks above back from being memoized.
@@ -421,14 +469,10 @@ export default function EnhancedMusicPlayer() {
   const openCloud = () => returnFocus.open(setShowCloud)
 
   return (
-    // The desktop sits on artwork darkened to ink in both themes, so it takes
-    // the dark theme's tokens whatever the app theme is.
-    <div
-      className="dark song-scope relative h-dvh overflow-hidden text-foreground"
-      style={songColors}
-      data-playing={isPlaying || undefined}
-    >
-      <AlbumArtBackground albumArt={displaySong?.albumArt} songId={displaySong?.id} isTransitioning={isLoadingSong} />
+    // The desktop sits on ink lit by the song's colours in both themes, so it
+    // takes the dark theme's tokens whatever the app theme is.
+    <div className="dark song-scope desktop-frame" style={songColors} data-playing={isPlaying || undefined}>
+      <div className="song-aura" aria-hidden="true" />
       {/* crossOrigin: cloud songs stream from R2, and Web Audio outputs silence for a cross-origin element without CORS */}
       <audio ref={audioRef} preload="metadata" crossOrigin="anonymous" className="hidden" />
       <audio ref={secondaryAudioRef} preload="metadata" crossOrigin="anonymous" className="hidden" />
@@ -436,109 +480,43 @@ export default function EnhancedMusicPlayer() {
       <div aria-live="polite" aria-atomic="true" className="sr-only">
         {currentSong && `Now playing: ${currentSong.title}${currentSong.artist ? ` by ${currentSong.artist}` : ""}`}
       </div>
-      <div className="desktop-shell">
-        <DesktopSidebar
-          view={view}
-          onViewChange={setView}
-          downloads={downloads}
-          cloudStatus={cloud.status}
-          onOpenCloud={openCloud}
+      <DesktopHeader
+        search={
+          <HeaderSearch
+            value={search.query}
+            onChange={search.setQuery}
+            onSubmit={search.submit}
+            open={searching}
+            onClose={closeSearch}
+            inputRef={searchInputRef}
+          />
+        }
+      >
+        <DownloadsButton count={downloads} onOpen={search.showOnline} />
+        <CloudButton status={cloud.status} onOpen={openCloud} />
+        <AddMusicMenu
+          busy={libraryBusy}
+          syncing={isSyncing}
+          fileInputRef={fileInputRef}
+          folderInputRef={folderInputRef}
+          syncInputRef={syncInputRef}
+          onFiles={handleFileUpload}
+          onFolder={handleFolderUpload}
+          onSync={handleFolderSync}
         />
-        <main className="desktop-main">
-          {/* A slot for each view, so a view mounts afresh rather than taking
-              over another's header: the online search field takes focus as its
-              view opens. */}
-          {view === "library" && (
-            <>
-              <ViewHeader title="Library" meta={libraryMeta}>
-                <SearchField label="Search your library" value={searchQuery} onChange={setSearchQuery} />
-                <ViewModeToggle value={viewMode} onChange={setViewMode} />
-                <AddMusicControls
-                  isLoadingSongs={isLoadingSongs}
-                  isRestoringPlaylist={isRestoringPlaylist}
-                  fileInputRef={fileInputRef}
-                  folderInputRef={folderInputRef}
-                  syncInputRef={syncInputRef}
-                  handleFileUpload={handleFileUpload}
-                  handleFolderUpload={handleFolderUpload}
-                  handleFolderSync={handleFolderSync}
-                  isSyncing={isSyncing}
-                  loadingProgress={loadingProgress}
-                />
-              </ViewHeader>
-              <div className="desktop-view">
-                <LibraryPanel
-                  layout="desktop"
-                  songs={sortedSongs}
-                  viewMode={viewMode}
-                  query={searchQuery}
-                  currentSongId={displaySong?.id}
-                  playback={rowPlayback(isLoadingSong, isPlaying)}
-                  loading={isLoadingSongs || isRestoringPlaylist || cloud.status === "loading"}
-                  importProgress={isLoadingSongs ? loadingProgress : null}
-                  onSelect={handleSongSelect}
-                  actions={libraryActions}
-                  navigation={libraryNavigation}
-                  emptyAction={addFolderAction}
-                />
-              </div>
-            </>
-          )}
-          {view === "online" && (
-            <>
-              <ViewHeader title="Search online" meta={downloads > 0 ? `${formatCount(downloads, "song")} downloading` : undefined}>
-                <SearchField
-                  label="Search online"
-                  value={tidalSearch.searchQuery}
-                  onChange={tidalSearch.setSearchQuery}
-                  onSubmit={tidalSearch.search}
-                  autoFocus
-                />
-              </ViewHeader>
-              <div className="desktop-view" data-view="online">
-                <OnlineSearchSidebar dab={tidalSearch} hideSearch />
-              </div>
-            </>
-          )}
-          {view === "settings" && (
-            <SettingsView
-              soundPreset={soundPreset}
-              normalization={normalizationEnabled}
-              onOpenSound={openSound}
-              cloudStatus={cloud.status}
-              cloudSongCount={cloud.songCount}
-              onOpenCloud={openCloud}
-              syncConnected={syncConnected}
-              onOpenSync={openSync}
-              songCount={songs.length}
-              onReset={resetPlaylist}
-            />
-          )}
-        </main>
-        {nowOpen && (
-          <aside className="desktop-now" aria-label="Now playing">
-            <LazyNowPanel
-              layout="side"
-              tab={nowTab}
-              onTabChange={setNowTab}
-              {...now}
-              trailing={
-                <TransportButton
-                  label="Close the panel"
-                  size="xs"
-                  onClick={() => {
-                    // This button goes with the panel; focus moves to the one that brings it back.
-                    nowToggleRef.current?.focus()
-                    setNowOpen(false)
-                  }}
-                >
-                  <X className="h-4 w-4" />
-                </TransportButton>
-              }
-            />
-          </aside>
-        )}
-        <PlayerBar
+        <TransportButton
+          ref={settingsToggleRef}
+          label="Settings"
+          size="md"
+          className="header-icon"
+          pressed={showSettings}
+          onClick={toggleSettings}
+        >
+          <Settings className="h-5 w-5" />
+        </TransportButton>
+      </DesktopHeader>
+      <main className="desktop-body">
+        <NowStage
           song={displaySong}
           isPlaying={isPlaying}
           isLoading={isLoadingSong}
@@ -554,9 +532,9 @@ export default function EnhancedMusicPlayer() {
           onShowPage={showInLibrary}
           coverRef={coverRef}
           onOpenFullscreen={handleOpenFullscreen}
-          nowOpen={nowOpen}
-          onToggleNow={() => setNowOpen((open) => !open)}
-          nowToggleRef={nowToggleRef}
+          mode={stageMode}
+          onModeChange={setStageMode}
+          now={now}
           volume={volume}
           isMuted={isMuted}
           onVolumeChange={changeVolume}
@@ -565,7 +543,96 @@ export default function EnhancedMusicPlayer() {
           onOpenSync={openSync}
           syncConnected={syncConnected}
         />
-      </div>
+        <div className="desktop-side">
+          {searching ? (
+            <div className="view-head">
+              <h1 className="sr-only">Search</h1>
+              <SearchTabs
+                value={search.tab}
+                onChange={search.setTab}
+                matches={matches}
+                downloads={downloads}
+                tabId={searchTabId}
+                panelId={searchPanelId}
+              />
+              {!showOnline && (
+                <div className="view-tools">
+                  <ViewModeToggle value={viewMode} onChange={setViewMode} />
+                </div>
+              )}
+            </div>
+          ) : showSettings ? (
+            <ViewHeader title="Settings">
+              <button type="button" className="text-button" onClick={closeSettings}>
+                Done
+              </button>
+            </ViewHeader>
+          ) : (
+            <ViewHeader title="Library" meta={libraryMeta}>
+              <ViewModeToggle value={viewMode} onChange={setViewMode} />
+            </ViewHeader>
+          )}
+          {/* The library stays mounted under the search's online results and
+              Settings, so it comes back where it was left. */}
+          <div className="desktop-side-stack">
+            <StackLayer
+              covered={showOnline || showSettings}
+              className="desktop-layer"
+              {...(searching && !showOnline
+                ? { role: "tabpanel", id: searchPanelId, "aria-labelledby": searchTabId("library") }
+                : undefined)}
+            >
+              <LibraryPanel
+                layout="desktop"
+                songs={sortedSongs}
+                viewMode={viewMode}
+                query={libraryQuery}
+                currentSongId={displaySong?.id}
+                playback={rowPlayback(isLoadingSong, isPlaying)}
+                loading={isLoadingSongs || isRestoringPlaylist || cloud.status === "loading"}
+                importProgress={isLoadingSongs ? loadingProgress : null}
+                onSelect={handleSongSelect}
+                actions={libraryActions}
+                navigation={libraryNavigation}
+                emptyAction={addFolderAction}
+                noMatchesAction={searchOnline}
+              />
+            </StackLayer>
+            {showOnline && (
+              <div
+                className="desktop-layer"
+                role="tabpanel"
+                id={searchPanelId}
+                aria-labelledby={searchTabId("online")}
+              >
+                <OnlineSearchSidebar
+                  dab={tidalSearch}
+                  layout="desktop"
+                  hideSearch
+                  pendingQuery={pendingOnline}
+                  onSearchPending={search.submit}
+                />
+              </div>
+            )}
+            {showSettings && (
+              <div className="desktop-layer">
+                <SettingsView
+                  soundPreset={soundPreset}
+                  normalization={normalizationEnabled}
+                  onOpenSound={openSound}
+                  cloudStatus={cloud.status}
+                  cloudSongCount={cloud.songCount}
+                  onOpenCloud={openCloud}
+                  syncConnected={syncConnected}
+                  onOpenSync={openSync}
+                  songCount={songs.length}
+                  onReset={resetPlaylist}
+                />
+              </div>
+            )}
+          </div>
+        </div>
+      </main>
       <Sheet open={showEqualizer} onOpenChange={setShowEqualizer}>
         {/* Wide enough for the ten bands side by side. */}
         <SheetContent

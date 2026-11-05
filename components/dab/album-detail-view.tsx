@@ -1,199 +1,130 @@
 "use client"
 
-import { memo } from "react"
-import { ArrowLeft, Disc, Download, Calendar, Clock, Music, Play, Pause, Loader2 } from "lucide-react"
-import { Button } from "@/components/ui/button"
-import { ScrollArea } from "@/components/ui/scroll-area"
-import { DownloadIndicator } from "./download-indicator"
-import type { TidalAlbum, TidalTrack, DownloadState } from "@/lib/tidal-types"
-import { formatTotalDuration } from "@/lib/utils"
+import { memo, useId, useRef } from "react"
+import { ArrowDownToLine, Check } from "lucide-react"
+
+import { PageFrame } from "@/components/library/page-frame"
+import type { LibraryLayout } from "@/components/library/song-row"
+import type { DownloadState, TidalAlbum } from "@/lib/tidal-types"
+import { formatCount, formatDetails, formatTotalDuration } from "@/lib/utils"
+import {
+  OnlineCover,
+  OnlineSongRow,
+  previewPlayback,
+  releaseYear,
+  type OnlineActions,
+  type OnlinePreview,
+  type UnopenedPage,
+} from "./online-rows"
 
 interface AlbumDetailViewProps {
   album: TidalAlbum
+  layout: LibraryLayout
+  /** Where Back goes: the results, or the artist's page. */
+  backLabel: string
   downloads: Map<string, DownloadState>
   isInLibrary: (trackId: string) => boolean
-  onTrackDownload: (track: TidalTrack) => void
-  onCancelDownload: (trackId: string) => void
+  preview: OnlinePreview
+  /** The artist whose page is on the way. */
+  opening: string | null
+  /** The artist whose page didn't open. */
+  unopened: UnopenedPage | null
+  actions: OnlineActions
   onDownloadAll: (album: TidalAlbum) => void
   onBack: () => void
-  onArtistClick?: (artistId: string) => void
-  previewTrackId?: string | null
-  previewIsPlaying?: boolean
-  previewIsLoading?: boolean
-  onTogglePreview?: (track: TidalTrack) => void
 }
 
-function formatDuration(seconds: number): string {
-  const m = Math.floor(seconds / 60)
-  const s = Math.floor(seconds % 60)
-  return `${m}:${s.toString().padStart(2, "0")}`
-}
-
+/**
+ * An album found online, laid out like an album's page in the library: its
+ * songs to preview, and to download one by one or all at once.
+ */
 export const AlbumDetailView = memo(function AlbumDetailView({
   album,
+  layout,
+  backLabel,
   downloads,
   isInLibrary,
-  onTrackDownload,
-  onCancelDownload,
+  preview,
+  opening,
+  unopened,
+  actions,
   onDownloadAll,
   onBack,
-  onArtistClick,
-  previewTrackId = null,
-  previewIsPlaying = false,
-  previewIsLoading = false,
-  onTogglePreview,
 }: AlbumDetailViewProps) {
-  const allInLibrary = album.tracks?.every((t) => isInLibrary(t.id)) ?? false
+  const titleId = useId()
+  const headingRef = useRef<HTMLHeadingElement>(null)
+  const tracks = album.tracks ?? []
+  const missing = tracks.filter((track) => !isInLibrary(track.id)).length
+  const openingArtist = Boolean(album.artistId) && opening === album.artistId
+  const artistNote = album.artistId && unopened?.id === album.artistId ? unopened.note : undefined
 
   return (
-    <div className="flex flex-col h-full">
-      {/* Header */}
-      <div className="flex-shrink-0 space-y-3 pb-3">
-        {/* Back button */}
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={onBack}
-          className="h-8 gap-1.5 -ml-2"
-        >
-          <ArrowLeft className="h-4 w-4" />
-          Back
-        </Button>
-
-        {/* Album info */}
-        <div className="flex gap-4">
-          <div className="h-24 w-24 rounded-lg overflow-hidden flex-shrink-0 bg-white/10">
-            {album.cover ? (
-              <img src={album.cover} alt="" className="h-full w-full object-cover" />
-            ) : (
-              <div className="h-full w-full flex items-center justify-center">
-                <Disc className="h-8 w-8 text-muted-foreground" />
-              </div>
-            )}
-          </div>
-          <div className="flex-1 min-w-0 space-y-1">
-            <h2 className="text-base font-semibold leading-tight truncate">{album.title}</h2>
-            {onArtistClick && album.artistId ? (
-              <button
-                onClick={() => onArtistClick(album.artistId)}
-                className="text-sm text-primary hover:underline truncate block"
-              >
-                {album.artist}
-              </button>
-            ) : (
-              <p className="text-sm text-muted-foreground truncate">{album.artist}</p>
-            )}
-            <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
-              {album.releaseDate && (
-                <span className="flex items-center gap-1">
-                  <Calendar className="h-3 w-3" />
-                  {album.releaseDate.slice(0, 4)}
-                </span>
+    <PageFrame layout={layout} titleId={titleId} headingRef={headingRef} backLabel={backLabel} onBack={onBack}>
+      <header className="library-page-head" data-kind="album">
+        <OnlineCover src={album.cover} kind="album" className="library-page-cover" />
+        <div className="library-page-info">
+          <p className="library-page-kind">Album</p>
+          <h2 id={titleId} ref={headingRef} tabIndex={-1} className="library-page-title">
+            {album.title}
+          </h2>
+          {album.artistId ? (
+            <button
+              type="button"
+              className="library-page-link online-page-link"
+              aria-busy={openingArtist || undefined}
+              onClick={() => actions.openArtist(album.artistId)}
+            >
+              {album.artist}
+              {openingArtist && (
+                <svg className="busy-arc" viewBox="0 0 20 20" aria-hidden="true">
+                  <circle cx="10" cy="10" r="7" />
+                </svg>
               )}
-              {album.trackCount > 0 && (
-                <span className="flex items-center gap-1">
-                  <Music className="h-3 w-3" />
-                  {album.trackCount} tracks
-                </span>
-              )}
-              {album.totalDuration > 0 && (
-                <span className="flex items-center gap-1">
-                  <Clock className="h-3 w-3" />
-                  {formatTotalDuration(album.totalDuration)}
-                </span>
-              )}
-            </div>
-            {album.genre && (
-              <span className="inline-block text-xs bg-white/10 px-2 py-0.5 rounded-full">
-                {album.genre}
-              </span>
+              {artistNote && <span className="online-page-note"> · {artistNote}</span>}
+            </button>
+          ) : (
+            <p className="library-page-link">{album.artist}</p>
+          )}
+          <p className="library-page-meta">
+            {formatDetails(
+              releaseYear(album.releaseDate),
+              album.genre,
+              tracks.length > 0 && formatCount(tracks.length, "song"),
+              album.totalDuration > 0 && formatTotalDuration(album.totalDuration),
             )}
-          </div>
-        </div>
-
-        {/* Download All */}
-        {!allInLibrary && (
-          <Button
-            size="sm"
-            className="w-full h-9 gap-2"
-            onClick={() => onDownloadAll(album)}
-          >
-            <Download className="h-4 w-4" />
-            Download All FLAC
-          </Button>
-        )}
-      </div>
-
-      {/* Track list */}
-      <ScrollArea className="flex-1 min-h-0">
-        <div className="space-y-0.5 pb-4">
-          {(album.tracks || []).map((track, idx) => {
-            const isActive = previewTrackId === track.id
-            const showPause = isActive && previewIsPlaying
-            const showLoader = isActive && previewIsLoading && !previewIsPlaying
-            return (
-              <div
-                key={track.id}
-                className="flex items-center gap-3 py-2 px-3 rounded-md hover:bg-white/5 group"
-              >
-                {/* Track number / play button (number hides on hover or when active) */}
-                <div className="relative w-5 h-5 flex-shrink-0">
-                  <span
-                    className={`absolute inset-0 flex items-center justify-end text-xs text-muted-foreground transition-opacity ${
-                      isActive ? "opacity-0" : "group-hover:opacity-0"
-                    }`}
-                  >
-                    {idx + 1}
-                  </span>
-                  {onTogglePreview && (
-                    <button
-                      type="button"
-                      onClick={() => onTogglePreview(track)}
-                      aria-label={showPause ? "Pause preview" : "Play preview"}
-                      className={`absolute inset-0 flex items-center justify-center text-white/90 hover:text-white transition-opacity ${
-                        isActive ? "opacity-100" : "opacity-0 group-hover:opacity-100"
-                      }`}
-                    >
-                      {showLoader ? (
-                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      ) : showPause ? (
-                        <Pause className="h-3.5 w-3.5" />
-                      ) : (
-                        <Play className="h-3.5 w-3.5 ml-0.5" />
-                      )}
-                    </button>
-                  )}
-                </div>
-
-                {/* Info */}
-                <div className="flex-1 min-w-0">
-                  <p className={`text-sm truncate ${isActive ? "text-primary" : ""}`}>{track.title}</p>
-                  {track.artist !== album.artist && (
-                    <p className="text-xs text-muted-foreground truncate">{track.artist}</p>
-                  )}
-                </div>
-
-                {/* Duration */}
-                <span className="text-xs text-muted-foreground flex-shrink-0">
-                  {track.duration ? formatDuration(track.duration) : ""}
-                </span>
-
-                {/* Download */}
-                <div className="flex-shrink-0">
-                  <DownloadIndicator
-                    state={downloads.get(track.id)}
-                    isInLibrary={isInLibrary(track.id)}
-                    onDownload={() => onTrackDownload(track)}
-                    onCancel={() => onCancelDownload(track.id)}
-                    onRetry={() => onTrackDownload(track)}
-                    compact
-                  />
-                </div>
-              </div>
+          </p>
+          {missing > 0 ? (
+            <button type="button" className="library-page-play online-download-all" onClick={() => onDownloadAll(album)}>
+              <ArrowDownToLine aria-hidden="true" />
+              {missing === tracks.length ? "Download all" : `Download ${formatCount(missing, "song")}`}
+            </button>
+          ) : (
+            tracks.length > 0 && (
+              <p className="online-page-owned">
+                <Check aria-hidden="true" />
+                In your library
+              </p>
             )
-          })}
+          )}
         </div>
-      </ScrollArea>
-    </div>
+      </header>
+      <ol className="library-page-tracks">
+        {tracks.map((track, index) => (
+          <li key={track.id} className="library-page-track">
+            <OnlineSongRow
+              track={track}
+              layout={layout}
+              number={track.trackNumber ?? index + 1}
+              sub={track.artist !== album.artist ? track.artist : undefined}
+              showSource={false}
+              playback={previewPlayback(preview, track.id)}
+              download={downloads.get(track.id)}
+              inLibrary={isInLibrary(track.id)}
+              actions={actions}
+            />
+          </li>
+        ))}
+      </ol>
+    </PageFrame>
   )
 })

@@ -1,4 +1,13 @@
-import { accentColor, paletteFromPixels, rgbToHsl, ringColors, type Rgb } from "@/lib/song-palette"
+import {
+  accentColor,
+  accentTextColor,
+  auraColors,
+  paletteFromPixels,
+  rgbToHsl,
+  ringColors,
+  type Rgb,
+  type SongPalette,
+} from "@/lib/song-palette"
 
 /** RGBA pixel data: `count` pixels of each colour, in order. */
 function pixelsOf(...runs: Array<[Rgb, number]>): Uint8ClampedArray {
@@ -33,6 +42,12 @@ function parseHsl(css: string): Rgb {
   return [channel(h + 1 / 3) * 255, channel(h) * 255, channel(h - 1 / 3) * 255]
 }
 
+/** A CSS colour as the browser draws it, in 8-bit channels. */
+function drawn(css: string): Rgb {
+  const [r, g, b] = parseHsl(css)
+  return [Math.round(r), Math.round(g), Math.round(b)]
+}
+
 function luminance([r, g, b]: Rgb): number {
   const linear = (v: number) => {
     const c = v / 255
@@ -49,6 +64,42 @@ function contrast(a: Rgb, b: Rgb): number {
 const INK_0: Rgb = [11, 11, 10] // --ink-0, the page
 const INK_2: Rgb = [25, 25, 23] // --ink-2, the lightest ink a mark sits on
 const PAPER: Rgb = [244, 242, 238] // light --background
+const TEXT_ON_INK: Rgb = [241, 239, 234] // --foreground in the dark theme
+const TEXT_ON_PAPER: Rgb = [23, 22, 20] // light --foreground
+// `--muted-foreground` inside `.desktop-frame`: the dimmest text over the aura.
+const MUTED_ON_AURA: Rgb = [196, 193, 186]
+
+/** `top` over `base` at `alpha`, blended into 8-bit channels as the browser does. */
+function over(top: Rgb, alpha: number, base: Rgb): Rgb {
+  const blend = (i: number) => Math.round(top[i] * alpha + base[i] * (1 - alpha))
+  return [blend(0), blend(1), blend(2)]
+}
+
+/**
+ * What text in a row can sit on (`.library-row::before` and `::after`): the
+ * ground itself, lit by a hover, tinted as the current song's at 17%, and both.
+ */
+function rowGrounds(ground: Rgb, text: Rgb, tint: Rgb): Rgb[] {
+  const lit = over(text, 0.06, ground)
+  return [ground, lit, over(tint, 0.17, ground), over(tint, 0.17, lit)]
+}
+
+/** One of the aura's lights where it glows brightest: under the scrim at its thinnest (12%). */
+const underScrim = (light: Rgb) => over(INK_0, 0.12, light)
+
+/** One-colour covers around the wheel, at every saturation and lightness worth telling apart. */
+const SWEPT_COVERS: Array<[string, SongPalette]> = []
+for (let hue = 0; hue < 360; hue += 15) {
+  for (const saturation of [30, 55, 80, 100]) {
+    for (const lightness of [25, 45, 65, 85]) {
+      const name = `${hue}° ${saturation}% ${lightness}%`
+      SWEPT_COVERS.push([name, paletteFromPixels(pixelsOf([drawn(`hsl(${name.replace("°", "")})`), 20]))!])
+    }
+  }
+}
+
+/** A fully saturated one-colour cover of a hue. */
+const coverOfHue = (hue: number) => paletteFromPixels(pixelsOf([drawn(`hsl(${hue} 90% 50%)`), 20]))!
 
 describe("rgbToHsl", () => {
   it.each<[Rgb, [number, number, number]]>([
@@ -103,10 +154,6 @@ describe("paletteFromPixels", () => {
 describe("accentColor", () => {
   // Every hue, fully saturated, as a one-colour cover.
   const hues = Array.from({ length: 36 }, (_, i) => i * 10)
-  const coverOfHue = (hue: number) => {
-    const [r, g, b] = parseHsl(`hsl(${hue} 90% 50%)`).map(Math.round) as unknown as Rgb
-    return paletteFromPixels(pixelsOf([[r, g, b], 20]))!
-  }
 
   it.each(hues)("a hue %d° cover gives an accent that reads on ink and on paper", (hue) => {
     const palette = coverOfHue(hue)
@@ -125,18 +172,10 @@ describe("accentColor", () => {
 
   it("holds 3:1 across saturation and lightness, as the browser draws it", () => {
     const failures: string[] = []
-    for (let hue = 0; hue < 360; hue += 15) {
-      for (const saturation of [30, 55, 80, 100]) {
-        for (const lightness of [25, 45, 65, 85]) {
-          const rgb = parseHsl(`hsl(${hue} ${saturation}% ${lightness}%)`).map(Math.round) as unknown as Rgb
-          const palette = paletteFromPixels(pixelsOf([rgb, 20]))!
-          for (const [surface, ground] of [["ink", INK_2], ["paper", PAPER]] as const) {
-            const css = accentColor(palette, surface)
-            // The browser keeps 8-bit channels.
-            const drawn = parseHsl(css).map(Math.round) as unknown as Rgb
-            if (contrast(drawn, ground) < 3) failures.push(`${hue}° ${saturation}% ${lightness}% on ${surface}: ${css}`)
-          }
-        }
+    for (const [cover, palette] of SWEPT_COVERS) {
+      for (const [surface, ground] of [["ink", INK_2], ["paper", PAPER]] as const) {
+        const css = accentColor(palette, surface)
+        if (contrast(drawn(css), ground) < 3) failures.push(`${cover} on ${surface}: ${css}`)
       }
     }
     expect(failures).toEqual([])
@@ -150,10 +189,50 @@ describe("accentColor", () => {
   })
 })
 
+describe("accentTextColor", () => {
+  it("reads at 4.5:1 in a row lit and tinted any way, over the aura and on paper, as the browser draws it", () => {
+    const failures: string[] = []
+    for (const [cover, palette] of SWEPT_COVERS) {
+      const inkText = drawn(accentTextColor(palette, "ink"))
+      const inkTint = drawn(accentColor(palette, "ink"))
+      const inkGrounds = [INK_2, ...auraColors(palette).map((css) => underScrim(drawn(css)))].flatMap((ground) =>
+        rowGrounds(ground, TEXT_ON_INK, inkTint),
+      )
+      if (inkGrounds.some((ground) => contrast(inkText, ground) < 4.5)) failures.push(`${cover} on ink`)
+
+      const paperText = drawn(accentTextColor(palette, "paper"))
+      const paperGrounds = rowGrounds(PAPER, TEXT_ON_PAPER, drawn(accentColor(palette, "paper")))
+      if (paperGrounds.some((ground) => contrast(paperText, ground) < 4.5)) failures.push(`${cover} on paper`)
+    }
+    expect(failures).toEqual([])
+  })
+
+  it.each(Array.from({ length: 12 }, (_, i) => i * 30))(
+    "keeps the accent's hue and saturation, moving only away from the surface (hue %d°)",
+    (hue) => {
+      const palette = coverOfHue(hue)
+      for (const surface of ["ink", "paper"] as const) {
+        const [mh, ms, ml] = rgbToHsl(parseHsl(accentColor(palette, surface)))
+        const [th, ts, tl] = rgbToHsl(parseHsl(accentTextColor(palette, surface)))
+        const gap = Math.abs(th - mh)
+        expect(Math.min(gap, 360 - gap)).toBeLessThan(1)
+        expect(ts).toBeCloseTo(ms, 1)
+        if (surface === "ink") expect(tl).toBeGreaterThanOrEqual(ml)
+        else expect(tl).toBeLessThanOrEqual(ml)
+      }
+    },
+  )
+
+  it("leaves an accent that already reads as words as it is", () => {
+    // A yellow reads bright on ink; only a dim hue, like a blue, needs lifting.
+    expect(accentTextColor(coverOfHue(60), "ink")).toBe(accentColor(coverOfHue(60), "ink"))
+    expect(accentTextColor(coverOfHue(240), "ink")).not.toBe(accentColor(coverOfHue(240), "ink"))
+  })
+})
+
 describe("ringColors", () => {
   it.each(Array.from({ length: 12 }, (_, i) => i * 30))("lights for a hue %d° cover hold on both surfaces", (hue) => {
-    const [r, g, b] = parseHsl(`hsl(${hue} 90% 50%)`).map(Math.round) as unknown as Rgb
-    const palette = paletteFromPixels(pixelsOf([[r, g, b], 20]))!
+    const palette = coverOfHue(hue)
     for (const css of ringColors(palette, "ink")) expect(contrast(parseHsl(css), INK_2)).toBeGreaterThanOrEqual(3)
     for (const css of ringColors(palette, "paper")) expect(contrast(parseHsl(css), PAPER)).toBeGreaterThanOrEqual(3)
   })
@@ -167,5 +246,47 @@ describe("ringColors", () => {
     const ringHues = ring.map((css) => rgbToHsl(parseHsl(css))[0])
     const paletteHues = palette.map((rgb) => rgbToHsl(rgb)[0])
     ringHues.forEach((h, i) => expect(Math.abs(h - paletteHues[i])).toBeLessThan(3))
+  })
+})
+
+describe("auraColors", () => {
+  it("keeps the dimmest text at 4.5:1 over every light, bare or in a row lit and tinted any way, as the browser draws it", () => {
+    const failures: string[] = []
+    for (const [cover, palette] of SWEPT_COVERS) {
+      const tint = drawn(accentColor(palette, "ink"))
+      for (const css of auraColors(palette)) {
+        const grounds = rowGrounds(underScrim(drawn(css)), TEXT_ON_INK, tint)
+        if (grounds.some((ground) => contrast(MUTED_ON_AURA, ground) < 4.5)) failures.push(`${cover}: ${css}`)
+      }
+    }
+    expect(failures).toEqual([])
+  })
+
+  it.each(Array.from({ length: 12 }, (_, i) => i * 30))("glows as brightly as the text allows (hue %d°)", (hue) => {
+    const palette = coverOfHue(hue)
+    const tint = drawn(accentColor(palette, "ink"))
+    const [first] = auraColors(palette)
+    const [, h, s, l] = /^hsl\((\d+) (\d+)% (\d+)%\)$/.exec(first)!.map(Number)
+    // A step brighter would no longer hold the text somewhere, so the light is no dimmer than it has to be.
+    const brighter = underScrim(drawn(`hsl(${h} ${s}% ${l + 1}%)`))
+    expect(rowGrounds(brighter, TEXT_ON_INK, tint).some((ground) => contrast(MUTED_ON_AURA, ground) < 4.5)).toBe(true)
+  })
+
+  it("keeps each of the cover's hues, in the palette's order, each deeper than the last", () => {
+    const palette = paletteFromPixels(pixelsOf([[30, 90, 220], 60], [[230, 140, 40], 30], [[40, 180, 90], 20]))!
+    const aura = auraColors(palette).map((css) => rgbToHsl(parseHsl(css)))
+    const paletteHues = palette.map((rgb) => rgbToHsl(rgb)[0])
+    aura.forEach(([h], i) => expect(Math.abs(h - paletteHues[i])).toBeLessThan(3))
+    const [[, , l1], [, , l2], [, , l3]] = aura
+    expect(l2).toBeLessThan(l1)
+    expect(l3).toBeLessThan(l2)
+  })
+
+  it("lifts a soft cover's colour, so the aura glows rather than greys", () => {
+    // Saturation 0.24: enough to count as colour, too little to glow unaided.
+    const palette = paletteFromPixels(pixelsOf([[160, 120, 100], 40]))!
+    for (const css of auraColors(palette)) {
+      expect(rgbToHsl(parseHsl(css))[1]).toBeGreaterThanOrEqual(0.44)
+    }
   })
 })

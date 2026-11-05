@@ -10,12 +10,13 @@ import { storedArtRef } from "@/lib/album-art-ref"
 import { embedFlacMetadata } from "@/lib/flac-art-embedder"
 import { hasRoomFor, StorageFullError, formatBytes } from "@/lib/storage-quota"
 import type { Song } from "@/lib/song"
-import type {
-  TidalTrack,
-  TidalAlbum,
-  TidalSearchResult,
-  TidalDiscographyResult,
-  DownloadState,
+import {
+  isDownloadActive,
+  type TidalTrack,
+  type TidalAlbum,
+  type TidalSearchResult,
+  type TidalDiscographyResult,
+  type DownloadState,
 } from "@/lib/tidal-types"
 
 export interface UseTidalSearchOptions {
@@ -30,6 +31,21 @@ export interface UseTidalSearchOptions {
 
 export type TidalView = "search" | "album" | "artist"
 export type TidalQuality = "HI_RES_LOSSLESS" | "LOSSLESS" | "HIGH"
+export type SearchType = "all" | "track" | "album" | "artist"
+
+/** What the online search last asked for, so a failure can ask again. */
+type OnlineRequest = { kind: "search"; query: string } | { kind: "album" | "artist"; id: string }
+
+/** A search or a page that didn't come back, said plainly, and what was asked for. */
+export interface OnlineFailure {
+  title: string
+  detail: string
+  request: OnlineRequest
+  /** Asking again could help: the request failed, rather than the store answering that it has nothing. */
+  retryable: boolean
+}
+
+const TRY_AGAIN = "Check the connection and try again."
 
 const MAX_CONCURRENT_DOWNLOADS = 2
 
@@ -40,15 +56,13 @@ export function useTidalSearch(options: UseTidalSearchOptions) {
     onPreviewStartRef.current = onPreviewStart
   }, [onPreviewStart])
 
-  // No auth needed for Tidal — always authenticated
-  const isAuthenticated = true as boolean
-  const isAuthenticating = false
-
   // Search state
   const [searchQuery, setSearchQuery] = useState("")
-  const [searchType, setSearchType] = useState<"track" | "album" | "artist" | "all">("all")
+  const [searchType, setSearchTypeState] = useState<SearchType>("all")
   const [searchResults, setSearchResults] = useState<TidalSearchResult | null>(null)
   const [isSearching, setIsSearching] = useState(false)
+  // Only the latest search may land: an earlier one that answers late is dropped.
+  const searchSeq = useRef(0)
 
   // Source preference (auto = merge Qobuz+Amazon, otherwise pin to one).
   // Lazy-init from localStorage so the choice survives reloads.
@@ -57,14 +71,6 @@ export function useTidalSearch(options: UseTidalSearchOptions) {
     const saved = window.localStorage.getItem("audora_search_source")
     return saved === "qobuz" || saved === "amazon" ? saved : "auto"
   })
-  const setSearchSource = useCallback((s: SearchSource) => {
-    setSearchSourceState(s)
-    try {
-      window.localStorage.setItem("audora_search_source", s)
-    } catch {
-      // localStorage may be disabled — preference just won't persist.
-    }
-  }, [])
 
   // Navigation state
   const [currentView, setCurrentView] = useState<TidalView>("search")
@@ -174,58 +180,94 @@ export function useTidalSearch(options: UseTidalSearchOptions) {
     }
   }, [])
 
-  // Error state
-  const [error, setError] = useState<string | null>(null)
+  // What went wrong last, until the next request
+  const [error, setError] = useState<OnlineFailure | null>(null)
 
   const isOnline = useOnlineStatus()
 
-  // Login is a no-op for Tidal (no auth needed)
-  const login = useCallback(async (): Promise<boolean> => {
-    return true
-  }, [])
+  // Search. A type or source given here wins over the chosen one, so a
+  // change of either can search at once, before its state has landed.
+  const search = useCallback(
+    async (query: string = searchQuery, choice: { type?: SearchType; source?: SearchSource } = {}) => {
+      const q = query.trim()
+      if (!q) return
 
-  // Search
-  const search = useCallback(async (query?: string) => {
-    const q = query ?? searchQuery
-    if (!q.trim()) return
+      const seq = ++searchSeq.current
+      setIsSearching(true)
+      setError(null)
 
-    setIsSearching(true)
-    setError(null)
-
-    try {
-      const data = await TidalService.search(q, searchType, 20, searchSource)
-      setSearchResults(data)
-      setCurrentView("search")
-    } catch (err) {
-      if (err instanceof Error && err.message.startsWith("rate_limited:")) {
-        const seconds = err.message.split(":")[1]
-        setError(`Too many requests. Try again in ${seconds}s`)
-        toast({ title: `Rate limited — wait ${seconds}s`, variant: "destructive" })
-      } else {
-        setError("Search failed. Please try again.")
+      const request: OnlineRequest = { kind: "search", query: q }
+      try {
+        const data = await TidalService.search(q, choice.type ?? searchType, 20, choice.source ?? searchSource)
+        if (seq !== searchSeq.current) return
+        if (data) {
+          setSearchResults(data)
+          setNavigationStack([])
+          setCurrentView("search")
+        } else {
+          // The service answers null for a search that failed, and has logged why.
+          setError({ title: "Couldn't search online", detail: TRY_AGAIN, request, retryable: true })
+        }
+      } catch (err) {
+        if (seq !== searchSeq.current) return
+        if (err instanceof Error && err.message.startsWith("rate_limited:")) {
+          const seconds = Number(err.message.split(":")[1]) || 10
+          setError({ title: "Too many searches at once", detail: `Try again in ${seconds} seconds.`, request, retryable: true })
+        } else {
+          console.error("Online search failed:", err)
+          setError({ title: "Couldn't search online", detail: TRY_AGAIN, request, retryable: true })
+        }
+      } finally {
+        if (seq === searchSeq.current) setIsSearching(false)
       }
-    } finally {
-      setIsSearching(false)
-    }
-  }, [searchQuery, searchType, searchSource])
+    },
+    [searchQuery, searchType, searchSource]
+  )
+
+  // Results for one kind can't show another: look again for what is asked.
+  const setSearchType = useCallback(
+    (type: SearchType) => {
+      setSearchTypeState(type)
+      if (searchResults && searchResults.searchType !== "all" && searchResults.searchType !== type) {
+        void search(searchResults.query, { type })
+      }
+    },
+    [searchResults, search]
+  )
+
+  // Results come from where they were asked for: another source looks again.
+  const setSearchSource = useCallback(
+    (source: SearchSource) => {
+      if (source === searchSource) return
+      setSearchSourceState(source)
+      try {
+        window.localStorage.setItem("audora_search_source", source)
+      } catch {
+        // localStorage may be disabled — preference just won't persist.
+      }
+      if (searchResults) void search(searchResults.query, { source })
+    },
+    [searchSource, searchResults, search]
+  )
 
   // View album detail
   const viewAlbum = useCallback(async (albumId: string) => {
     setIsLoadingDetail(true)
     setError(null)
 
+    const request: OnlineRequest = { kind: "album", id: albumId }
     try {
       const data = await TidalService.getAlbum(albumId)
-
-      if (data) {
-        setSelectedAlbum(data)
-        setNavigationStack((prev) => [...prev, currentView])
-        setCurrentView("album")
-      } else {
-        toast({ title: "Album not found", variant: "destructive" })
+      if (!data) {
+        setError({ title: "This album isn't available", detail: "The store didn't send its songs.", request, retryable: false })
+        return
       }
-    } catch {
-      setError("Failed to load album")
+      setSelectedAlbum(data)
+      setNavigationStack((prev) => [...prev, currentView])
+      setCurrentView("album")
+    } catch (err) {
+      console.error("Album failed to load:", err)
+      setError({ title: "Couldn't open the album", detail: TRY_AGAIN, request, retryable: true })
     } finally {
       setIsLoadingDetail(false)
     }
@@ -236,29 +278,41 @@ export function useTidalSearch(options: UseTidalSearchOptions) {
     setIsLoadingDetail(true)
     setError(null)
 
+    const request: OnlineRequest = { kind: "artist", id: artistId }
     try {
       const data = await TidalService.getDiscography(artistId)
-
-      if (data) {
-        setSelectedArtist(data)
-        setNavigationStack((prev) => [...prev, currentView])
-        setCurrentView("artist")
-      } else {
-        toast({ title: "Artist not found", variant: "destructive" })
+      if (!data) {
+        setError({ title: "This artist isn't available", detail: "The store didn't send their albums.", request, retryable: false })
+        return
       }
-    } catch {
-      setError("Failed to load artist")
+      setSelectedArtist(data)
+      setNavigationStack((prev) => [...prev, currentView])
+      setCurrentView("artist")
+    } catch (err) {
+      console.error("Artist failed to load:", err)
+      setError({ title: "Couldn't open the artist", detail: TRY_AGAIN, request, retryable: true })
     } finally {
       setIsLoadingDetail(false)
     }
   }, [currentView])
 
+  // Ask again for what failed, where asking again could help
+  const retry = useCallback(() => {
+    if (!error?.retryable) return
+    const { request } = error
+    if (request.kind === "search") void search(request.query)
+    else if (request.kind === "album") void viewAlbum(request.id)
+    else void viewArtist(request.id)
+  }, [error, search, viewAlbum, viewArtist])
+
+  // Where Back goes from the page open now
+  const previousView: TidalView = navigationStack[navigationStack.length - 1] ?? "search"
+
   // Go back in navigation
   const goBack = useCallback(() => {
-    const prev = navigationStack[navigationStack.length - 1] || "search"
     setNavigationStack((stack) => stack.slice(0, -1))
-    setCurrentView(prev)
-  }, [navigationStack])
+    setCurrentView(previousView)
+  }, [previousView])
 
   // Check if track is already in library
   const isInLibrary = useCallback(
@@ -346,6 +400,7 @@ export function useTidalSearch(options: UseTidalSearchOptions) {
 
         const chunks: BlobPart[] = []
         let receivedLength = 0
+        let reportedProgress = -1
 
         while (true) {
           const { done, value } = await reader.read()
@@ -356,6 +411,10 @@ export function useTidalSearch(options: UseTidalSearchOptions) {
           const progress = contentLength > 0
             ? Math.round((receivedLength / contentLength) * 100)
             : 0
+          // One update per network chunk would re-render the player hundreds
+          // of times a second; one per percent is all a progress ring shows.
+          if (progress === reportedProgress) continue
+          reportedProgress = progress
 
           updateDownload(track.id, {
             status: "downloading",
@@ -597,7 +656,7 @@ export function useTidalSearch(options: UseTidalSearchOptions) {
       }
 
       const existing = downloads.get(track.id)
-      if (existing && ["queued", "downloading", "processing"].includes(existing.status)) {
+      if (existing && isDownloadActive(existing)) {
         return
       }
 
@@ -698,20 +757,10 @@ export function useTidalSearch(options: UseTidalSearchOptions) {
     updateDownload(trackId, { status: "cancelled" })
   }, [updateDownload])
 
-  // Clear error
-  const clearError = useCallback(() => setError(null), [])
-
   // Count active downloads
-  const activeDownloadCount = Array.from(downloads.values()).filter(
-    (d) => d.status === "downloading" || d.status === "queued" || d.status === "processing"
-  ).length
+  const activeDownloadCount = Array.from(downloads.values()).filter(isDownloadActive).length
 
   return {
-    // Auth (always true for Tidal)
-    isAuthenticated,
-    isAuthenticating,
-    login,
-
     // Search
     searchQuery,
     setSearchQuery,
@@ -725,6 +774,7 @@ export function useTidalSearch(options: UseTidalSearchOptions) {
 
     // Navigation
     currentView,
+    previousView,
     selectedAlbum,
     selectedArtist,
     isLoadingDetail,
@@ -750,7 +800,7 @@ export function useTidalSearch(options: UseTidalSearchOptions) {
 
     // Error
     error,
-    clearError,
+    retry,
 
     // Online
     isOnline,

@@ -8,6 +8,11 @@
   inherits: true;
   initial-value: transparent;
 }
+@property --song-accent-text {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: transparent;
+}
 @property --mark-1 {
   syntax: "<color>";
   inherits: true;
@@ -21,6 +26,22 @@
 @property --mark-3 {
   syntax: "<color>";
   inherits: true;
+  initial-value: transparent;
+}
+/* The desktop aura's lights, each set on the aura itself, so a swell repaints it alone. */
+@property --aura-1 {
+  syntax: "<color>";
+  inherits: false;
+  initial-value: transparent;
+}
+@property --aura-2 {
+  syntax: "<color>";
+  inherits: false;
+  initial-value: transparent;
+}
+@property --aura-3 {
+  syntax: "<color>";
+  inherits: false;
   initial-value: transparent;
 }
 
@@ -242,12 +263,15 @@
 
   /* The song's colours. A player root carries the cover's colours as custom
      properties (hooks/use-song-colors); this turns them into the accent for
-     the surface the player sits on, and, while music plays, lends them to the
-     wordmark ring. Without a readable cover the accent stays neutral. */
+     the surface the player sits on, a stronger one for words, and, while
+     music plays, lends them to the wordmark ring. Without a readable cover
+     the accent stays neutral. */
   .song-scope {
     --song-accent: var(--song-accent-on-paper, hsl(var(--foreground)));
+    --song-accent-text: var(--song-accent-text-on-paper, hsl(var(--foreground)));
     transition:
       --song-accent var(--motion-swell) var(--ease-swell),
+      --song-accent-text var(--motion-swell) var(--ease-swell),
       --mark-1 var(--motion-swell) var(--ease-swell),
       --mark-2 var(--motion-swell) var(--ease-swell),
       --mark-3 var(--motion-swell) var(--ease-swell);
@@ -255,6 +279,7 @@
   .dark .song-scope,
   .song-scope.dark {
     --song-accent: var(--song-accent-on-ink, hsl(var(--foreground)));
+    --song-accent-text: var(--song-accent-text-on-ink, hsl(var(--foreground)));
   }
   .song-scope[data-playing] {
     --mark-1: var(--song-ring-1-on-paper, hsl(var(--blood-300)));
@@ -482,99 +507,762 @@
     animation: roll-in 520ms var(--ease-decay) 60ms backwards;
   }
 
-  /* The desktop's frame: the sidebar, the open view and the Now panel side by
-     side, over the player bar. It fills the window exactly, so the page never
-     scrolls; each part scrolls on its own. */
-  .desktop-shell {
-    --sidebar-width: 220px;
-    --now-width: 360px;
+  /* The desktop (components/players/enhanced-music-player.tsx): a slim
+     header over two halves, the song on the left as large as the window
+     allows and the library on the right. The window itself is the song's
+     aura: the cover's colours, lit while it plays and gone back to ink while
+     it rests. The frame fills the window exactly, so the page never scrolls;
+     each half scrolls on its own. */
+  .desktop-frame {
+    /* The dimmest text here, lifted to read over the aura, which
+       lib/song-palette (`auraColors`) holds to 4.5:1 against it. */
+    --muted-foreground: 40 8% 75%;
+    /* Lines are light on ink, so they read as lines over any colour. */
+    --border: 40 10% 93% / 0.12;
+    --frame-gutter: 40px;
+    --frame-gap: 56px;
     position: relative;
-    z-index: 10;
+    isolation: isolate;
     display: grid;
-    grid-template-columns: var(--sidebar-width) minmax(0, 1fr) auto;
-    grid-template-rows: minmax(0, 1fr) auto;
+    grid-template-rows: auto minmax(0, 1fr);
     height: 100dvh;
+    /* Clipped, not hidden: the aura reaches past the edges, and a frame
+       that hides overflow can still be scrolled, as focus moves. */
+    overflow: clip;
+    background: hsl(var(--ink-0));
+    color: hsl(var(--foreground));
   }
-  /* The frame's surfaces: ink over the song's colours, open enough to let them through. */
-  .desktop-sidebar,
-  .desktop-now,
-  .player-bar {
-    background: hsl(var(--ink-0) / 0.5);
+  @media (max-width: 1279px) {
+    .desktop-frame {
+      --frame-gutter: 28px;
+      --frame-gap: 36px;
+    }
   }
-  .desktop-sidebar {
-    grid-area: 1 / 1;
-    display: flex;
-    flex-direction: column;
+  /* A scrim that deepens the window's edges, so the lights glow from within. */
+  .desktop-frame::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background: linear-gradient(
+      100deg,
+      hsl(var(--ink-0) / 0.4),
+      hsl(var(--ink-0) / 0.12) 50%,
+      hsl(var(--ink-0) / 0.48)
+    );
+  }
+
+  /* The aura: three soft lights in the cover's colours, the strongest behind
+     the cover. A song change swells from one set to the next (the colours
+     are registered, above). While music plays the lights drift, a step at a
+     time: a few moves a second, which a drift this slow can't be told from,
+     rather than a repaint every frame. Paused, they hold still and dim. */
+  .song-aura {
+    --aura-1: var(--song-aura-1, hsl(var(--ink-4)));
+    --aura-2: var(--song-aura-2, hsl(var(--ink-3)));
+    --aura-3: var(--song-aura-3, hsl(var(--ink-3)));
+    position: absolute;
+    inset: -12%;
+    z-index: -2;
+    pointer-events: none;
+    background:
+      radial-gradient(42% 52% at 18% 36%, var(--aura-1), transparent 70%),
+      radial-gradient(38% 48% at 84% 16%, var(--aura-2), transparent 70%),
+      radial-gradient(56% 58% at 50% 106%, var(--aura-3), transparent 72%);
+    opacity: 0.32;
+    animation: aura-drift 60s steps(180) infinite paused;
+    transition:
+      opacity var(--motion-swell) var(--ease-swell),
+      --aura-1 var(--motion-swell) var(--ease-swell),
+      --aura-2 var(--motion-swell) var(--ease-swell),
+      --aura-3 var(--motion-swell) var(--ease-swell);
+  }
+  .song-scope[data-playing] .song-aura {
+    opacity: 1;
+    animation-play-state: running;
+  }
+
+  /* The header: the logo, the search at the window's centre, a few tools. */
+  .desktop-header {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 460px) minmax(0, 1fr);
+    align-items: center;
     gap: 24px;
-    min-height: 0;
-    padding: 20px 12px;
-    border-right: 1px solid hsl(var(--border));
+    height: 76px;
+    padding: 0 var(--frame-gutter);
   }
   .desktop-lockup {
     display: flex;
     align-items: center;
-    gap: 10px;
-    padding: 0 10px;
-    font-size: 1.5rem; /* 24px, for the wordmark */
+    gap: 12px;
+    justify-self: start;
+    font-size: 1.625rem; /* 26px, for the wordmark */
   }
-  .desktop-nav {
-    display: grid;
-    gap: 2px;
+  .desktop-lockup-icon {
+    border-radius: 8px;
   }
-  .desktop-nav-item {
-    position: relative;
+  .desktop-header-tools {
     display: flex;
     align-items: center;
-    gap: 12px;
-    width: 100%;
-    height: 38px;
-    padding: 0 10px;
-    border-radius: 8px;
+    justify-content: flex-end;
+    gap: 4px;
+    min-width: 0;
+  }
+  /* A tool that says what it is, and how it stands: the cloud, downloads. */
+  .header-button {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: 8px;
+    height: 40px;
+    padding: 0 12px;
+    border-radius: 10px;
     color: hsl(var(--muted-foreground));
     font-size: 0.875rem; /* 14px */
     font-weight: 500;
-    text-align: left;
+    white-space: nowrap;
     transition:
       color var(--motion-release) var(--ease-release),
       background-color var(--motion-release) var(--ease-release);
   }
-  .desktop-nav-item > svg {
+  .header-button > svg {
     flex: none;
     width: 18px;
     height: 18px;
   }
-  .desktop-nav-item:hover {
-    color: hsl(var(--foreground));
-    background-color: hsl(var(--foreground) / 0.05);
-    transition-duration: var(--motion-attack);
-  }
-  .desktop-nav-item:focus-visible {
+  .header-button:focus-visible {
     outline: 2px solid hsl(var(--ring));
     outline-offset: -2px;
   }
-  .desktop-nav-item[aria-current="page"] {
-    color: hsl(var(--foreground));
-    background-color: hsl(var(--foreground) / 0.07);
+  @media (hover: hover) {
+    .header-button:hover {
+      color: hsl(var(--foreground));
+      background-color: hsl(var(--foreground) / 0.07);
+      transition-duration: var(--motion-attack);
+    }
   }
-  /* The open view: a stroke of Audora's red at its edge. */
-  .desktop-nav-item[aria-current="page"]::before {
-    content: "";
-    position: absolute;
-    left: 0;
-    top: 10px;
-    bottom: 10px;
-    width: 2px;
-    border-radius: 1px;
-    background: hsl(var(--primary));
-  }
-  .desktop-nav-aside {
-    margin-left: auto;
+  /* A tool that is an icon: Add music, Settings. Quiet until touched. */
+  .header-icon {
+    position: relative;
     color: hsl(var(--muted-foreground));
   }
-  /* Settings, at the sidebar's foot. */
-  .desktop-nav-foot {
-    margin-top: auto;
+  .header-icon:hover,
+  .header-icon[aria-pressed="true"] {
+    color: hsl(var(--foreground));
   }
+  .header-icon[aria-disabled="true"] {
+    cursor: progress;
+  }
+  /* Busy: an arc turning around the tool, the way a loading song's does. */
+  .busy-arc {
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-dasharray: 12 60;
+    animation: play-arc-turn 0.9s linear infinite;
+  }
+  .header-button > .busy-arc {
+    width: 16px;
+    height: 16px;
+  }
+  .header-icon-arc {
+    position: absolute;
+    inset: 2px;
+    width: calc(100% - 4px);
+    height: calc(100% - 4px);
+    stroke: var(--song-accent);
+    stroke-dasharray: 18 80;
+    opacity: 0;
+    animation-play-state: paused;
+    transition: opacity var(--motion-release) var(--ease-release);
+  }
+  .header-icon[data-busy] .header-icon-arc {
+    opacity: 1;
+    animation-play-state: running;
+    transition-duration: var(--motion-attack);
+  }
+  /* Something going up or coming down (components/player/progress-ring.tsx):
+     a ring that fills from the top as it does. */
+  .progress-ring {
+    flex: none;
+    width: 16px;
+    height: 16px;
+    transform: rotate(-90deg);
+  }
+  .progress-ring circle {
+    fill: none;
+    stroke-width: 2;
+  }
+  .progress-ring-track {
+    stroke: hsl(var(--foreground) / 0.15);
+  }
+  .progress-ring-fill {
+    stroke: hsl(var(--foreground));
+    stroke-linecap: round;
+    transition: stroke-dashoffset var(--motion-decay) var(--ease-decay);
+  }
+
+  /* A soft field, no box, that brightens as you type in it: the search,
+     and the online search's own fields. */
+  .soft-field {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    height: 44px;
+    padding: 0 7px 0 16px;
+    border-radius: 12px;
+    background: hsl(var(--foreground) / 0.08);
+    color: hsl(var(--muted-foreground));
+    transition:
+      background-color var(--motion-release) var(--ease-release),
+      box-shadow var(--motion-release) var(--ease-release),
+      color var(--motion-release) var(--ease-release);
+  }
+  .soft-field:focus-within {
+    background: hsl(var(--foreground) / 0.13);
+    box-shadow: inset 0 0 0 1px hsl(var(--foreground) / 0.26);
+    color: hsl(var(--foreground));
+    transition-duration: var(--motion-attack);
+  }
+  .soft-field > svg {
+    flex: none;
+    width: 18px;
+    height: 18px;
+  }
+  .soft-field input {
+    flex: 1;
+    min-width: 0;
+    height: 100%;
+    background: transparent;
+    color: hsl(var(--foreground));
+    font-size: 0.9375rem; /* 15px */
+    outline: none;
+  }
+  .soft-field input::placeholder {
+    color: hsl(var(--muted-foreground));
+  }
+  /* Its own way to clear or close stands in for the browser's. */
+  .soft-field input::-webkit-search-cancel-button {
+    -webkit-appearance: none;
+    appearance: none;
+  }
+  .header-search-key {
+    @apply font-mono;
+    flex: none;
+    padding-right: 9px;
+    font-size: 0.6875rem; /* 11px */
+    color: hsl(var(--muted-foreground));
+  }
+  /* A soft field's ×, which clears it, or closes the search. */
+  .soft-field-clear {
+    display: grid;
+    flex: none;
+    place-items: center;
+    width: 30px;
+    height: 30px;
+    border-radius: 9999px;
+    color: hsl(var(--muted-foreground));
+    transition:
+      color var(--motion-release) var(--ease-release),
+      background-color var(--motion-release) var(--ease-release);
+  }
+  .soft-field-clear > svg {
+    width: 16px;
+    height: 16px;
+  }
+  .soft-field-clear:focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: -2px;
+  }
+  @media (hover: hover) {
+    .soft-field-clear:hover {
+      color: hsl(var(--foreground));
+      background-color: hsl(var(--foreground) / 0.08);
+      transition-duration: var(--motion-attack);
+    }
+  }
+
+  /* The two halves, the song's and the library's, with room between. */
+  .desktop-body {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: var(--frame-gap);
+    min-height: 0;
+    padding: 4px var(--frame-gutter) 32px;
+  }
+
+  /* The stage (components/desktop/now-stage.tsx): the cover as large as its
+     half allows, with what plays, its seek bar, the transport and the tools
+     under it, each at a fixed height so the cover takes exactly what is left.
+     Below a comfortable width the cover gives way first and the controls
+     keep theirs. */
+  .stage {
+    container-type: size;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 0;
+    min-height: 0;
+  }
+  .stage-stack {
+    --info-height: 124px;
+    --seek-height: 52px;
+    --transport-height: 80px;
+    --tools-height: 52px;
+    --cover: max(
+      160px,
+      min(
+        640px,
+        100cqw,
+        100cqh - var(--info-height) - var(--seek-height) - var(--transport-height) - var(--tools-height)
+      )
+    );
+    display: flex;
+    flex-direction: column;
+    width: max(var(--cover), min(420px, 100cqw));
+    min-width: 0;
+  }
+  .stage-square {
+    position: relative;
+    flex: none;
+    width: var(--cover);
+    height: var(--cover);
+    margin-inline: auto;
+  }
+  .stage-cover,
+  .stage-empty {
+    position: absolute;
+    inset: 0;
+    border-radius: 16px;
+    box-shadow:
+      0 40px 90px -30px hsl(var(--ink-0) / 0.85),
+      0 0 0 1px hsl(var(--paper) / 0.06);
+    transition:
+      opacity var(--motion-release) var(--ease-release),
+      transform var(--motion-pluck) var(--ease-pluck),
+      visibility 0s;
+  }
+  .stage-cover {
+    display: block;
+    cursor: zoom-in;
+  }
+  .stage-cover:active {
+    transform: scale(0.985);
+    transition: transform var(--motion-attack) var(--ease-attack);
+  }
+  .stage-cover .stage-art {
+    width: 100%;
+    height: 100%;
+  }
+  .stage-empty {
+    display: grid;
+    place-content: center;
+    justify-items: center;
+    gap: 4px;
+    padding: 24px;
+    background: hsl(var(--paper) / 0.04);
+    text-align: center;
+  }
+  .stage-empty-ring {
+    width: 56px;
+    height: 56px;
+    margin-bottom: 14px;
+    transform: none;
+  }
+  .stage-empty-title {
+    @apply font-display;
+    font-size: 1.25rem; /* 20px */
+    font-weight: 600;
+    letter-spacing: -0.02em;
+  }
+  .stage-empty-detail {
+    font-size: 0.875rem; /* 14px */
+    color: hsl(var(--muted-foreground));
+  }
+  /* A view open in the cover's place: the cover steps back, the view comes in. */
+  .stage:not([data-mode="cover"]) :is(.stage-cover, .stage-empty) {
+    opacity: 0;
+    transform: scale(0.96);
+    visibility: hidden;
+    transition:
+      opacity var(--motion-release) var(--ease-release),
+      transform var(--motion-release) var(--ease-release),
+      visibility 0s linear var(--motion-release);
+  }
+  .stage-view {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+    animation: stage-view-in var(--motion-decay) var(--ease-decay);
+  }
+  /* Lyrics fill the square, as large as it allows. */
+  .stage-view .lyrics-line {
+    padding: 5px 0;
+    font-size: clamp(1.25rem, 6.2cqw, 1.875rem); /* 20 to 30px */
+    font-weight: 700;
+    line-height: 1.18;
+    letter-spacing: -0.025em;
+  }
+  .stage-view .lyrics-lines {
+    padding-inline: 0;
+  }
+  /* The other views scroll inside the square, flush with its edges, and fade
+     out at its foot rather than stopping at an edge. */
+  .stage-view :is(.video, .about) {
+    padding: 0 8px 40px 0;
+  }
+  .stage-view :is(.video-scroll, .about-scroll, .queue-scroll) {
+    -webkit-mask: linear-gradient(#000 calc(100% - 32px), transparent);
+    mask: linear-gradient(#000 calc(100% - 32px), transparent);
+  }
+
+  .stage-info {
+    display: grid;
+    align-content: start;
+    gap: 6px;
+    height: var(--info-height);
+    min-width: 0;
+    padding-top: 22px;
+  }
+  .stage-title {
+    @apply font-display;
+    min-width: 0;
+    font-size: 2.5rem; /* 40px */
+    font-weight: 600;
+    line-height: 1.15;
+    letter-spacing: -0.03em;
+  }
+  .stage-credits {
+    min-width: 0;
+    font-size: 1rem; /* 16px */
+    line-height: 1.4;
+    color: hsl(var(--muted-foreground));
+  }
+  .stage-link {
+    border-radius: 3px;
+    text-underline-offset: 3px;
+    transition: color var(--motion-attack) var(--ease-attack);
+  }
+  .stage-link:hover {
+    color: hsl(var(--foreground));
+    text-decoration: underline;
+  }
+  .stage-link:focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 1px;
+  }
+  .stage-specs {
+    justify-self: start;
+    margin-top: 2px;
+  }
+  .stage-seek {
+    height: var(--seek-height);
+    padding-top: 12px;
+  }
+  .stage-transport {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: var(--transport-height);
+  }
+  .stage-transport .transport-button {
+    color: hsl(var(--foreground));
+  }
+  .stage-transport .play-button {
+    box-shadow: 0 14px 34px -12px hsl(var(--ink-0) / 0.7);
+  }
+  /* The quieter tools beside the transport: shuffle, more, the mute. A
+     toggle on stays in paper, with a dot in the song's colour beneath. */
+  .stage .stage-quiet {
+    position: relative;
+    color: hsl(var(--muted-foreground));
+  }
+  .stage .stage-quiet:hover:not(:disabled),
+  .stage .stage-quiet[aria-pressed="true"],
+  .stage .stage-quiet[data-state="open"] {
+    color: hsl(var(--foreground));
+  }
+  .stage .stage-quiet::after {
+    content: "";
+    position: absolute;
+    bottom: 5px;
+    left: 50%;
+    width: 4px;
+    height: 4px;
+    margin-left: -2px;
+    border-radius: 9999px;
+    background: var(--song-accent);
+    opacity: 0;
+    transform: scale(0);
+    transition:
+      opacity var(--motion-release) var(--ease-release),
+      transform var(--motion-release) var(--ease-release);
+  }
+  .stage .stage-quiet[aria-pressed="true"]::after {
+    opacity: 1;
+    transform: none;
+    transition:
+      opacity var(--motion-decay) var(--ease-decay),
+      transform var(--motion-pluck) var(--ease-pluck);
+  }
+
+  /* The song's views, as words lit by an LED, and the volume. The volume's
+     slider gives way first when the stage is narrow. */
+  .stage-tools {
+    container-type: inline-size;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    height: var(--tools-height);
+    padding-top: 12px;
+  }
+  .stage-modes {
+    display: flex;
+    flex: none;
+    gap: 2px;
+  }
+  /* A word lit by an LED in the song's colour while it is the one on: the
+     stage's views, and where the online search looks. */
+  .led-choice {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: 8px;
+    height: 38px;
+    padding: 0 11px;
+    border-radius: 10px;
+    color: hsl(var(--muted-foreground));
+    font-size: 0.875rem; /* 14px */
+    font-weight: 500;
+    white-space: nowrap;
+    transition:
+      color var(--motion-release) var(--ease-release),
+      background-color var(--motion-release) var(--ease-release);
+  }
+  .led-choice::before {
+    content: "";
+    flex: none;
+    width: 6px;
+    height: 6px;
+    border-radius: 9999px;
+    background: hsl(var(--foreground) / 0.22);
+    transition: background-color var(--motion-decay) var(--ease-decay);
+  }
+  .led-choice:is([aria-pressed="true"], [aria-checked="true"]) {
+    color: hsl(var(--foreground));
+  }
+  .led-choice:is([aria-pressed="true"], [aria-checked="true"])::before {
+    background: var(--song-accent);
+  }
+  .led-choice:focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: -2px;
+  }
+  @media (hover: hover) {
+    .led-choice:hover {
+      color: hsl(var(--foreground));
+      background-color: hsl(var(--foreground) / 0.07);
+      transition-duration: var(--motion-attack);
+    }
+  }
+  /* The slider is what narrows when the stage does, down to a width still
+     worth dragging; narrower than that, the mute stands alone. */
+  .stage-volume {
+    display: flex;
+    flex: 0 1 auto;
+    align-items: center;
+    min-width: 0;
+  }
+  .stage-volume-slider {
+    flex: 0 1 84px;
+    min-width: 48px;
+    margin: 0 6px;
+  }
+  @container (max-width: 415px) {
+    .stage-volume-slider {
+      display: none;
+    }
+  }
+
+  /* Volume (components/player/volume-slider.tsx): a thin track whose knob
+     shows under the pointer or the keyboard. Muted, the level dims in place. */
+  .volume {
+    position: relative;
+    display: flex;
+    align-items: center;
+    height: 20px;
+    cursor: pointer;
+    touch-action: none;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  .volume-track {
+    position: relative;
+    flex: 1;
+    height: 4px;
+    border-radius: 4px;
+    overflow: hidden;
+    background: hsl(var(--foreground) / 0.16);
+  }
+  .volume-range {
+    position: absolute;
+    height: 100%;
+    background: hsl(var(--foreground));
+    transition: opacity var(--motion-decay) var(--ease-decay);
+  }
+  .volume[data-muted] .volume-range {
+    opacity: 0.35;
+  }
+  .volume-thumb {
+    display: block;
+    width: 14px;
+    height: 14px;
+    border-radius: 9999px;
+    background: hsl(var(--foreground));
+    box-shadow: 0 2px 10px hsl(var(--ink-0) / 0.5);
+    transform: scale(0);
+    transition: transform var(--motion-release) var(--ease-release);
+  }
+  .volume:hover .volume-thumb,
+  .volume-thumb:focus-visible {
+    transform: none;
+    transition: transform var(--motion-pluck) var(--ease-pluck);
+  }
+  .volume-thumb:focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 2px;
+  }
+
+  /* The right half: the library, the search's results, or Settings, under a
+     head of their own. The library stays mounted under the other two. */
+  .desktop-side {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+  }
+  .desktop-side-stack {
+    display: grid;
+    grid-template: minmax(0, 1fr) / minmax(0, 1fr);
+    flex: 1;
+    min-height: 0;
+  }
+  .desktop-layer {
+    animation: fade-in var(--motion-decay) var(--ease-decay);
+  }
+  .desktop-side .library-panel {
+    padding: 0;
+  }
+  /* Lists fade out at their foot rather than stopping at an edge. */
+  .desktop-side :is(.library-scroll, .library-page-scroll, .online-scroll, .settings) {
+    -webkit-mask: linear-gradient(#000 calc(100% - 40px), transparent);
+    mask: linear-gradient(#000 calc(100% - 40px), transparent);
+  }
+
+  /* A head: its title and what it holds, then its tools. */
+  .view-head {
+    /* What it holds gives way to its tools as it narrows, below. */
+    container-type: inline-size;
+    display: flex;
+    flex: none;
+    align-items: baseline;
+    gap: 14px;
+    min-height: 58px;
+    padding: 8px 8px 12px;
+  }
+  .view-title {
+    @apply font-display;
+    font-size: 1.875rem; /* 30px */
+    font-weight: 600;
+    letter-spacing: -0.025em;
+    line-height: 1;
+    white-space: nowrap;
+  }
+  .view-meta {
+    color: hsl(var(--muted-foreground));
+    white-space: nowrap;
+  }
+  .view-tools {
+    display: flex;
+    flex: 1;
+    align-items: center;
+    align-self: center;
+    justify-content: flex-end;
+    gap: 8px;
+    min-width: 0;
+  }
+  .view-toggle {
+    display: flex;
+    gap: 2px;
+  }
+  @container (max-width: 360px) {
+    .view-meta {
+      display: none;
+    }
+  }
+
+  /* Where the search looks: Library or Online, set as the head's title. The
+     open one takes the song's colour in a line beneath it. */
+  .search-tabs {
+    display: flex;
+    gap: 4px;
+    margin: -6px 0 -10px -10px;
+  }
+  .search-tab {
+    @apply font-display;
+    position: relative;
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    padding: 6px 10px 12px;
+    border-radius: 10px;
+    font-size: 1.5rem; /* 24px */
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    line-height: 1.1;
+    color: hsl(var(--muted-foreground));
+    transition: color var(--motion-release) var(--ease-release);
+  }
+  .search-tab::after {
+    content: "";
+    position: absolute;
+    right: 10px;
+    bottom: 4px;
+    left: 10px;
+    height: 2px;
+    border-radius: 2px;
+    background: var(--song-accent);
+    transform: scaleX(0);
+    transition: transform var(--motion-release) var(--ease-release);
+  }
+  .search-tab[aria-selected="true"] {
+    color: hsl(var(--foreground));
+  }
+  .search-tab[aria-selected="true"]::after {
+    transform: none;
+    transition: transform var(--motion-decay) var(--ease-decay);
+  }
+  .search-tab-count {
+    color: hsl(var(--muted-foreground));
+    letter-spacing: -0.01em;
+  }
+  .search-tab:focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: -2px;
+  }
+  @media (hover: hover) {
+    .search-tab:hover {
+      color: hsl(var(--foreground));
+      transition-duration: var(--motion-attack);
+    }
+  }
+
   /* An LED (components/desktop/status-led.tsx): dark, lit, or a fault. */
   .status-led {
     flex: none;
@@ -589,135 +1277,6 @@
   .status-led[data-state="error"] {
     background: hsl(var(--destructive));
   }
-  .desktop-nav-dot {
-    margin-left: auto;
-  }
-  /* The cloud while files go up: a ring that fills as they do. */
-  .desktop-nav-ring {
-    flex: none;
-    width: 16px;
-    height: 16px;
-    margin-left: auto;
-    transform: rotate(-90deg);
-  }
-  .desktop-nav-ring circle {
-    fill: none;
-    stroke-width: 2;
-  }
-  .desktop-nav-ring-track {
-    stroke: hsl(var(--foreground) / 0.15);
-  }
-  .desktop-nav-ring-fill {
-    stroke: hsl(var(--foreground));
-    stroke-linecap: round;
-  }
-  .desktop-main {
-    grid-area: 1 / 2;
-    display: flex;
-    flex-direction: column;
-    min-width: 0;
-    min-height: 0;
-  }
-  /* The open view's content, below its head. */
-  .desktop-view {
-    display: flex;
-    flex: 1;
-    flex-direction: column;
-    min-height: 0;
-  }
-  .desktop-view[data-view="online"] {
-    padding: 0 24px;
-  }
-  .desktop-now {
-    grid-area: 1 / 3;
-    display: flex;
-    flex-direction: column;
-    width: var(--now-width);
-    min-height: 0;
-    padding: 0 12px;
-    border-left: 1px solid hsl(var(--border));
-  }
-
-  /* A view's head: its title and what it holds, then its tools. */
-  .view-head {
-    /* What it holds gives way to its tools as it narrows, below. */
-    container-type: inline-size;
-    display: flex;
-    flex: none;
-    align-items: center;
-    gap: 16px;
-    min-height: 64px;
-    padding: 12px 24px;
-  }
-  .view-title {
-    @apply font-display;
-    font-size: 1.5rem; /* 24px */
-    font-weight: 600;
-    letter-spacing: -0.02em;
-    line-height: 1;
-    white-space: nowrap;
-  }
-  .view-meta {
-    color: hsl(var(--muted-foreground));
-    white-space: nowrap;
-  }
-  .view-tools {
-    display: flex;
-    flex: 1;
-    align-items: center;
-    justify-content: flex-end;
-    gap: 8px;
-    min-width: 0;
-  }
-  .view-toggle {
-    display: flex;
-    gap: 2px;
-  }
-  /* A narrow head, as beside an open Now panel: what the view holds goes, so
-     the search keeps room to type in. */
-  @container (max-width: 600px) {
-    .view-meta {
-      display: none;
-    }
-  }
-
-  /* Search: a field that says where it looks. */
-  .search-field {
-    display: flex;
-    /* The first of the head's tools to give way, down to a width still worth typing in. */
-    flex: 0 1 320px;
-    align-items: center;
-    gap: 8px;
-    min-width: 120px;
-    height: 36px;
-    padding: 0 12px;
-    border: 1px solid hsl(var(--border));
-    border-radius: 8px;
-    background: hsl(var(--foreground) / 0.05);
-    color: hsl(var(--muted-foreground));
-    transition: border-color var(--motion-release) var(--ease-release);
-  }
-  .search-field:focus-within {
-    border-color: hsl(var(--foreground) / 0.4);
-    color: hsl(var(--foreground));
-    transition-duration: var(--motion-attack);
-  }
-  .search-field > svg {
-    flex: none;
-    width: 16px;
-    height: 16px;
-  }
-  .search-field input {
-    flex: 1;
-    min-width: 0;
-    background: transparent;
-    color: hsl(var(--foreground));
-    font-size: 0.875rem; /* 14px */
-    outline: none;
-  }
-  .search-field input::placeholder {
-    color: hsl(var(--muted-foreground));
-  }
 
   /* Settings (components/desktop/settings-view.tsx): sections of rows, each
      saying how a thing stands, as data, and offering the change. A section's
@@ -730,7 +1289,7 @@
     flex: 1;
     min-height: 0;
     overflow-y: auto;
-    padding: 4px 24px 48px;
+    padding: 4px 8px 48px;
   }
   .settings-section {
     display: grid;
@@ -779,7 +1338,7 @@
     grid-column: 3;
     justify-self: end;
   }
-  /* Narrow, as beside an open Now panel: the value goes under the words. */
+  /* Narrow, as in a small window: the value goes under the words. */
   @container (max-width: 600px) {
     .settings-rows {
       grid-template-columns: minmax(0, 1fr) auto;
@@ -793,94 +1352,6 @@
       grid-column: 2;
       grid-row: 1 / span 2;
     }
-  }
-
-  /* The player bar: what is playing, the transport, and the player's tools. */
-  .player-bar {
-    grid-area: 2 / 1 / 3 / -1;
-    display: grid;
-    grid-template-columns: minmax(0, 1.1fr) minmax(0, 1.4fr) minmax(0, 1fr);
-    align-items: center;
-    gap: 24px;
-    height: 88px;
-    padding: 0 16px;
-    border-top: 1px solid hsl(var(--border));
-  }
-  .player-bar-track {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    min-width: 0;
-  }
-  .player-bar-cover {
-    flex: none;
-    border-radius: 8px;
-    transition: transform var(--motion-pluck) var(--ease-pluck);
-  }
-  .player-bar-cover:active {
-    transform: scale(0.96);
-    transition: transform var(--motion-attack) var(--ease-attack);
-  }
-  .player-bar-text {
-    display: grid;
-    gap: 3px;
-    min-width: 0;
-  }
-  .player-bar-title {
-    font-size: 0.9375rem; /* 15px */
-    font-weight: 600;
-    line-height: 1.25;
-  }
-  .player-bar-credits {
-    font-size: 0.8125rem; /* 13px */
-    line-height: 1.3;
-    color: hsl(var(--muted-foreground));
-  }
-  .player-bar-link {
-    text-underline-offset: 2px;
-    transition: color var(--motion-attack) var(--ease-attack);
-  }
-  .player-bar-link:hover {
-    color: hsl(var(--foreground));
-    text-decoration: underline;
-  }
-  .player-bar-link:focus-visible {
-    outline: 2px solid hsl(var(--ring));
-    outline-offset: 1px;
-    border-radius: 2px;
-  }
-  .player-bar-centre {
-    display: grid;
-    justify-items: center;
-    gap: 2px;
-    min-width: 0;
-  }
-  .player-bar-transport {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-  }
-  .player-bar-tools {
-    display: flex;
-    align-items: center;
-    justify-content: flex-end;
-    gap: 4px;
-    min-width: 0;
-  }
-  /* Volume: a thin track whose knob shows under the pointer or the keyboard. */
-  .volume-slider > span:first-child {
-    height: 4px;
-  }
-  .volume-slider [role="slider"] {
-    width: 14px;
-    height: 14px;
-    opacity: 0;
-    transition: opacity var(--motion-release) var(--ease-release);
-  }
-  .volume-slider:hover [role="slider"],
-  .volume-slider [role="slider"]:focus-visible {
-    opacity: 1;
-    transition-duration: var(--motion-attack);
   }
 
   /* The library. The list is as long as the whole library but drawn a
@@ -909,7 +1380,8 @@
     flex: 1;
     min-height: 0;
   }
-  .library-layer {
+  .library-layer,
+  .desktop-layer {
     grid-area: 1 / 1;
     display: flex;
     flex-direction: column;
@@ -923,7 +1395,8 @@
   .library-layer:focus {
     outline: none;
   }
-  .library-layer[data-covered] {
+  .library-layer[data-covered],
+  .desktop-layer[data-covered] {
     opacity: 0;
     visibility: hidden;
     transition:
@@ -982,6 +1455,17 @@
     font-size: 1.0625rem; /* 17px */
     font-weight: 600;
     letter-spacing: -0.015em;
+  }
+  /* Over the desktop's aura the header is clear glass: the aura's soft light
+     shows through it unchanged, and only songs passing under it blur away.
+     Its name is a size up. */
+  .library[data-layout="desktop"] .library-artist {
+    background: hsl(var(--ink-0) / 0.2);
+    -webkit-backdrop-filter: blur(20px);
+    backdrop-filter: blur(20px);
+  }
+  .library[data-layout="desktop"] .library-artist-name {
+    font-size: 1.1875rem; /* 19px */
   }
   .library-album {
     position: relative;
@@ -1212,7 +1696,7 @@
     transition: color var(--motion-release) var(--ease-release);
   }
   .library-row[data-playback] .library-row-title {
-    color: var(--song-accent);
+    color: var(--song-accent-text);
     transition-duration: var(--motion-attack);
   }
   .library-row-sub {
@@ -1274,9 +1758,32 @@
     }
   }
 
+  /* On the desktop a row is roomier, with a larger cover. */
+  .library-row[data-layout="desktop"] {
+    border-radius: 12px;
+  }
+  .library-row[data-layout="desktop"] .library-row-main {
+    grid-template-columns: 24px 48px minmax(0, 1fr) auto;
+    gap: 14px;
+    padding: 0 6px 0 8px;
+  }
+  .library-row[data-layout="desktop"] .library-row-art {
+    width: 48px;
+    height: 48px;
+  }
+  .library-row[data-layout="desktop"] .library-row-title {
+    font-size: 0.9375rem; /* 15px */
+  }
+  .library-row[data-layout="desktop"] .library-row-sub {
+    font-size: 0.8125rem; /* 13px */
+  }
+
   /* A row without a cover, where every row shares one: just the number. */
   .library-row[data-art="off"] .library-row-main {
     grid-template-columns: 22px minmax(0, 1fr) auto;
+  }
+  .library-row[data-layout="desktop"][data-art="off"] .library-row-main {
+    grid-template-columns: 24px minmax(0, 1fr) auto;
   }
 
   /* On the phone the number gives way to the cover; while a song loads or
@@ -1351,7 +1858,7 @@
     opacity: 0.3;
   }
   .library-scrubber-letter[data-active] {
-    color: var(--song-accent);
+    color: var(--song-accent-text);
     font-weight: 700;
     transition-duration: var(--motion-attack);
   }
@@ -1432,7 +1939,9 @@
     gap: 4px;
     min-width: 0;
   }
-  .library-page-kind {
+  /* What a page is, and the online search's sections: small capitals. */
+  .library-page-kind,
+  .online-section-title {
     font-size: 0.6875rem; /* 11px */
     font-weight: 600;
     letter-spacing: 0.08em;
@@ -1557,6 +2066,489 @@
     }
     .library-page-title {
       font-size: 1.375rem; /* 22px */
+    }
+  }
+
+  /* The online search (components/dab/online-search-sidebar.tsx): what to
+     show and where to look, over results laid out like the library, whose
+     albums and artists open as the library's pages do. */
+  .online {
+    /* Pages size their heads to the panel, as in the library. */
+    container-type: inline-size;
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    height: 100%;
+    min-width: 0;
+    min-height: 0;
+  }
+  /* Its right edge is the rows', clear of the scrollbar as they are. */
+  .online-controls {
+    display: grid;
+    flex: none;
+    gap: 10px;
+    padding: 0 12px 10px 0;
+  }
+  .online[data-layout="phone"] .online-controls {
+    padding-right: 8px;
+  }
+  .online-field {
+    height: 40px;
+    padding-left: 14px;
+  }
+  /* Two rows that never trade places as counts change: what to show, then
+     where to look, with the way to paste a link at its end. */
+  .online-filters {
+    display: grid;
+    gap: 2px;
+  }
+  .online-filters-end {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 2px 12px;
+  }
+  .online-types,
+  .online-sources {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 2px;
+  }
+  /* What to show: words, the one showing underlined in the song's colour.
+     Each sits 8px in, its text in line with the rows' covers below. */
+  .online-type {
+    position: relative;
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    height: 34px;
+    padding: 0 8px;
+    border-radius: 10px;
+    color: hsl(var(--muted-foreground));
+    font-size: 0.9375rem; /* 15px */
+    font-weight: 500;
+    line-height: 34px;
+    white-space: nowrap;
+    transition:
+      color var(--motion-release) var(--ease-release),
+      background-color var(--motion-release) var(--ease-release);
+  }
+  .online-type::after {
+    content: "";
+    position: absolute;
+    right: 8px;
+    bottom: 3px;
+    left: 8px;
+    height: 2px;
+    border-radius: 2px;
+    background: var(--song-accent);
+    transform: scaleX(0);
+    transition: transform var(--motion-release) var(--ease-release);
+  }
+  .online-type[aria-checked="true"] {
+    color: hsl(var(--foreground));
+  }
+  .online-type[aria-checked="true"]::after {
+    transform: none;
+    transition: transform var(--motion-pluck) var(--ease-pluck);
+  }
+  .online-type-count {
+    @apply font-mono tabular-nums;
+    font-size: 0.6875rem; /* 11px */
+    color: hsl(var(--muted-foreground));
+  }
+  /* Where it looks: the stage's LED words, a size down. */
+  .online-source {
+    gap: 7px;
+    height: 32px;
+    padding: 0 8px;
+    font-size: 0.8125rem; /* 13px */
+  }
+  .online-paste-toggle {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    height: 32px;
+    padding: 0 8px;
+    border-radius: 10px;
+    color: hsl(var(--muted-foreground));
+    font-size: 0.8125rem; /* 13px */
+    font-weight: 500;
+    white-space: nowrap;
+    transition:
+      color var(--motion-release) var(--ease-release),
+      background-color var(--motion-release) var(--ease-release);
+  }
+  .online-paste-toggle > svg {
+    width: 15px;
+    height: 15px;
+  }
+  .online-paste-toggle[aria-expanded="true"] {
+    color: hsl(var(--foreground));
+  }
+  .online-paste {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .online-paste > .soft-field {
+    flex: 1;
+  }
+  .online-paste > .text-button {
+    height: 40px;
+  }
+  .online-type:focus-visible,
+  .online-paste-toggle:focus-visible,
+  .online-pending:focus-visible,
+  .online-bio-toggle:focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: -2px;
+  }
+
+  /* The results scroll under the controls, dimmed while a search runs. */
+  .online-scroll {
+    flex: 1;
+    min-height: 0;
+  }
+  /* Clear of the overlaid scrollbar, like the library. */
+  .online-body {
+    margin: 0 12px 24px 0;
+    transition: opacity var(--motion-release) var(--ease-release);
+  }
+  .online[data-layout="phone"] .online-body {
+    margin: 0 8px 16px 0;
+  }
+  .online-body[aria-busy="true"] {
+    opacity: 0.5;
+  }
+  /* Words typed but not yet looked for online. */
+  .online-pending {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    height: 44px;
+    margin-bottom: 12px;
+    padding: 0 14px;
+    border-radius: 12px;
+    background: hsl(var(--foreground) / 0.06);
+    font-size: 0.875rem; /* 14px */
+    text-align: left;
+    transition: background-color var(--motion-release) var(--ease-release);
+  }
+  .online-pending > svg {
+    flex: none;
+    width: 16px;
+    height: 16px;
+    color: var(--song-accent);
+  }
+  .online-pending-text {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .online-pending-key {
+    @apply font-mono;
+    flex: none;
+    font-size: 0.6875rem; /* 11px */
+    color: hsl(var(--muted-foreground));
+  }
+  .online-notice {
+    padding: 4px 8px 16px;
+  }
+  .online-section + .online-section {
+    margin-top: 20px;
+  }
+  .online-section-title {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    padding: 0 8px 6px;
+  }
+  .online-item {
+    height: 64px;
+  }
+  .online[data-layout="phone"] .online-item {
+    height: 56px;
+  }
+
+  /* A result is a library row with a cover leading instead of a number. */
+  .online-row[data-layout="desktop"]:not([data-art="off"]) .library-row-main {
+    grid-template-columns: 48px minmax(0, 1fr) auto;
+  }
+  .online-cover {
+    position: relative;
+    display: grid;
+    place-items: center;
+    width: 48px;
+    height: 48px;
+    overflow: hidden;
+    border-radius: 8px;
+    background: hsl(var(--foreground) / 0.06);
+    color: hsl(var(--muted-foreground));
+  }
+  .online-cover > * {
+    grid-area: 1 / 1;
+  }
+  .online-cover > img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+  .online-cover > svg {
+    width: 40%;
+    height: 40%;
+    opacity: 0.6;
+  }
+  .library-row[data-layout="phone"] .online-cover {
+    width: 40px;
+    height: 40px;
+    border-radius: 6px;
+  }
+  .library-page-head .online-cover {
+    border-radius: 12px;
+  }
+  .online-cover[data-kind="artist"] {
+    border-radius: 9999px;
+  }
+  /* The preview's mark on the cover, over a shade of ink: play under the
+     pointer, then the arc while it loads and the bars while it plays. */
+  .online-cover-mark {
+    --row-mark: hsl(var(--paper));
+    z-index: 1;
+    width: 100%;
+    height: 100%;
+    background: hsl(var(--ink-0) / 0.55);
+    color: hsl(var(--paper));
+    opacity: 0;
+    transition: opacity var(--motion-release) var(--ease-release);
+  }
+  .online-cover-mark .library-row-number > svg {
+    width: 18px;
+    height: 18px;
+    fill: currentColor;
+  }
+  .library-row[data-playback] .online-cover-mark,
+  .library-row-main:focus-visible .online-cover-mark {
+    opacity: 1;
+    transition-duration: var(--motion-attack);
+  }
+  .online-row-trail {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  /* Long songs too: the times keep one column. */
+  .online-row-trail > .library-row-duration {
+    min-width: 5ch;
+    text-align: right;
+  }
+  /* Where a result comes from, as spec text. A narrow panel, such as the
+     phone's, gives the room to the titles instead. */
+  .online-row-source {
+    @apply font-mono;
+    font-size: 0.625rem; /* 10px */
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: hsl(var(--muted-foreground));
+  }
+  @container (max-width: 440px) {
+    .online-row-source {
+      display: none;
+    }
+  }
+  .online-row-chevron,
+  .online-row-busy {
+    flex: none;
+    width: 16px;
+    height: 16px;
+    margin-right: 8px;
+    color: hsl(var(--muted-foreground));
+  }
+  /* A page that didn't open, said where its chevron was. */
+  .online-row-note {
+    margin-right: 8px;
+    color: hsl(var(--muted-foreground));
+    font-size: 0.75rem; /* 12px */
+    white-space: nowrap;
+  }
+
+  /* A song's download at the end of its row: the way to get it; a ring as
+     it comes down, which stops it when pressed; a check once it is in the
+     library. A failure offers to try again, in an icon and words, not red. */
+  .online-download {
+    position: relative;
+    display: grid;
+    flex: none;
+    place-items: center;
+    width: 36px;
+    height: 36px;
+    margin-right: 4px;
+    color: hsl(var(--muted-foreground));
+  }
+  .online-download > * {
+    grid-area: 1 / 1;
+  }
+  .online-download > svg {
+    width: 18px;
+    height: 18px;
+  }
+  .online-download > .progress-ring {
+    width: 22px;
+    height: 22px;
+  }
+  .online-download .progress-ring-fill {
+    stroke: var(--song-accent);
+  }
+  .online-download > .online-download-stop {
+    width: 10px;
+    height: 10px;
+    opacity: 0;
+    transition: opacity var(--motion-release) var(--ease-release);
+  }
+  .online-download:focus-visible > .online-download-stop {
+    opacity: 1;
+  }
+  .online-download[data-state="error"] {
+    color: hsl(var(--foreground));
+  }
+
+  /* Downloads under way, at the panel's foot: the one coming down is drawn
+     along its top in the song's colour. */
+  .online-strip {
+    position: relative;
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: 10px;
+    height: 44px;
+    padding: 0 12px 0 10px;
+    border-top: 1px solid hsl(var(--border));
+    color: hsl(var(--muted-foreground));
+    font-size: 0.8125rem; /* 13px */
+  }
+  .online-strip-line {
+    position: absolute;
+    top: -1px;
+    left: 0;
+    width: 100%;
+    height: 2px;
+    border-radius: 2px;
+    background: var(--song-accent);
+    transform: scaleX(var(--progress, 0));
+    transform-origin: left;
+    transition: transform var(--motion-decay) var(--ease-decay);
+  }
+  .online-strip > .busy-arc {
+    flex: none;
+    width: 16px;
+    height: 16px;
+  }
+  .online-strip-text {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .online-strip-title {
+    color: hsl(var(--foreground));
+    font-weight: 500;
+  }
+  .online-strip-more {
+    flex: none;
+    white-space: nowrap;
+  }
+  .online-strip-percent {
+    flex: none;
+    min-width: 4ch;
+    text-align: right;
+  }
+
+  /* An album's or an artist's page online: the library's page, with the
+     download where Play would be. */
+  .online-download-all > svg {
+    fill: none;
+  }
+  .online-page-link > .busy-arc {
+    width: 14px;
+    height: 14px;
+    margin-left: 8px;
+    vertical-align: -2px;
+  }
+  .online-page-note {
+    color: hsl(var(--muted-foreground));
+    font-weight: 400;
+  }
+  .online-page-owned {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 36px;
+    margin-top: 10px;
+    color: hsl(var(--muted-foreground));
+    font-size: 0.875rem; /* 14px */
+    font-weight: 500;
+  }
+  .online-page-owned > svg {
+    width: 16px;
+    height: 16px;
+  }
+  .online-bio {
+    display: grid;
+    justify-items: start;
+    gap: 6px;
+    padding: 0 10px 20px;
+  }
+  .online-bio-text {
+    max-width: 64ch;
+    color: hsl(var(--muted-foreground));
+    font-size: 0.875rem; /* 14px */
+    line-height: 1.6;
+    white-space: pre-line;
+  }
+  .online-bio-text[data-folded] {
+    display: -webkit-box;
+    overflow: hidden;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
+  }
+  .online-bio-toggle {
+    border-radius: 4px;
+    font-size: 0.8125rem; /* 13px */
+    font-weight: 600;
+    text-underline-offset: 3px;
+  }
+  .online-page-empty {
+    padding: 8px 10px;
+  }
+  @media (hover: hover) {
+    .online-type:hover,
+    .online-paste-toggle:hover {
+      color: hsl(var(--foreground));
+      background-color: hsl(var(--foreground) / 0.07);
+      transition-duration: var(--motion-attack);
+    }
+    .online-pending:hover {
+      background-color: hsl(var(--foreground) / 0.1);
+      transition-duration: var(--motion-attack);
+    }
+    .online-row:hover .online-cover-mark,
+    .online-download:hover > .online-download-stop {
+      opacity: 1;
+      transition-duration: var(--motion-attack);
+    }
+    .online-bio-toggle:hover {
+      text-decoration: underline;
+    }
+  }
+  /* A finger can't hover: what the pointer would find stays in sight. */
+  @media (hover: none) {
+    .online-download > .online-download-stop {
+      opacity: 1;
     }
   }
 
@@ -2060,7 +3052,7 @@
     border-radius: 4px;
     font-size: 0.8125rem; /* 13px */
     font-weight: 500;
-    color: var(--song-accent);
+    color: var(--song-accent-text);
     text-underline-offset: 3px;
   }
   .about-link > svg {
@@ -2309,6 +3301,24 @@
   }
 }
 
+/* Out and back, so a running drift never jumps when it starts over. */
+@keyframes aura-drift {
+  0%,
+  100% {
+    transform: translate3d(-3%, -2%, 0) scale(1.04);
+  }
+  50% {
+    transform: translate3d(3%, 3%, 0) scale(1.12);
+  }
+}
+
+@keyframes stage-view-in {
+  from {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+}
+
 @keyframes drop-frame-in {
   from {
     opacity: 0;
@@ -2365,12 +3375,22 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .song-scope[data-playing] .wordmark-ring {
+  .song-scope[data-playing] .wordmark-ring,
+  .song-aura {
     animation: none;
   }
   .play-button[data-loading] .play-button-arc,
-  .library-row[data-playback="loading"] .library-row-arc {
+  .library-row[data-playback="loading"] .library-row-arc,
+  .busy-arc {
     animation-duration: 2.4s;
+  }
+  /* The cover and a view in its place still cross; they no longer scale. */
+  .stage-cover:active,
+  .stage:not([data-mode="cover"]) :is(.stage-cover, .stage-empty) {
+    transform: none;
+  }
+  .stage-view {
+    animation-name: fade-in;
   }
   .quality[data-rise] .quality-bars > span,
   .library-row[data-playback="playing"] .library-row-bars > i {
@@ -2395,6 +3415,15 @@
   }
   .drop-overlay-frame {
     animation-name: fade-in;
+  }
+  /* The kind showing is still underlined; its line fades in, no longer grows. */
+  .online-type::after,
+  .online-type[aria-checked="true"]::after {
+    transform: none;
+    transition-property: opacity;
+  }
+  .online-type:not([aria-checked="true"])::after {
+    opacity: 0;
   }
   .roll-out {
     animation: fade-out var(--motion-attack) linear forwards;

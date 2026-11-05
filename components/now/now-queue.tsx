@@ -2,7 +2,7 @@
 
 import { useMemo, useState, type ReactNode } from "react"
 
-import { SongRow, type LibraryLayout } from "@/components/library/song-row"
+import { SONG_ROW_HEIGHT, SongRow, type LibraryLayout } from "@/components/library/song-row"
 import type { SongActions } from "@/components/library/song-menu"
 import { StatusMessage } from "@/components/status-message"
 import { ScrollArea } from "@/components/ui/scroll-area"
@@ -10,8 +10,8 @@ import { rowOffsets, useRowWindow } from "@/hooks/use-row-window"
 import type { Song } from "@/lib/song"
 import { formatCount } from "@/lib/utils"
 
-/** Each kind of row's height in pixels, the same as the library's songs. */
-const ROW_HEIGHTS = { heading: 44, song: 56 } as const
+/** A heading's height in pixels; songs are as tall as the library's. */
+const HEADING_HEIGHT = 44
 /** Rows kept rendered past each edge of the viewport, as in the library list. */
 const OVERSCAN = 8
 
@@ -70,7 +70,10 @@ export function NowQueue({
 }: NowQueueProps) {
   const [viewport, setViewport] = useState<HTMLDivElement | null>(null)
   const rows = useMemo(() => queueRows(queued, upNext, shuffle), [queued, upNext, shuffle])
-  const offsets = useMemo(() => rowOffsets(rows.map((row) => ROW_HEIGHTS[row.kind])), [rows])
+  const offsets = useMemo(
+    () => rowOffsets(rows.map((row) => (row.kind === "heading" ? HEADING_HEIGHT : SONG_ROW_HEIGHT[layout]))),
+    [rows, layout],
+  )
   const view = useRowWindow(viewport, offsets, OVERSCAN)
 
   const queuedActions = useMemo<SongActions>(

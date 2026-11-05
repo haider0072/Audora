@@ -399,7 +399,7 @@ export default function MobileMusicPlayer() {
         {/* Playlist or Online Search */}
         {sidebarMode === "online" ? (
           <div className="flex-1 overflow-hidden px-4 py-2">
-            <OnlineSearchSidebar dab={tidalSearch} />
+            <OnlineSearchSidebar dab={tidalSearch} layout="phone" />
           </div>
         ) : (
           <LibraryPanel

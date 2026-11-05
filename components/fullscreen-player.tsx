@@ -3,7 +3,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type TransitionEvent } from "react"
 import { ListMusic, Minimize2, Settings, Shuffle, Volume2, VolumeX, X } from "lucide-react"
 
-import { Slider } from "@/components/ui/slider"
+import { VolumeSlider } from "@/components/player/volume-slider"
 import { useInert } from "@/hooks/use-inert"
 import { useLibraryNavigation } from "@/hooks/use-library-navigation"
 import type { Song } from "@/lib/song"
@@ -383,14 +383,7 @@ export function FullscreenPlayer({
             <TransportButton label={isMuted ? "Unmute" : "Mute"} size="xs" onClick={onToggleMute}>
               {isMuted ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
             </TransportButton>
-            <Slider
-              value={volume}
-              max={100}
-              step={1}
-              onValueChange={onVolumeChange}
-              className="volume-slider w-20"
-              aria-label="Volume"
-            />
+            <VolumeSlider value={volume} onValueChange={onVolumeChange} muted={isMuted} className="w-20" />
           </div>
         </div>
       </div>

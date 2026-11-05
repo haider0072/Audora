@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState, type CSSProperties } from "react"
 
 import { AlbumArtCache } from "@/lib/album-art-cache"
-import { accentColor, paletteFromPixels, ringColors, type SongPalette } from "@/lib/song-palette"
+import { accentColor, accentTextColor, auraColors, paletteFromPixels, ringColors, type SongPalette } from "@/lib/song-palette"
 
 /** Covers are read at this size: every hue that matters survives, and the read costs nothing. */
 const SAMPLE_SIZE = 24
@@ -79,9 +79,10 @@ async function readPalette(cacheKey: string, url: string): Promise<SongPalette |
 
 /**
  * The song's colours as CSS custom properties, for a `.song-scope` element to
- * turn into `--song-accent` and, while playing, the wordmark ring's lights.
- * Undefined until the cover has been read, and for a song whose cover has no
- * colour to speak of: the scope then falls back to the neutral accent.
+ * turn into `--song-accent` and `--song-accent-text`, the desktop's aura and,
+ * while playing, the wordmark ring's lights. Undefined until the cover has been read, and for a
+ * song whose cover has no colour to speak of: the scope then falls back to
+ * the neutral accent and a graphite aura.
  */
 export function useSongColors(song: CoverSource | null): CSSProperties | undefined {
   const cover = song ? coverOf(song) : null
@@ -114,9 +115,15 @@ export function useSongColors(song: CoverSource | null): CSSProperties | undefin
     if (!palette) return undefined
     const [inkRing1, inkRing2, inkRing3] = ringColors(palette, "ink")
     const [paperRing1, paperRing2, paperRing3] = ringColors(palette, "paper")
+    const [aura1, aura2, aura3] = auraColors(palette)
     return {
+      "--song-aura-1": aura1,
+      "--song-aura-2": aura2,
+      "--song-aura-3": aura3,
       "--song-accent-on-ink": accentColor(palette, "ink"),
       "--song-accent-on-paper": accentColor(palette, "paper"),
+      "--song-accent-text-on-ink": accentTextColor(palette, "ink"),
+      "--song-accent-text-on-paper": accentTextColor(palette, "paper"),
       "--song-ring-1-on-ink": inkRing1,
       "--song-ring-2-on-ink": inkRing2,
       "--song-ring-3-on-ink": inkRing3,

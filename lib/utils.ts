@@ -28,6 +28,11 @@ export function formatCount(count: number, noun: string): string {
   return `${count} ${count === 1 ? noun : `${noun}s`}`
 }
 
+/** Facts about something on one line, "2019 · 12 songs · 48 min", leaving out the ones it lacks. */
+export function formatDetails(...parts: Array<string | number | false | null | undefined>): string {
+  return parts.filter((part) => part !== undefined && part !== null && part !== false && part !== "").join(" · ")
+}
+
 const compactNumber = new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 })
 
 /** A large count, shortened: "12.3M", "4.5K", "950". */

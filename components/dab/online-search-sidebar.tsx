@@ -1,324 +1,280 @@
 "use client"
 
-import { useCallback, useState } from "react"
-import { Search, WifiOff, Loader2, Link2, X } from "lucide-react"
-import { Input } from "@/components/ui/input"
-import { Button } from "@/components/ui/button"
-import { SearchTypeTabs } from "./search-type-tabs"
-import { SearchResults } from "./search-results"
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react"
+import { Search, X } from "lucide-react"
+
+import type { LibraryLayout } from "@/components/library/song-row"
+import { StackLayer } from "@/components/stack-layer"
+import { StatusMessage } from "@/components/status-message"
+import { ScrollArea } from "@/components/ui/scroll-area"
+import { isApplePlatform } from "@/hooks/use-search-shortcut"
+import type { TidalView, UseTidalSearchReturn } from "@/hooks/use-tidal-search"
 import { AlbumDetailView } from "./album-detail-view"
 import { ArtistDetailView } from "./artist-detail-view"
-import { DabLoginDialog } from "./dab-login-dialog"
 import { DownloadQueueBar } from "./download-queue-bar"
-import type { UseTidalSearchReturn } from "@/hooks/use-tidal-search"
-import type { SearchSource } from "@/lib/tidal-service"
+import { OnlineFilters } from "./online-filters"
+import type { OnlineActions, OnlinePreview, UnopenedPage } from "./online-rows"
+import { PasteLinkField, PasteLinkToggle } from "./paste-link"
+import { SearchResults } from "./search-results"
 
 interface OnlineSearchSidebarProps {
   dab: UseTidalSearchReturn
+  layout: LibraryLayout
+  /** The search field is elsewhere, as in the desktop's header: the panel has none of its own. */
   hideSearch?: boolean
+  /** Words typed since the last online search, which it has not looked for yet. */
+  pendingQuery?: string
+  onSearchPending?: () => void
 }
 
-const SOURCE_OPTIONS: { value: SearchSource; label: string }[] = [
-  { value: "auto", label: "Auto" },
-  { value: "qobuz", label: "Qobuz" },
-  { value: "amazon", label: "Amazon" },
-]
-
-function SourceToggle({
-  value,
-  onChange,
-}: {
-  value: SearchSource
-  onChange: (s: SearchSource) => void
-}) {
+/** The search field, where the panel has its own, as on the phone. */
+function OnlineField({ query, onQueryChange, onSearch }: { query: string; onQueryChange: (query: string) => void; onSearch: () => void }) {
+  const inputRef = useRef<HTMLInputElement>(null)
   return (
-    <div className="flex items-center gap-1 p-0.5 bg-white/5 rounded-md w-fit">
-      {SOURCE_OPTIONS.map((opt) => {
-        const active = value === opt.value
-        return (
-          <button
-            key={opt.value}
-            type="button"
-            onClick={() => onChange(opt.value)}
-            className={`px-2.5 py-1 rounded text-[11px] font-medium transition-colors ${
-              active
-                ? "bg-white/15 text-white"
-                : "text-white/50 hover:text-white/80"
-            }`}
-          >
-            {opt.label}
-          </button>
-        )
-      })}
-    </div>
-  )
-}
-
-// Paste-a-link download. Collapsed to a small trigger by default; expands to an
-// input so users can grab a track that didn't show up in search (e.g. paste a
-// direct Amazon Music track URL).
-function PasteUrlBar({
-  onSubmit,
-  isResolving,
-}: {
-  onSubmit: (url: string) => Promise<boolean>
-  isResolving: boolean
-}) {
-  const [open, setOpen] = useState(false)
-  const [url, setUrl] = useState("")
-
-  const submit = useCallback(async () => {
-    if (!url.trim() || isResolving) return
-    const ok = await onSubmit(url)
-    if (ok) {
-      setUrl("")
-      setOpen(false)
-    }
-  }, [url, isResolving, onSubmit])
-
-  if (!open) {
-    return (
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        className="flex items-center gap-1.5 px-2 py-1 text-[11px] font-medium text-white/50 hover:text-white/80 transition-colors"
-      >
-        <Link2 className="h-3.5 w-3.5" />
-        Paste a link
-      </button>
-    )
-  }
-
-  return (
-    <div className="flex gap-2">
-      <div className="relative flex-1">
-        <Link2 className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-white/40" />
-        <Input
-          autoFocus
-          value={url}
-          onChange={(e) => setUrl(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              e.preventDefault()
-              submit()
-            } else if (e.key === "Escape") {
-              setOpen(false)
-            }
+    <form
+      className="soft-field online-field"
+      role="search"
+      onSubmit={(event) => {
+        event.preventDefault()
+        onSearch()
+      }}
+    >
+      <Search aria-hidden="true" />
+      <input
+        ref={inputRef}
+        type="search"
+        enterKeyHint="search"
+        value={query}
+        onChange={(event) => onQueryChange(event.target.value)}
+        placeholder="Search online"
+        aria-label="Search online"
+        autoComplete="off"
+        spellCheck={false}
+      />
+      {query && (
+        <button
+          type="button"
+          className="soft-field-clear"
+          aria-label="Clear the search"
+          onClick={() => {
+            onQueryChange("")
+            inputRef.current?.focus()
           }}
-          placeholder="Paste Amazon / Qobuz track link..."
-          className="h-9 pl-8 pr-8 text-xs"
-        />
-        {url && (
-          <button
-            type="button"
-            onClick={() => setUrl("")}
-            className="absolute right-2 top-1/2 -translate-y-1/2 text-white/40 hover:text-white/70"
-          >
-            <X className="h-3.5 w-3.5" />
-          </button>
-        )}
-      </div>
-      <Button
-        type="button"
-        size="sm"
-        className="h-9 flex-shrink-0"
-        onClick={submit}
-        disabled={isResolving || !url.trim()}
-      >
-        {isResolving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Get"}
-      </Button>
-    </div>
+        >
+          <X aria-hidden="true" />
+        </button>
+      )}
+    </form>
   )
 }
 
-export function OnlineSearchSidebar({ dab, hideSearch = false }: OnlineSearchSidebarProps) {
-  const [showLoginDialog, setShowLoginDialog] = useState(false)
+/** Words typed but not yet looked for online: pressing it, or Return in the field, looks. */
+function PendingSearch({ query, onSearch }: { query: string; onSearch: () => void }) {
+  return (
+    <button type="button" className="online-pending" onClick={onSearch}>
+      <Search aria-hidden="true" />
+      <span className="online-pending-text">Search online for “{query}”</span>
+      <kbd className="online-pending-key" aria-hidden="true">
+        {isApplePlatform() ? "Return" : "Enter"}
+      </kbd>
+    </button>
+  )
+}
 
-  const handleSearchSubmit = useCallback(
-    (e: React.FormEvent) => {
-      e.preventDefault()
-      dab.search()
-    },
-    [dab]
+/**
+ * The online search: songs, albums and artists to preview and download, in
+ * FLAC, laid out like the library. Albums and artists open as pages over the
+ * results, which stay where they were for Back; downloads under way show at
+ * the foot. Styled by `.online`, with the library's rows and pages.
+ */
+export function OnlineSearchSidebar({ dab, layout, hideSearch = false, pendingQuery, onSearchPending }: OnlineSearchSidebarProps) {
+  const [opening, setOpening] = useState<string | null>(null)
+  const [pasteOpen, setPasteOpen] = useState(false)
+  const pasteFieldId = useId()
+  const pasteToggleRef = useRef<HTMLButtonElement>(null)
+
+  // What had focus as each page opened, so Back can hand focus back to it.
+  const pendingOpener = useRef<HTMLElement | null>(null)
+  const openers = useRef(new Map<TidalView, HTMLElement>())
+  const leaving = useRef<TidalView | null>(null)
+
+  // The hook's functions change whenever a download moves on. Rows are handed
+  // these instead, which never change, so a download redraws only its own row.
+  const latest = useRef(dab)
+  useEffect(() => {
+    latest.current = dab
+  })
+  const { actions, back } = useMemo(() => {
+    const open = (id: string, view: (id: string) => Promise<void>) => {
+      const focused = document.activeElement
+      pendingOpener.current = focused instanceof HTMLElement ? focused : null
+      setOpening(id)
+      void view(id)
+    }
+    const rowActions: OnlineActions = {
+      preview: (track) => latest.current.togglePreview(track),
+      download: (track) => void latest.current.downloadTrack(track),
+      cancel: (trackId) => latest.current.cancelDownload(trackId),
+      openAlbum: (albumId) => open(albumId, latest.current.viewAlbum),
+      openArtist: (artistId) => open(artistId, latest.current.viewArtist),
+    }
+    const goBack = () => {
+      leaving.current = latest.current.currentView
+      latest.current.goBack()
+    }
+    return { actions: rowActions, back: goBack }
+  }, [])
+
+  // Runs after the layers' own effects, so the results Back uncovered are no
+  // longer inert by now. A page that came back afresh focuses its own title.
+  useLayoutEffect(() => {
+    const left = leaving.current
+    if (left) {
+      leaving.current = null
+      const opener = openers.current.get(left)
+      openers.current.delete(left)
+      if (opener?.isConnected && !opener.closest("[inert]")) opener.focus({ preventScroll: true })
+      return
+    }
+    if (dab.currentView !== "search" && pendingOpener.current) {
+      openers.current.set(dab.currentView, pendingOpener.current)
+      pendingOpener.current = null
+    }
+  }, [dab.currentView])
+
+  const preview = useMemo<OnlinePreview>(
+    () => ({ trackId: dab.previewTrackId, playing: dab.previewIsPlaying, loading: dab.previewIsLoading }),
+    [dab.previewTrackId, dab.previewIsPlaying, dab.previewIsLoading],
   )
 
-  const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent) => {
-      if (e.key === "Enter") {
-        e.preventDefault()
-        dab.search()
-      }
-    },
-    [dab]
-  )
-
-  // Offline state
   if (!dab.isOnline) {
     return (
-      <div className="flex flex-col items-center justify-center h-full py-12 text-muted-foreground">
-        <WifiOff className="h-10 w-10 mb-3 opacity-40" />
-        <p className="text-sm font-medium">You&apos;re offline</p>
-        <p className="text-xs mt-1">Connect to the internet to search online</p>
+      <div className="online" data-layout={layout}>
+        <StatusMessage title="You're offline" detail="Online search comes back with the connection." />
       </div>
     )
   }
 
-  // Auth gate
-  if (dab.isAuthenticated === false) {
-    return (
-      <div className="flex flex-col items-center justify-center h-full py-12 text-muted-foreground">
-        <Search className="h-10 w-10 mb-3 opacity-40" />
-        <p className="text-sm font-medium">Sign in to search</p>
-        <p className="text-xs mt-1 text-center px-4">
-          Connect to search and download songs
-        </p>
-        <DabLoginDialog
-          open={showLoginDialog}
-          onOpenChange={setShowLoginDialog}
-          onLogin={dab.login}
-          isLoading={dab.isAuthenticating}
-        />
-        <Button
-          size="sm"
-          className="mt-4"
-          onClick={() => setShowLoginDialog(true)}
-        >
-          Sign In
-        </Button>
-      </div>
-    )
-  }
+  const busy = dab.isLoadingDetail ? opening : null
+  const album = dab.currentView === "album" ? dab.selectedAlbum : null
+  const artist = dab.currentView === "artist" ? dab.selectedArtist : null
+  const backLabel =
+    (dab.previousView === "album" && dab.selectedAlbum?.title) ||
+    (dab.previousView === "artist" && dab.selectedArtist?.artist.name) ||
+    "Results"
 
-  // Loading auth check
-  if (dab.isAuthenticated === null) {
-    return (
-      <div className="flex flex-col items-center justify-center h-full py-12">
-        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-      </div>
-    )
+  const results = dab.searchResults
+  // A search that failed says so over the results; a page that didn't open
+  // says so on the row or the link that opened it.
+  const failed = dab.error
+  const failedRequest = failed?.request
+  const unopened: UnopenedPage | null =
+    failed && failedRequest && failedRequest.kind !== "search"
+      ? { id: failedRequest.id, note: failed.retryable ? "Couldn't open" : "Not available" }
+      : null
+  const failure = failed && failedRequest?.kind === "search" && (
+    <StatusMessage
+      title={failed.title}
+      detail={failed.detail}
+      action={{ label: "Try again", onClick: dab.retry }}
+      inline={results !== null}
+    />
+  )
+  const pending = pendingQuery && onSearchPending ? <PendingSearch query={pendingQuery} onSearch={onSearchPending} /> : null
+
+  const closePaste = () => {
+    setPasteOpen(false)
+    pasteToggleRef.current?.focus()
   }
 
   return (
-    <div className="flex flex-col h-full">
-      {/* Search area (only in search view, hidden when header has search) */}
-      {dab.currentView === "search" && !hideSearch && (
-        <div className="flex-shrink-0 space-y-2 pb-3">
-          <form onSubmit={handleSearchSubmit} className="flex gap-2">
-            <Input
-              value={dab.searchQuery}
-              onChange={(e) => dab.setSearchQuery(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="Search songs, artists, albums..."
-              className="h-9"
-            />
-            <Button
-              type="submit"
-              size="icon"
-              className="h-9 w-9 flex-shrink-0"
-              disabled={dab.isSearching || !dab.searchQuery.trim()}
+    <div className="online" data-layout={layout}>
+      <div className="library-stack">
+        <StackLayer covered={Boolean(album || artist)} className="library-layer">
+          <div className="online-controls">
+            {!hideSearch && <OnlineField query={dab.searchQuery} onQueryChange={dab.setSearchQuery} onSearch={() => void dab.search()} />}
+            <OnlineFilters
+              type={dab.searchType}
+              onTypeChange={dab.setSearchType}
+              source={dab.searchSource}
+              onSourceChange={dab.setSearchSource}
+              results={results}
             >
-              {dab.isSearching ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
+              <PasteLinkToggle ref={pasteToggleRef} open={pasteOpen} fieldId={pasteFieldId} onToggle={() => setPasteOpen((open) => !open)} />
+            </OnlineFilters>
+            {pasteOpen && (
+              <PasteLinkField id={pasteFieldId} onSubmit={dab.downloadFromUrl} resolving={dab.isResolvingUrl} onClose={closePaste} />
+            )}
+          </div>
+          <ScrollArea className="online-scroll">
+            <div className="online-body" aria-busy={dab.isSearching || undefined}>
+              {pending}
+              {results ? (
+                <>
+                  {failure && <div className="online-notice">{failure}</div>}
+                  <SearchResults
+                    results={results}
+                    type={dab.searchType}
+                    layout={layout}
+                    showSource={dab.searchSource === "auto"}
+                    downloads={dab.downloads}
+                    isInLibrary={dab.isInLibrary}
+                    preview={preview}
+                    opening={busy}
+                    unopened={unopened}
+                    actions={actions}
+                    onShowAll={() => dab.setSearchType("all")}
+                  />
+                </>
+              ) : dab.isSearching ? (
+                <StatusMessage title="Searching online…" />
               ) : (
-                <Search className="h-4 w-4" />
+                failure ||
+                (!pending && (
+                  <StatusMessage title="Search online" detail="Songs, albums and artists from Qobuz and Amazon, in FLAC." />
+                ))
               )}
-            </Button>
-          </form>
-          <SourceToggle value={dab.searchSource} onChange={dab.setSearchSource} />
-          <SearchTypeTabs value={dab.searchType} onChange={dab.setSearchType} />
-          <PasteUrlBar onSubmit={dab.downloadFromUrl} isResolving={dab.isResolvingUrl} />
-        </div>
-      )}
-      {/* Search type tabs shown even when header has search */}
-      {dab.currentView === "search" && hideSearch && (
-        <div className="flex-shrink-0 pb-3 space-y-2">
-          <SourceToggle value={dab.searchSource} onChange={dab.setSearchSource} />
-          <SearchTypeTabs value={dab.searchType} onChange={dab.setSearchType} />
-          <PasteUrlBar onSubmit={dab.downloadFromUrl} isResolving={dab.isResolvingUrl} />
-        </div>
-      )}
-
-      {/* Content */}
-      <div className="flex-1 min-h-0">
-        {/* Error */}
-        {dab.error && dab.currentView === "search" && (
-          <div className="px-3 py-2 mb-2 text-xs text-red-400 bg-red-500/10 rounded-md">
-            {dab.error}
+            </div>
+          </ScrollArea>
+        </StackLayer>
+        {album && (
+          <div className="library-layer" data-kind="page">
+            <AlbumDetailView
+              key={album.id}
+              album={album}
+              layout={layout}
+              backLabel={backLabel}
+              downloads={dab.downloads}
+              isInLibrary={dab.isInLibrary}
+              preview={preview}
+              opening={busy}
+              unopened={unopened}
+              actions={actions}
+              onDownloadAll={dab.downloadAlbum}
+              onBack={back}
+            />
           </div>
         )}
-
-        {/* Search loading */}
-        {dab.isSearching && (
-          <div className="flex flex-col items-center justify-center py-12">
-            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-            <p className="text-xs text-muted-foreground mt-2">Searching...</p>
-          </div>
-        )}
-
-        {/* Search results */}
-        {dab.currentView === "search" && !dab.isSearching && dab.searchResults && (
-          <SearchResults
-            results={dab.searchResults}
-            downloads={dab.downloads}
-            isInLibrary={dab.isInLibrary}
-            onTrackDownload={dab.downloadTrack}
-            onCancelDownload={dab.cancelDownload}
-            onAlbumClick={dab.viewAlbum}
-            onArtistClick={dab.viewArtist}
-            searchType={dab.searchType}
-            previewTrackId={dab.previewTrackId}
-            previewIsPlaying={dab.previewIsPlaying}
-            previewIsLoading={dab.previewIsLoading}
-            onTogglePreview={dab.togglePreview}
-          />
-        )}
-
-        {/* Empty search state */}
-        {dab.currentView === "search" && !dab.isSearching && !dab.searchResults && !dab.error && (
-          <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
-            <Search className="h-10 w-10 mb-3 opacity-40" />
-            <p className="text-sm">Search for music</p>
-            <p className="text-xs mt-1">Find tracks, albums, and artists</p>
-          </div>
-        )}
-
-        {/* Album detail */}
-        {dab.currentView === "album" && dab.selectedAlbum && (
-          <AlbumDetailView
-            album={dab.selectedAlbum}
-            downloads={dab.downloads}
-            isInLibrary={dab.isInLibrary}
-            onTrackDownload={dab.downloadTrack}
-            onCancelDownload={dab.cancelDownload}
-            onDownloadAll={dab.downloadAlbum}
-            onBack={dab.goBack}
-            onArtistClick={dab.viewArtist}
-            previewTrackId={dab.previewTrackId}
-            previewIsPlaying={dab.previewIsPlaying}
-            previewIsLoading={dab.previewIsLoading}
-            onTogglePreview={dab.togglePreview}
-          />
-        )}
-
-        {/* Artist detail */}
-        {dab.currentView === "artist" && dab.selectedArtist && (
-          <ArtistDetailView
-            data={dab.selectedArtist}
-            onAlbumClick={dab.viewAlbum}
-            onBack={dab.goBack}
-          />
-        )}
-
-        {/* Loading detail */}
-        {dab.isLoadingDetail && (
-          <div className="flex flex-col items-center justify-center py-12">
-            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+        {artist && (
+          <div className="library-layer" data-kind="page">
+            <ArtistDetailView
+              key={artist.artist.id}
+              data={artist}
+              layout={layout}
+              backLabel={backLabel}
+              opening={busy}
+              unopened={unopened}
+              onOpenAlbum={actions.openAlbum}
+              onBack={back}
+            />
           </div>
         )}
       </div>
-
-      {/* Download queue bar */}
       <DownloadQueueBar downloads={dab.downloads} />
+      {/* The row's word for it is seen; this is heard. */}
+      <p className="sr-only" role="status">
+        {unopened && failed ? `${failed.title}. ${failed.detail}` : ""}
+      </p>
     </div>
   )
 }
