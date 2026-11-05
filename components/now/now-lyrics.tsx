@@ -16,6 +16,21 @@ const CURRENT_LINE_PLACE = 0.35
 
 type LineState = "past" | "current" | "next"
 
+/** How far a line is from the one being sung: the next three by step, then far; past lines only once far. */
+export type LineDistance = "1" | "2" | "3" | "far"
+
+/**
+ * How far line `index` is from line `current`, for the depth the desktop's
+ * lyrics have: the coming lines soften step by step, the long-gone ones too.
+ */
+export function lineDistance(index: number, current: number): LineDistance | undefined {
+  if (index === current) return undefined
+  if (index < current) return current - index > 2 ? "far" : undefined
+  const ahead = index - current
+  if (ahead > 3) return "far"
+  return ahead === 1 ? "1" : ahead === 2 ? "2" : "3"
+}
+
 /** While a picked song loads, the clock is still the last song's, so a tapped line has nothing to seek. */
 function seekNowhere() {}
 
@@ -39,6 +54,7 @@ export function lineAt(lines: readonly LyricLine[], time: number): number {
 interface LineProps {
   line: LyricLine
   state: LineState
+  distance: LineDistance | undefined
   onSeek: (seconds: number) => void
 }
 
@@ -46,7 +62,7 @@ interface LineProps {
  * A synced line, which seeks there when tapped. Out of the tab order: there
  * can be sixty of them, and the seek bar does the same job from the keyboard.
  */
-const SyncedLine = memo(function SyncedLine({ line, state, onSeek }: LineProps) {
+const SyncedLine = memo(function SyncedLine({ line, state, distance, onSeek }: LineProps) {
   return (
     <li className="lyrics-item">
       <button
@@ -54,6 +70,7 @@ const SyncedLine = memo(function SyncedLine({ line, state, onSeek }: LineProps) 
         tabIndex={-1}
         className="lyrics-line"
         data-state={state}
+        data-distance={distance}
         aria-current={state === "current" ? "true" : undefined}
         onClick={() => onSeek(line.time)}
       >
@@ -102,6 +119,7 @@ function SyncedLyrics({ lines, following, onSeek }: SyncedLyricsProps) {
             key={index}
             line={line}
             state={index < current ? "past" : index === current ? "current" : "next"}
+            distance={lineDistance(index, current)}
             onSeek={following ? onSeek : seekNowhere}
           />
         ))}

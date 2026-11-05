@@ -1,6 +1,6 @@
 "use client"
 
-import { useRef, useState, type KeyboardEvent, type PointerEvent } from "react"
+import { useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode } from "react"
 
 import { usePlaybackTime } from "@/hooks/use-playback-time"
 import { cn, formatTime } from "@/lib/utils"
@@ -19,6 +19,8 @@ interface SeekBarProps {
   disabled?: boolean
   /** Elapsed and remaining time: under the track, or either side of it in a tight row. */
   timesPosition?: "below" | "sides"
+  /** Set between the times under the track, such as the song's quality. */
+  between?: ReactNode
   className?: string
 }
 
@@ -36,6 +38,7 @@ export function SeekBar({
   isPlaying = false,
   disabled = false,
   timesPosition = "below",
+  between,
   className,
 }: SeekBarProps) {
   const currentTime = usePlaybackTime()
@@ -161,8 +164,9 @@ export function SeekBar({
   return (
     <div className={className}>
       {bar}
-      <div className={cn("-mt-1 flex justify-between", timeStyle)}>
+      <div className={cn("-mt-1 flex items-center justify-between gap-3", timeStyle)}>
         {elapsed}
+        {between}
         {remaining}
       </div>
     </div>
