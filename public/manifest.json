@@ -4,8 +4,8 @@
   "description": "Professional FLAC and MP3 music player with equalizer",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#000000",
-  "theme_color": "#000000",
+  "background_color": "#0b0b0a",
+  "theme_color": "#0b0b0a",
   "orientation": "portrait-primary",
   "icons": [
     {

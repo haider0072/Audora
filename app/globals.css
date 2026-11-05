@@ -4,48 +4,86 @@
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 240 10% 3.9%;
-    --card: 0 0% 100%;
-    --card-foreground: 240 10% 3.9%;
-    --popover: 0 0% 100%;
-    --popover-foreground: 240 10% 3.9%;
-    --primary: 346.8 77.2% 49.8%;
-    --primary-foreground: 355.7 100% 97.3%;
-    --secondary: 240 4.8% 95.9%;
-    --secondary-foreground: 240 5.9% 10%;
-    --muted: 240 4.8% 95.9%;
-    --muted-foreground: 240 3.8% 46.1%;
-    --accent: 240 4.8% 95.9%;
-    --accent-foreground: 240 5.9% 10%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 0 0% 98%;
-    --border: 240 5.9% 90%;
-    --input: 240 5.9% 90%;
-    --ring: 346.8 77.2% 49.8%;
+    /* Audora red: a dark, true red, a touch warm, never leaning toward pink or purple.
+       HSL channels, so Tailwind's opacity modifiers work on it. */
+    --blood-950: 0 79.3% 5.7%;
+    --blood-900: 0 80.8% 10.2%;
+    --blood-800: 0 81% 16.5%;
+    --blood-700: 0 82% 23.9%;
+    --blood-600: 0.5 82.2% 30.8%;
+    --blood-500: 1.2 77.2% 39.6%;
+    --blood-400: 1.8 66.9% 49.8%;
+    --blood-300: 2.3 80.4% 62%;
+
+    /* Ink: warm graphite for dark surfaces, including those that stay dark in both themes
+       (anything drawn over artwork). */
+    --ink-0: 60 4.8% 4.1%;
+    --ink-1: 60 2.9% 6.9%;
+    --ink-2: 60 4.2% 9.4%;
+    --ink-3: 40 4.6% 12.7%;
+    --ink-4: 45 4.5% 17.3%;
+
+    /* The three lights in the wordmark's ring. */
+    --mark-1: hsl(var(--blood-300));
+    --mark-2: hsl(var(--blood-500));
+    --mark-3: hsl(var(--blood-400));
+
+    /* Motion follows a note's envelope: a fast attack on touch, a short decay into place,
+       a softer release on the way out, and a slow swell for colour changes. */
+    --motion-attack: 90ms;
+    --motion-decay: 220ms;
+    --motion-release: 420ms;
+    --motion-swell: 1100ms;
+    --ease-attack: cubic-bezier(0.3, 0.7, 0.4, 1);
+    --ease-decay: cubic-bezier(0.16, 1, 0.3, 1);
+    --ease-release: cubic-bezier(0.33, 0, 0.15, 1);
+    --ease-swell: cubic-bezier(0.45, 0.05, 0.2, 1);
+    --ease-pluck: cubic-bezier(0.2, 1.6, 0.4, 1);
+
+    /* Daylight: warm paper with ink text. */
+    --background: 40 21.4% 94.5%;
+    --foreground: 40 7% 8.4%;
+    --card: 45 28.6% 97.3%;
+    --card-foreground: 40 7% 8.4%;
+    --popover: 45 28.6% 97.3%;
+    --popover-foreground: 40 7% 8.4%;
+    --primary: var(--blood-500);
+    --primary-foreground: 40 21.4% 94.5%;
+    --secondary: 40 17% 89.6%;
+    --secondary-foreground: 40 7% 8.4%;
+    --muted: 40 17% 89.6%;
+    --muted-foreground: 36 5.6% 34.9%;
+    --accent: 40 17% 89.6%;
+    --accent-foreground: 40 7% 8.4%;
+    --destructive: var(--blood-600);
+    --destructive-foreground: 40 21.4% 94.5%;
+    --border: 38.2 14.3% 84.9%;
+    --input: 40 12% 80.4%;
+    --ring: 40 7% 8.4%;
     --radius: 0.75rem;
   }
 
+  /* Night, the main theme: warm graphite, never blue-black. */
   .dark {
-    --background: 240 10% 3.9%;
-    --foreground: 0 0% 98%;
-    --card: 240 6% 10%;
-    --card-foreground: 0 0% 98%;
-    --popover: 240 10% 3.9%;
-    --popover-foreground: 0 0% 98%;
-    --primary: 346.8 77.2% 49.8%;
-    --primary-foreground: 0 0% 98%;
-    --secondary: 240 3.7% 15.9%;
-    --secondary-foreground: 0 0% 98%;
-    --muted: 240 3.7% 15.9%;
-    --muted-foreground: 240 5% 64.9%;
-    --accent: 240 3.7% 15.9%;
-    --accent-foreground: 0 0% 98%;
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 0 0% 98%;
-    --border: 240 3.7% 15.9%;
-    --input: 240 3.7% 15.9%;
-    --ring: 346.8 77.2% 49.8%;
+    --background: var(--ink-0);
+    --foreground: 42.9 20% 93.1%;
+    --card: var(--ink-2);
+    --card-foreground: 42.9 20% 93.1%;
+    --popover: var(--ink-2);
+    --popover-foreground: 42.9 20% 93.1%;
+    --primary: var(--blood-400);
+    --primary-foreground: 0 0% 100%;
+    --secondary: var(--ink-3);
+    --secondary-foreground: 42.9 20% 93.1%;
+    --muted: var(--ink-3);
+    --muted-foreground: 40 6.9% 65.9%;
+    --accent: var(--ink-3);
+    --accent-foreground: 42.9 20% 93.1%;
+    --destructive: var(--blood-300);
+    --destructive-foreground: var(--ink-0);
+    --border: var(--ink-3);
+    --input: var(--ink-4);
+    --ring: 42.9 20% 93.1%;
   }
 }
 
@@ -57,6 +95,28 @@
     @apply bg-background text-foreground;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+  }
+}
+
+@layer components {
+  /* The wordmark: "audora" in the display face. Its "o" is the headphone ring, sized in em
+     so it scales with the type. */
+  .wordmark {
+    @apply font-display font-semibold;
+    letter-spacing: -0.045em;
+    line-height: 1;
+    white-space: nowrap;
+  }
+  .wordmark-ring {
+    display: inline-block;
+    width: 0.53em;
+    height: 0.53em;
+    margin: 0 0.012em 0 0.006em;
+    border-radius: 9999px;
+    background: conic-gradient(from 200deg, var(--mark-1), var(--mark-2), var(--mark-3), var(--mark-1));
+    -webkit-mask: radial-gradient(closest-side, transparent 58%, #000 61%);
+    mask: radial-gradient(closest-side, transparent 58%, #000 61%);
+    transform: translateY(0.014em);
   }
 }
 
