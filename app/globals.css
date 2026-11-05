@@ -487,6 +487,8 @@
      components/library/library-list.tsx. An artist's header holds the top
      while their songs pass under it, until the next artist pushes it off. */
   .library-panel {
+    /* Pages size their heads to the panel, not the window. */
+    container-type: inline-size;
     display: flex;
     flex-direction: column;
     gap: 12px;
@@ -497,6 +499,38 @@
   .library-panel[data-layout="phone"] {
     flex: 1;
     padding: 0 4px 0 12px;
+  }
+  /* The list and the pages opened over it share one place. A covered layer
+     stays mounted, so its scroll survives; it fades as the page comes in. */
+  .library-stack {
+    display: grid;
+    grid-template: minmax(0, 1fr) / minmax(0, 1fr);
+    flex: 1;
+    min-height: 0;
+  }
+  .library-layer {
+    grid-area: 1 / 1;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+    transition:
+      opacity var(--motion-attack) var(--ease-attack),
+      visibility 0s;
+  }
+  /* Focused only when Back has nothing better to hand focus to. */
+  .library-layer:focus {
+    outline: none;
+  }
+  .library-layer[data-covered] {
+    opacity: 0;
+    visibility: hidden;
+    transition:
+      opacity var(--motion-release) var(--ease-release),
+      visibility 0s linear var(--motion-release);
+  }
+  .library-layer[data-kind="page"] {
+    animation: library-page-in var(--motion-decay) var(--ease-decay);
   }
   .library {
     display: flex;
@@ -530,12 +564,12 @@
   }
 
   .library-artist {
+    position: relative;
     display: flex;
     align-items: flex-end;
-    justify-content: space-between;
-    gap: 12px;
+    gap: 8px;
     height: 100%;
-    padding: 0 10px 8px;
+    padding: 0 6px 8px 10px;
     background: hsl(var(--background) / 0.82);
     -webkit-backdrop-filter: blur(16px);
     backdrop-filter: blur(16px);
@@ -543,37 +577,96 @@
   .library-artist-name {
     @apply font-display;
     min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
     font-size: 1.0625rem; /* 17px */
     font-weight: 600;
     letter-spacing: -0.015em;
   }
   .library-album {
+    position: relative;
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    gap: 12px;
+    gap: 8px;
     height: 100%;
-    padding: 0 10px;
+    padding: 0 6px 0 10px;
   }
   .library-album-name {
     min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
     font-size: 0.6875rem; /* 11px */
     font-weight: 600;
     letter-spacing: 0.08em;
     text-transform: uppercase;
     color: hsl(var(--muted-foreground));
+    transition: color var(--motion-release) var(--ease-release);
   }
   .library-count {
     @apply font-mono tabular-nums;
     flex: none;
+    margin-left: auto;
     font-size: 0.6875rem; /* 11px */
     color: hsl(var(--muted-foreground));
+  }
+
+  /* A header's name is a button stretched over the whole header, so all of
+     it opens the artist's or the album's page; a chevron shows it does. */
+  .library-header-open {
+    display: block;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    text-align: left;
+  }
+  .library-header-open::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: calc(var(--radius) - 2px);
+  }
+  .library-header-open:focus-visible {
+    outline: none;
+  }
+  .library-header-open:focus-visible::after {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: -2px;
+  }
+  .library-header-chevron {
+    flex: none;
+    width: 14px;
+    height: 14px;
+    color: hsl(var(--muted-foreground));
+    opacity: 0;
+    transform: translateX(-3px);
+    transition:
+      opacity var(--motion-release) var(--ease-release),
+      transform var(--motion-release) var(--ease-release);
+  }
+  .library-artist .library-header-chevron {
+    margin-bottom: 2px;
+  }
+  .library-artist:focus-within .library-header-chevron,
+  .library-album:focus-within .library-header-chevron,
+  .library-page-album-head:focus-within .library-header-chevron {
+    opacity: 1;
+    transform: none;
+  }
+  @media (hover: hover) {
+    .library-artist:hover .library-header-chevron,
+    .library-album:hover .library-header-chevron,
+    .library-page-album-head:hover .library-header-chevron {
+      opacity: 1;
+      transform: none;
+      transition-duration: var(--motion-attack);
+    }
+    .library-album:hover .library-album-name {
+      color: hsl(var(--foreground));
+      transition-duration: var(--motion-attack);
+    }
+  }
+  @media (hover: none) {
+    .library-header-chevron {
+      opacity: 0.6;
+      transform: none;
+    }
   }
 
   /* A song. Hover tints it; the current song takes the song's colour, and its
@@ -779,17 +872,22 @@
     }
   }
 
+  /* A row without a cover, where every row shares one: just the number. */
+  .library-row[data-art="off"] .library-row-main {
+    grid-template-columns: 22px minmax(0, 1fr) auto;
+  }
+
   /* On the phone the number gives way to the cover; while a song loads or
      plays, its arc or bars sit on the cover, over a shade of ink. */
-  .library-row[data-layout="phone"] .library-row-main {
+  .library-row[data-layout="phone"]:not([data-art="off"]) .library-row-main {
     grid-template-columns: 40px minmax(0, 1fr) auto;
     padding-left: 8px;
   }
-  .library-row[data-layout="phone"] .library-row-art,
-  .library-row[data-layout="phone"] .library-row-index {
+  .library-row[data-layout="phone"]:not([data-art="off"]) .library-row-art,
+  .library-row[data-layout="phone"]:not([data-art="off"]) .library-row-index {
     grid-area: 1 / 1;
   }
-  .library-row[data-layout="phone"] .library-row-index {
+  .library-row[data-layout="phone"]:not([data-art="off"]) .library-row-index {
     --row-mark: hsl(var(--paper));
     z-index: 1;
     width: 40px;
@@ -798,10 +896,10 @@
     background: hsl(var(--ink-0) / 0.55);
     opacity: 0;
   }
-  .library-row[data-layout="phone"][data-playback] .library-row-index {
+  .library-row[data-layout="phone"]:not([data-art="off"])[data-playback] .library-row-index {
     opacity: 1;
   }
-  .library-row[data-layout="phone"] .library-row-number {
+  .library-row[data-layout="phone"]:not([data-art="off"]) .library-row-number {
     display: none;
   }
 
@@ -861,18 +959,203 @@
     border-radius: 4px;
   }
 
-  /* Where a jump landed: a tint in the song's colour that holds, then fades. */
-  .library-slot[data-flash]::after,
-  .library-sticky[data-flash]::after {
-    content: "";
-    position: absolute;
-    inset: 1px 0;
-    z-index: 1;
+  /* An artist's or an album's page. */
+  .library-page {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-height: 0;
+  }
+  .library-page-bar {
+    flex: none;
+    display: flex;
+    align-items: center;
+    height: 40px;
+    padding-right: 12px;
+  }
+  .library-page-back {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    min-width: 0;
+    height: 32px;
+    padding: 0 12px 0 4px;
+    border-radius: calc(var(--radius) - 4px);
+    font-size: 0.875rem; /* 14px */
+    font-weight: 500;
+    color: hsl(var(--muted-foreground));
+    transition:
+      color var(--motion-release) var(--ease-release),
+      background-color var(--motion-release) var(--ease-release);
+  }
+  .library-page-back > svg {
+    flex: none;
+    width: 18px;
+    height: 18px;
+  }
+  .library-page-back-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .library-page-back:active {
+    color: hsl(var(--foreground));
+  }
+  .library-page-scroll {
+    flex: 1;
+    min-height: 0;
+  }
+  /* Clear of the overlaid scrollbar, like the list. */
+  .library-page-body {
+    margin: 0 12px 24px 0;
+  }
+  .library-page[data-layout="phone"] .library-page-body {
+    margin: 0 8px 16px 0;
+  }
+  .library-page-head {
+    display: flex;
+    align-items: flex-end;
+    gap: 20px;
+    padding: 4px 10px 20px;
+  }
+  .library-page-head .library-page-cover {
+    flex: none;
+    width: 140px;
+    height: 140px;
+    box-shadow: 0 16px 36px -18px hsl(var(--ink-0) / 0.5);
+  }
+  .library-page-info {
+    display: grid;
+    justify-items: start;
+    gap: 4px;
+    min-width: 0;
+  }
+  .library-page-kind {
+    font-size: 0.6875rem; /* 11px */
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: hsl(var(--muted-foreground));
+  }
+  .library-page-title {
+    @apply font-display;
+    display: -webkit-box;
+    max-width: 100%;
+    overflow: hidden;
+    overflow-wrap: anywhere;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    font-size: 1.75rem; /* 28px */
+    font-weight: 600;
+    line-height: 1.12;
+    letter-spacing: -0.02em;
+  }
+  /* Focused as the page opens, so a screen reader starts there; nothing to show. */
+  .library-page-title:focus {
+    outline: none;
+  }
+  .library-page-link {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    border-radius: 4px;
+    font-size: 0.9375rem; /* 15px */
+    font-weight: 500;
+    text-underline-offset: 3px;
+  }
+  .library-page-meta {
+    @apply font-mono tabular-nums;
+    font-size: 0.71875rem; /* 11.5px */
+    color: hsl(var(--muted-foreground));
+  }
+  .library-page-play {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    height: 36px;
+    margin-top: 10px;
+    padding: 0 16px 0 12px;
     border-radius: calc(var(--radius) - 2px);
-    background: color-mix(in oklab, var(--song-accent) 20%, transparent);
-    box-shadow: inset 0 0 0 1.5px color-mix(in oklab, var(--song-accent) 70%, transparent);
-    pointer-events: none;
-    animation: library-flash 1600ms var(--ease-release) forwards;
+    background: hsl(var(--foreground));
+    color: hsl(var(--background));
+    font-size: 0.875rem; /* 14px */
+    font-weight: 600;
+    transition: transform var(--motion-pluck) var(--ease-pluck);
+  }
+  .library-page-play > svg {
+    width: 15px;
+    height: 15px;
+    fill: currentColor;
+  }
+  .library-page-play:active {
+    transform: scale(0.96);
+    transition: transform var(--motion-attack) var(--ease-attack);
+  }
+  .library-page-back:focus-visible,
+  .library-page-link:focus-visible,
+  .library-page-play:focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 2px;
+  }
+  .library-page-track {
+    height: 48px;
+  }
+  .library-page-album {
+    margin-top: 18px;
+  }
+  .library-page-album-head {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 6px 6px 6px 10px;
+    border-radius: calc(var(--radius) - 2px);
+    transition: background-color var(--motion-release) var(--ease-release);
+  }
+  .library-page-album-text {
+    display: grid;
+    flex: 1;
+    gap: 2px;
+    min-width: 0;
+  }
+  .library-page-album-title {
+    min-width: 0;
+    font-size: 0.9375rem; /* 15px */
+    font-weight: 600;
+  }
+  .library-page-album-meta {
+    @apply font-mono tabular-nums;
+    font-size: 0.6875rem; /* 11px */
+    color: hsl(var(--muted-foreground));
+  }
+  @media (hover: hover) {
+    .library-page-back:hover {
+      color: hsl(var(--foreground));
+      background-color: hsl(var(--foreground) / 0.06);
+      transition-duration: var(--motion-attack);
+    }
+    .library-page-link:hover {
+      text-decoration: underline;
+    }
+    .library-page-album-head:hover {
+      background-color: hsl(var(--foreground) / 0.04);
+      transition-duration: var(--motion-attack);
+    }
+  }
+  /* A narrow panel: the phone, or the fullscreen player's sidebar. */
+  @container (max-width: 440px) {
+    .library-page-head {
+      gap: 16px;
+      padding-bottom: 16px;
+    }
+    .library-page-head .library-page-cover {
+      width: 108px;
+      height: 108px;
+    }
+    .library-page-title {
+      font-size: 1.375rem; /* 22px */
+    }
   }
 
   .library-empty {
@@ -889,6 +1172,69 @@
   }
   .library-empty-hint {
     max-width: 32ch;
+    font-size: 0.875rem; /* 14px */
+    color: hsl(var(--muted-foreground));
+  }
+  .library-empty-action {
+    height: 36px;
+    margin-top: 10px;
+    padding: 0 16px;
+    border-radius: calc(var(--radius) - 2px);
+    background: hsl(var(--foreground) / 0.08);
+    font-size: 0.875rem; /* 14px */
+    font-weight: 600;
+    transition:
+      background-color var(--motion-release) var(--ease-release),
+      transform var(--motion-pluck) var(--ease-pluck);
+  }
+  .library-empty-action:active {
+    transform: scale(0.97);
+    transition: transform var(--motion-attack) var(--ease-attack);
+  }
+  .library-empty-action:focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 2px;
+  }
+  @media (hover: hover) {
+    .library-empty-action:hover {
+      background: hsl(var(--foreground) / 0.12);
+      transition-duration: var(--motion-attack);
+    }
+  }
+
+  /* Over the whole window while files are dragged in from outside. */
+  .drop-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 60;
+    display: grid;
+    place-items: center;
+    padding: 24px;
+    background: hsl(var(--background) / 0.78);
+    -webkit-backdrop-filter: blur(10px);
+    backdrop-filter: blur(10px);
+    pointer-events: none;
+    animation: fade-in var(--motion-attack) var(--ease-attack);
+  }
+  .drop-overlay-frame {
+    display: grid;
+    justify-items: center;
+    gap: 6px;
+    width: min(100%, 560px);
+    padding: 48px 32px;
+    border: 1.5px dashed hsl(var(--foreground) / 0.35);
+    border-radius: calc(var(--radius) * 2);
+    text-align: center;
+    animation: drop-frame-in var(--motion-decay) var(--ease-decay);
+  }
+  .drop-overlay-title {
+    @apply font-display;
+    font-size: 1.5rem; /* 24px */
+    font-weight: 600;
+    letter-spacing: -0.02em;
+  }
+  .drop-overlay-hint {
+    max-width: 40ch;
     font-size: 0.875rem; /* 14px */
     color: hsl(var(--muted-foreground));
   }
@@ -933,13 +1279,17 @@
   }
 }
 
-@keyframes library-flash {
-  0%,
-  40% {
-    opacity: 1;
-  }
-  to {
+@keyframes library-page-in {
+  from {
     opacity: 0;
+    transform: translateX(16px);
+  }
+}
+
+@keyframes drop-frame-in {
+  from {
+    opacity: 0;
+    transform: scale(0.97);
   }
 }
 
@@ -1003,8 +1353,17 @@
   .library-row[data-playback="playing"] .library-row-bars > i {
     animation: none;
   }
-  .library-row-main:active {
+  .library-row-main:active,
+  .library-page-play:active,
+  .library-empty-action:active {
     transform: none;
+  }
+  /* Pages and the drop overlay still fade; they no longer move. */
+  .library-layer[data-kind="page"] {
+    animation-name: fade-in;
+  }
+  .drop-overlay-frame {
+    animation-name: fade-in;
   }
   .roll-out {
     animation: fade-out var(--motion-attack) linear forwards;

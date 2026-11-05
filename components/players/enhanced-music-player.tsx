@@ -18,8 +18,8 @@ import { QualityLabel } from "@/components/player/quality-label"
 import { RollingText } from "@/components/player/rolling-text"
 import { SeekBar } from "@/components/player/seek-bar"
 import { SkipIcon, TransportButton } from "@/components/player/transport-button"
+import { DropOverlay } from "@/components/library/drop-overlay"
 import { LibraryPanel } from "@/components/library/library-panel"
-import type { LibraryJump } from "@/components/library/library-list"
 import { rowPlayback } from "@/components/library/song-row"
 import { RefinedEqualizer, type EqualizerBand } from "@/components/refined-equalizer"
 import { AlbumArtBackground } from "@/components/album-art-background"
@@ -33,16 +33,17 @@ import { useAudioEngine } from "@/hooks/use-audio-engine"
 import { usePlaybackController, useTransportEvents } from "@/hooks/use-playback-controller"
 import { useSongColors } from "@/hooks/use-song-colors"
 import { useEqualizerManager, DEFAULT_EQUALIZER_BANDS } from "@/hooks/use-equalizer-manager"
+import { useFileDrop } from "@/hooks/use-file-drop"
 import { useFileImporter } from "@/hooks/use-file-importer"
+import { useLibraryNavigation } from "@/hooks/use-library-navigation"
 import { usePlaylistPersistence, useAutoSave } from "@/hooks/use-playlist-persistence"
 import { useMediaControls } from "@/hooks/use-media-controls"
 import { useTidalSearch } from "@/hooks/use-tidal-search"
 import { OnlineSearchSidebar } from "@/components/dab/online-search-sidebar"
 import { AlbumArtCache } from "@/lib/album-art-cache"
 import { getAllPresets, type EqPreset } from "@/lib/eq-presets"
-import { matchesQuery } from "@/lib/library-rows"
+import { albumPage, artistPage, type LibraryPage } from "@/lib/library-pages"
 import { resetPlaybackTime } from "@/lib/playback-time-store"
-import type { Song } from "@/lib/song"
 import { AddMusicControls } from "@/components/add-music-control"
 import { FullscreenPlayer } from "@/components/fullscreen-player"
 import { SyncPanel } from "@/components/sync-panel"
@@ -73,8 +74,8 @@ const CROSSFADE_AUTO_SECONDS = 0
 /** Manual track-change crossfade (Next/Prev/pick) — short & snappy. */
 const CROSSFADE_MANUAL_SECONDS = 0.4
 
-/** The artist and album under the title link into the library. */
-const JUMP_LINK_CLASS = "hover:text-foreground hover:underline underline-offset-2 transition-colors duration-attack ease-attack"
+/** The artist and album under the title open their pages in the library. */
+const PAGE_LINK_CLASS = "hover:text-foreground hover:underline underline-offset-2 transition-colors duration-attack ease-attack"
 
 export default function EnhancedMusicPlayer() {
   const [activeView, setActiveView] = useState<"player" | "lyrics" | "youtube" | "insights" | "artist">("player");
@@ -85,15 +86,6 @@ export default function EnhancedMusicPlayer() {
   const [showSync, setShowSync] = useState(false);
   const [showCloud, setShowCloud] = useState(false);
   const [searchQuery, setSearchQuery] = useState("")
-  const [libraryJump, setLibraryJump] = useState<LibraryJump | null>(null)
-
-  /** Show a song's artist or album in the library, clearing a search that would hide it. */
-  const revealInLibrary = useCallback((to: LibraryJump["to"], song: Song) => {
-    setSidebarMode("library")
-    setSearchQuery((query) => (matchesQuery(song, query) ? query : ""))
-    setLibraryJump({ to, song })
-  }, [])
-  const clearLibraryJump = useCallback(() => setLibraryJump(null), [])
 
   const albumArtRef = useRef<HTMLDivElement>(null)
   const audioRef = useRef<HTMLAudioElement>(null)
@@ -151,6 +143,14 @@ export default function EnhancedMusicPlayer() {
     toggleShuffle, removeSong, resetPlaylist, playNext, addToQueue,
   } = playlist
   const libraryActions = useMemo(() => ({ playNext, addToQueue, removeSong }), [playNext, addToQueue, removeSong])
+  const libraryNavigation = useLibraryNavigation(sortedSongs, searchQuery)
+  const { show: showLibraryPage } = libraryNavigation
+
+  /** Show an artist's or an album's page, from the player. */
+  const showInLibrary = useCallback((page: LibraryPage) => {
+    setSidebarMode("library")
+    showLibraryPage(page)
+  }, [showLibraryPage])
 
   const {
     showEqualizer, setShowEqualizer,
@@ -208,7 +208,7 @@ export default function EnhancedMusicPlayer() {
 
   const {
     isLoadingSongs, loadingProgress, fileInputRef, folderInputRef,
-    handleFileUpload, handleFolderUpload,
+    handleFileUpload, handleFolderUpload, addSongsToPlaylist,
   } = useFileImporter({
     songs,
     onSongsAdded: (newSongs) => {
@@ -354,6 +354,13 @@ export default function EnhancedMusicPlayer() {
   useEffect(() => {
     if (isHosting) syncBroadcast()
   }, [isPlaying, currentSong?.id, isHosting, syncBroadcast])
+
+  const libraryBusy = isLoadingSongs || isRestoringPlaylist || isSyncing
+  const draggingFiles = useFileDrop({ onDrop: addSongsToPlaylist, busy: libraryBusy })
+  const addFolderAction = useMemo(
+    () => ({ label: "Add a folder", onClick: () => folderInputRef.current?.click() }),
+    [folderInputRef],
+  )
 
   const handleSeek = useCallback((seconds: number) => {
     seek(seconds)
@@ -619,9 +626,9 @@ export default function EnhancedMusicPlayer() {
                               {displaySong.artist && (
                                 <button
                                   type="button"
-                                  onClick={() => revealInLibrary("artist", displaySong)}
-                                  className={JUMP_LINK_CLASS}
-                                  title={`Jump to ${displaySong.artist}`}
+                                  onClick={() => showInLibrary(artistPage(displaySong))}
+                                  className={PAGE_LINK_CLASS}
+                                  title={`Go to ${displaySong.artist}`}
                                 >
                                   {displaySong.artist}
                                 </button>
@@ -630,9 +637,9 @@ export default function EnhancedMusicPlayer() {
                               {displaySong.album && (
                                 <button
                                   type="button"
-                                  onClick={() => revealInLibrary("album", displaySong)}
-                                  className={JUMP_LINK_CLASS}
-                                  title={`Jump to ${displaySong.album}`}
+                                  onClick={() => showInLibrary(albumPage(displaySong))}
+                                  className={PAGE_LINK_CLASS}
+                                  title={`Go to ${displaySong.album}`}
                                 >
                                   {displaySong.album}
                                 </button>
@@ -781,12 +788,12 @@ export default function EnhancedMusicPlayer() {
                 query={searchQuery}
                 currentSongId={displaySong?.id}
                 playback={rowPlayback(isLoadingSong, isPlaying)}
-                loading={isLoadingSongs || isRestoringPlaylist}
+                loading={isLoadingSongs || isRestoringPlaylist || cloud.status === "loading"}
                 importProgress={isLoadingSongs ? loadingProgress : null}
                 onSelect={handleSongSelect}
                 actions={libraryActions}
-                jump={libraryJump}
-                onJumpDone={clearLibraryJump}
+                navigation={libraryNavigation}
+                emptyAction={addFolderAction}
               />
             )}
           </div>
@@ -821,6 +828,7 @@ export default function EnhancedMusicPlayer() {
         onShowArtist={() => setActiveView("artist")}
         albumArtSourceRect={albumArtSourceRect}
       />
+      {draggingFiles && <DropOverlay busy={libraryBusy} />}
     </div>
   )
 }

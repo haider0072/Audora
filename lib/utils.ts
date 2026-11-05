@@ -23,6 +23,11 @@ export function formatTotalDuration(seconds: number): string {
   return `${m} min`
 }
 
+/** "1 song", "12 songs": a count with its noun, plural unless the count is one. */
+export function formatCount(count: number, noun: string): string {
+  return `${count} ${count === 1 ? noun : `${noun}s`}`
+}
+
 /**
  * Wait for an audio element to fire "canplay", with a timeout fallback.
  * Rejects on error or timeout to prevent infinite UI hang.

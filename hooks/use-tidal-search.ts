@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useCallback, useRef, useEffect } from "react"
+import { useOnlineStatus } from "@/hooks/use-online-status"
 import { toast } from "@/hooks/use-toast"
 import { TidalService, type SearchSource } from "@/lib/tidal-service"
 import { MetadataExtractor } from "@/lib/metadata-extractor"
@@ -176,22 +177,7 @@ export function useTidalSearch(options: UseTidalSearchOptions) {
   // Error state
   const [error, setError] = useState<string | null>(null)
 
-  // Online state
-  const [isOnline, setIsOnline] = useState(
-    typeof navigator !== "undefined" ? navigator.onLine : true
-  )
-
-  // Online/offline detection
-  useEffect(() => {
-    const handleOnline = () => setIsOnline(true)
-    const handleOffline = () => setIsOnline(false)
-    window.addEventListener("online", handleOnline)
-    window.addEventListener("offline", handleOffline)
-    return () => {
-      window.removeEventListener("online", handleOnline)
-      window.removeEventListener("offline", handleOffline)
-    }
-  }, [])
+  const isOnline = useOnlineStatus()
 
   // Login is a no-op for Tidal (no auth needed)
   const login = useCallback(async (): Promise<boolean> => {

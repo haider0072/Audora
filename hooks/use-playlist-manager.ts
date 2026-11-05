@@ -3,6 +3,7 @@ import { toast } from "@/hooks/use-toast"
 import { PlaylistStorage } from "@/lib/playlist-storage"
 import { AlbumArtCache } from "@/lib/album-art-cache"
 import type { Song } from "@/lib/song"
+import { albumKey, albumOf, artistKey, artistOf, trackNumberOf, yearOf } from "@/lib/library-groups"
 import { isCloudOnlySong } from "@/lib/cloud/merge"
 
 export interface UsePlaylistManagerOptions {
@@ -103,49 +104,31 @@ export function usePlaylistManager(options: UsePlaylistManagerOptions = {}): Use
    * Sort songs by artist (alpha) -> album year (oldest first, missing last) -> track number -> title
    */
   const sortedSongs = useMemo(() => {
-    // Pick first 4-digit run from a year string; Infinity if missing/invalid
-    const parseYear = (y?: string): number => {
-      if (!y) return Infinity
-      const match = y.match(/\d{4}/)
-      return match ? parseInt(match[0], 10) : Infinity
-    }
-    // Parse leading integer ("3" or "3/12"); Infinity if missing/invalid
-    const parseTrack = (t?: string): number => {
-      if (!t) return Infinity
-      const n = parseInt(t, 10)
-      return Number.isNaN(n) ? Infinity : n
-    }
-
-    // First pass: compute representative year per (artist, album) — first non-empty year wins
-    const albumYearMap = new Map<string, number>()
-    for (const s of songs) {
-      const artistKey = (s.artists?.[0] || s.artist || "Unknown Artist").trim().toLowerCase()
-      const albumKey = `${artistKey}::${(s.album || "Unknown Album").trim().toLowerCase()}`
-      if (!albumYearMap.has(albumKey)) {
-        albumYearMap.set(albumKey, parseYear(s.year))
-      } else if (albumYearMap.get(albumKey) === Infinity) {
-        // Upgrade if we now have a real year
-        const y = parseYear(s.year)
-        if (y !== Infinity) albumYearMap.set(albumKey, y)
-      }
+    // Each song's sort keys, worked out once rather than in every comparison.
+    const keys = new Map<Song, { artist: string; album: string; track: number }>()
+    // An album's year is the first one any of its songs gives.
+    const albumYears = new Map<string, number>()
+    for (const song of songs) {
+      const artist = artistOf(song)
+      const album = albumKey(artist, albumOf(song))
+      keys.set(song, { artist: artistKey(artist), album, track: trackNumberOf(song) ?? Infinity })
+      const year = yearOf(song)
+      if (year !== undefined && !albumYears.has(album)) albumYears.set(album, year)
     }
 
     return [...songs].sort((a, b) => {
-      const artistA = (a.artists?.[0] || a.artist || "Unknown Artist").trim().toLowerCase()
-      const artistB = (b.artists?.[0] || b.artist || "Unknown Artist").trim().toLowerCase()
-      if (artistA !== artistB) return artistA.localeCompare(artistB)
-
-      const albumKeyA = `${artistA}::${(a.album || "Unknown Album").trim().toLowerCase()}`
-      const albumKeyB = `${artistB}::${(b.album || "Unknown Album").trim().toLowerCase()}`
-      if (albumKeyA !== albumKeyB) {
-        const yearDiff = (albumYearMap.get(albumKeyA) ?? Infinity) - (albumYearMap.get(albumKeyB) ?? Infinity)
-        if (yearDiff !== 0) return yearDiff
-        return albumKeyA.localeCompare(albumKeyB)
+      const keyA = keys.get(a)!
+      const keyB = keys.get(b)!
+      if (keyA.artist !== keyB.artist) return keyA.artist.localeCompare(keyB.artist)
+      if (keyA.album !== keyB.album) {
+        // Compared before subtracting: two albums without a year would give
+        // Infinity - Infinity, and a NaN comparison lets their songs interleave.
+        const yearA = albumYears.get(keyA.album) ?? Infinity
+        const yearB = albumYears.get(keyB.album) ?? Infinity
+        if (yearA !== yearB) return yearA - yearB
+        return keyA.album.localeCompare(keyB.album)
       }
-
-      const tA = parseTrack(a.trackNumber)
-      const tB = parseTrack(b.trackNumber)
-      if (tA !== tB) return tA - tB
+      if (keyA.track !== keyB.track) return keyA.track - keyB.track
       return (a.title || "").localeCompare(b.title || "")
     })
   }, [songs])

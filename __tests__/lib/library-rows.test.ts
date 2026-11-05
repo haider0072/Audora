@@ -1,4 +1,4 @@
-import { artistOf, buildLibraryRows, letterOf, matchesQuery } from "@/lib/library-rows"
+import { buildLibraryRows } from "@/lib/library-rows"
 import type { Song } from "@/lib/song"
 
 function song(id: string, fields: Partial<Song> = {}): Song {
@@ -14,38 +14,13 @@ const LIBRARY: Song[] = [
   song("n1", { artist: "2NE1", album: "Crush" }),
 ]
 
-describe("artistOf", () => {
-  it("is the first credited artist, then the artist tag, then Unknown Artist", () => {
-    expect(artistOf(song("x", { artists: ["Daft Punk", "Pharrell"], artist: "Daft Punk, Pharrell" }))).toBe("Daft Punk")
-    expect(artistOf(song("x", { artist: "  Air  " }))).toBe("Air")
-    expect(artistOf(song("x"))).toBe("Unknown Artist")
-  })
-})
-
-describe("letterOf", () => {
-  it("files an artist under their first letter, and anything else under #", () => {
-    expect(letterOf("beabadoobee")).toBe("B")
-    expect(letterOf("2NE1")).toBe("#")
-    expect(letterOf("Ólafur Arnalds")).toBe("#")
-  })
-})
-
-describe("matchesQuery", () => {
-  it("looks through title, artist, album and genre, ignoring case and surrounding space", () => {
-    const pop = LIBRARY[0]
-    expect(matchesQuery(pop, "  arriv ")).toBe(true)
-    expect(matchesQuery(pop, "POP")).toBe(true)
-    expect(matchesQuery(pop, "abba")).toBe(true)
-    expect(matchesQuery(pop, "beatopia")).toBe(false)
-    expect(matchesQuery(pop, "   ")).toBe(true)
-  })
-})
-
 describe("buildLibraryRows, grouped", () => {
   const library = buildLibraryRows(LIBRARY, "grouped")
 
   it("puts an artist header before each artist and an album header before each album", () => {
-    expect(library.rows.map((row) => (row.kind === "song" ? row.song.id : `${row.kind}:${"artist" in row ? row.artist : row.album}`))).toEqual([
+    expect(
+      library.rows.map((row) => (row.kind === "song" ? row.song.id : `${row.kind}:${row.kind === "artist" ? row.artist : row.album}`)),
+    ).toEqual([
       "artist:ABBA",
       "album:Arrival",
       "a1",
@@ -58,6 +33,16 @@ describe("buildLibraryRows, grouped", () => {
       "artist:2NE1",
       "album:Crush",
       "n1",
+    ])
+  })
+
+  it("names each album's artist, so its header can open the album's page", () => {
+    const albums = library.rows.flatMap((row) => (row.kind === "album" ? [[row.artist, row.album]] : []))
+    expect(albums).toEqual([
+      ["ABBA", "Arrival"],
+      ["ABBA", "Voulez-Vous"],
+      ["beabadoobee", "Beatopia"],
+      ["2NE1", "Crush"],
     ])
   })
 
@@ -84,10 +69,6 @@ describe("buildLibraryRows, grouped", () => {
       { start: 9, end: 12 },
     ])
     expect(library.runOfRow).toEqual([0, 0, 0, 0, 0, 0, 1, 1, 1, 2, 2, 2])
-  })
-
-  it("points every row at its album's header", () => {
-    expect(library.albumStart).toEqual([-1, 1, 1, 1, 4, 4, -1, 7, 7, -1, 10, 10])
   })
 
   it("finds each song, and each letter's first row", () => {
@@ -128,13 +109,12 @@ describe("buildLibraryRows, list", () => {
     ])
   })
 
-  it("starts each artist's run and each album at its first song", () => {
+  it("starts each artist's run at their first song", () => {
     expect(library.artistRuns).toEqual([
       { start: 0, end: 3 },
       { start: 3, end: 4 },
       { start: 4, end: 5 },
     ])
-    expect(library.albumStart).toEqual([0, 0, 2, 3, 4])
   })
 })
 

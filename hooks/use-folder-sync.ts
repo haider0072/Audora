@@ -3,6 +3,7 @@ import { toast } from "@/hooks/use-toast"
 import { MetadataExtractor } from "@/lib/metadata-extractor"
 import { PlaylistStorage } from "@/lib/playlist-storage"
 import { AlbumArtCache } from "@/lib/album-art-cache"
+import { isSupportedAudioFile } from "@/lib/audio-formats"
 import type { Song } from "@/lib/song"
 
 export interface UseFolderSyncOptions {
@@ -20,7 +21,6 @@ export interface UseFolderSyncReturn {
   triggerFolderSync: () => void
 }
 
-const SUPPORTED_FORMATS = ["mp3", "flac", "wav", "m4a", "aac"]
 const BATCH_SIZE = 5
 
 /**
@@ -79,10 +79,7 @@ export function useFolderSync(options: UseFolderSyncOptions): UseFolderSyncRetur
       }
 
       // Filter for supported formats
-      const validFiles = files.filter((f) => {
-        const ext = f.name.split(".").pop()?.toLowerCase() || ""
-        return SUPPORTED_FORMATS.includes(ext)
-      })
+      const validFiles = files.filter((f) => isSupportedAudioFile(f.name))
 
       if (validFiles.length === 0) {
         toast({ title: "No supported audio files found", variant: "destructive" })

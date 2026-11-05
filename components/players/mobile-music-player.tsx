@@ -11,13 +11,16 @@ import { useAudioEngine } from "@/hooks/use-audio-engine"
 import { usePlaybackController, useTransportEvents } from "@/hooks/use-playback-controller"
 import { useSongColors } from "@/hooks/use-song-colors"
 import { useEqualizerManager, DEFAULT_EQUALIZER_BANDS } from "@/hooks/use-equalizer-manager"
+import { useFileDrop } from "@/hooks/use-file-drop"
 import { useFileImporter } from "@/hooks/use-file-importer"
+import { useLibraryNavigation } from "@/hooks/use-library-navigation"
 import { usePlaylistPersistence, useAutoSave } from "@/hooks/use-playlist-persistence"
 import { useMediaControls } from "@/hooks/use-media-controls"
 import { useTidalSearch } from "@/hooks/use-tidal-search"
 
 import { MobileHeader } from "@/components/mobile-header"
 import { MobilePlaylistControls } from "@/components/mobile-playlist-controls"
+import { DropOverlay } from "@/components/library/drop-overlay"
 import { LibraryPanel } from "@/components/library/library-panel"
 import { rowPlayback } from "@/components/library/song-row"
 import { MobilePlayerBar } from "@/components/mobile-player-bar"
@@ -109,6 +112,7 @@ export default function MobileMusicPlayer() {
     toggleShuffle, removeSong, resetPlaylist, playNext, addToQueue,
   } = playlist
   const libraryActions = useMemo(() => ({ playNext, addToQueue, removeSong }), [playNext, addToQueue, removeSong])
+  const libraryNavigation = useLibraryNavigation(sortedSongs, searchQuery)
 
   const {
     showEqualizer, setShowEqualizer,
@@ -180,7 +184,7 @@ export default function MobileMusicPlayer() {
 
   const {
     isLoadingSongs, loadingProgress, fileInputRef, folderInputRef,
-    handleFileUpload, handleFolderUpload,
+    handleFileUpload, handleFolderUpload, addSongsToPlaylist,
   } = useFileImporter({
     songs,
     onSongsAdded: (newSongs) => {
@@ -335,6 +339,15 @@ export default function MobileMusicPlayer() {
 
   const songColors = useSongColors(displaySong)
 
+  // A phone has nothing to drag from, but a narrow desktop window gets this
+  // layout too.
+  const libraryBusy = isLoadingSongs || isRestoringPlaylist
+  const draggingFiles = useFileDrop({ onDrop: addSongsToPlaylist, busy: libraryBusy })
+  const addSongsAction = useMemo(
+    () => ({ label: "Add songs", onClick: () => fileInputRef.current?.click() }),
+    [fileInputRef],
+  )
+
   return (
     <div className="song-scope min-h-screen relative bg-background" style={songColors} data-playing={isPlaying || undefined}>
       {/* Dynamic Background */}
@@ -405,10 +418,12 @@ export default function MobileMusicPlayer() {
             query={searchQuery}
             currentSongId={displaySong?.id}
             playback={rowPlayback(isLoadingSong, isPlaying)}
-            loading={isLoadingSongs || isRestoringPlaylist}
+            loading={isLoadingSongs || isRestoringPlaylist || cloud.status === "loading"}
             importProgress={isLoadingSongs ? loadingProgress : null}
             onSelect={handleSongSelect}
             actions={libraryActions}
+            navigation={libraryNavigation}
+            emptyAction={addSongsAction}
           />
         )}
 
@@ -512,6 +527,7 @@ export default function MobileMusicPlayer() {
         />
 
       </div>
+      {draggingFiles && <DropOverlay busy={libraryBusy} />}
     </div>
   )
 }

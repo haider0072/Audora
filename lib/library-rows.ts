@@ -9,13 +9,14 @@
  * render only the rows on screen.
  */
 
+import { albumKey, albumOf, artistKey, artistOf, letterOf, matchesQuery, trackNumberOf } from "@/lib/library-groups"
 import type { Song } from "@/lib/song"
 
 export type LibraryViewMode = "grouped" | "list"
 
 export type LibraryRow =
   | { kind: "artist"; key: string; artist: string; songCount: number }
-  | { kind: "album"; key: string; album: string; songCount: number }
+  | { kind: "album"; key: string; artist: string; album: string; songCount: number }
   | {
       kind: "song"
       key: string
@@ -46,41 +47,6 @@ export interface LibraryRows {
   artistRuns: ArtistRun[]
   /** For each row, its artist's index in `artistRuns`. */
   runOfRow: number[]
-  /**
-   * For each row, the first row of its album: the header in the grouped
-   * view, the first song in the list view. -1 for an artist header.
-   */
-  albumStart: number[]
-}
-
-const UNKNOWN_ARTIST = "Unknown Artist"
-const UNKNOWN_ALBUM = "Unknown Album"
-
-/** The artist a song is grouped and sorted under: its first credited artist. */
-export function artistOf(song: Song): string {
-  return (song.artists?.[0] || song.artist || UNKNOWN_ARTIST).trim()
-}
-
-function albumOf(song: Song): string {
-  return (song.album || UNKNOWN_ALBUM).trim()
-}
-
-/** "#" for anything that does not start with a Latin letter. */
-export function letterOf(artist: string): string {
-  const first = artist.charAt(0).toUpperCase()
-  return /[A-Z]/.test(first) ? first : "#"
-}
-
-/** Whether a song's title, artist, album or genre contains `query`, ignoring case. */
-export function matchesQuery(song: Song, query: string): boolean {
-  const needle = query.trim().toLowerCase()
-  if (!needle) return true
-  return [song.title, song.artist, song.album, song.genre].some((field) => field?.toLowerCase().includes(needle))
-}
-
-function trackNumberOf(song: Song): number | undefined {
-  const n = Number.parseInt(song.trackNumber ?? "", 10)
-  return Number.isNaN(n) ? undefined : n
 }
 
 /**
@@ -96,14 +62,12 @@ export function buildLibraryRows(sortedSongs: readonly Song[], viewMode: Library
     songRows: new Map(),
     artistRuns: [],
     runOfRow: [],
-    albumStart: [],
   }
 
-  let artistKey: string | undefined
-  let albumKey: string | undefined
+  let lastArtist: string | undefined
+  let lastAlbum: string | undefined
   let artistHeader: Extract<LibraryRow, { kind: "artist" }> | undefined
   let albumHeader: Extract<LibraryRow, { kind: "album" }> | undefined
-  let albumRow = -1
   let positionInAlbum = 0
 
   const push = (row: LibraryRow, letter: string) => {
@@ -114,7 +78,6 @@ export function buildLibraryRows(sortedSongs: readonly Song[], viewMode: Library
     const run = result.artistRuns.length - 1
     result.artistRuns[run].end = index + 1
     result.runOfRow.push(run)
-    result.albumStart.push(row.kind === "artist" ? -1 : albumRow)
     return index
   }
 
@@ -122,12 +85,12 @@ export function buildLibraryRows(sortedSongs: readonly Song[], viewMode: Library
     const artist = artistOf(song)
     const album = albumOf(song)
     const letter = letterOf(artist)
-    const nextArtistKey = artist.toLowerCase()
-    const nextAlbumKey = `${nextArtistKey}::${album.toLowerCase()}`
-    const newArtist = nextArtistKey !== artistKey
-    const newAlbum = newArtist || nextAlbumKey !== albumKey
-    artistKey = nextArtistKey
-    albumKey = nextAlbumKey
+    const nextArtistKey = artistKey(artist)
+    const nextAlbumKey = albumKey(artist, album)
+    const newArtist = nextArtistKey !== lastArtist
+    const newAlbum = newArtist || nextAlbumKey !== lastAlbum
+    lastArtist = nextArtistKey
+    lastAlbum = nextAlbumKey
     if (newArtist) result.artistRuns.push({ start: result.rows.length, end: result.rows.length })
 
     if (viewMode === "grouped") {
@@ -136,8 +99,7 @@ export function buildLibraryRows(sortedSongs: readonly Song[], viewMode: Library
         push(artistHeader, letter)
       }
       if (newAlbum) {
-        albumHeader = { kind: "album", key: `album:${nextAlbumKey}`, album, songCount: 0 }
-        albumRow = result.rows.length
+        albumHeader = { kind: "album", key: `album:${nextAlbumKey}`, artist, album, songCount: 0 }
         positionInAlbum = 0
         push(albumHeader, letter)
       }
@@ -150,9 +112,7 @@ export function buildLibraryRows(sortedSongs: readonly Song[], viewMode: Library
       )
       result.songRows.set(song.id, index)
     } else {
-      const index = result.rows.length
-      if (newAlbum) albumRow = index
-      push({ kind: "song", key: song.id, song, number: result.songRows.size + 1, detailed: true }, letter)
+      const index = push({ kind: "song", key: song.id, song, number: result.songRows.size + 1, detailed: true }, letter)
       result.songRows.set(song.id, index)
     }
   }
