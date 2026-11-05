@@ -50,6 +50,14 @@ export interface UsePlaylistManagerReturn {
   playNext: (song: Song) => void
 }
 
+/** `song` with its list entry's stream info, or `song` itself when they already agree. */
+function withStreamInfoOf(entry: Song, song: Song): Song {
+  if (entry.sampleRate === song.sampleRate && entry.bitDepth === song.bitDepth && entry.bitrate === song.bitrate) {
+    return song
+  }
+  return { ...song, sampleRate: entry.sampleRate, bitDepth: entry.bitDepth, bitrate: entry.bitrate }
+}
+
 /**
  * Custom hook for managing playlist state and operations
  *
@@ -74,6 +82,20 @@ export function usePlaylistManager(options: UsePlaylistManagerOptions = {}): Use
   const [currentShuffleIndex, setCurrentShuffleIndex] = useState(0)
   const [playedSongs, setPlayedSongs] = useState<Set<string>>(new Set())
   const [manualQueue, setManualQueue] = useState<Song[]>([])
+
+  // The current song is a copy of its list entry, taken when it was picked.
+  // Stream info can reach the list later — read from an older song's file, or
+  // from the cloud index — so whenever the list changes the copy takes it up,
+  // adjusted while rendering rather than in an effect.
+  const [songsSeen, setSongsSeen] = useState(songs)
+  if (songs !== songsSeen) {
+    setSongsSeen(songs)
+    const entry = currentSong && songs.find((song) => song.id === currentSong.id)
+    if (currentSong && entry) {
+      const refreshed = withStreamInfoOf(entry, currentSong)
+      if (refreshed !== currentSong) setCurrentSong(refreshed)
+    }
+  }
 
   /**
    * Sort songs by artist (alpha) -> album year (oldest first, missing last) -> track number -> title

@@ -77,6 +77,19 @@ describe("mergeCloudLibrary", () => {
     expect(mergeCloudLibrary(first, cloud)).toBe(first)
   })
 
+  it("picks up what the indexer learned about a song since it was listed", () => {
+    const first = mergeCloudLibrary([], [cloudSong("a.flac", 10, { artists: ["A", "B"] })])
+    const reread = mergeCloudLibrary(first, [
+      cloudSong("a.flac", 10, { artists: ["A", "B"], sampleRate: 96_000, bitDepth: 24 }),
+    ])
+    expect(reread).not.toBe(first)
+    expect(reread[0]).toMatchObject({ sampleRate: 96_000, bitDepth: 24 })
+
+    // Equal lists compare by value, and what the player sets is not a change.
+    const played = [{ ...reread[0], url: "blob:playing" }]
+    expect(mergeCloudLibrary(played, [cloudSong("a.flac", 10, { artists: ["A", "B"], sampleRate: 96_000, bitDepth: 24 })])).toBe(played)
+  })
+
   it("replaces a cloud-only song whose signed URL was refreshed", () => {
     const first = mergeCloudLibrary([], [cloudSong("a.flac", 10)])
     const refreshed = mergeCloudLibrary(first, [

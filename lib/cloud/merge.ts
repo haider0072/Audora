@@ -50,7 +50,8 @@ export function cloudSongToSong(cloud: CloudSong): Song {
     discNumber: cloud.discNumber,
     duration: cloud.duration,
     bitrate: cloud.bitrate,
-    isHiRes: cloud.isHiRes,
+    sampleRate: cloud.sampleRate,
+    bitDepth: cloud.bitDepth,
     format: cloud.format,
     albumArt: cloud.artUrl,
     albumArtThumb: cloud.thumbUrl,
@@ -58,9 +59,24 @@ export function cloudSongToSong(cloud: CloudSong): Song {
   }
 }
 
+/** Fields of a cloud-only song that the player sets, not its index entry. */
+const PLAYER_FIELDS: ReadonlySet<keyof Song> = new Set(["url", "cloud"])
+
+function sameField(a: unknown, b: unknown): boolean {
+  if (Array.isArray(a) && Array.isArray(b)) return a.length === b.length && a.every((value, i) => value === b[i])
+  return a === b
+}
+
+/**
+ * Whether a cloud-only song already shows everything its entry says: the same
+ * object, covers and tags. One that differs is rebuilt, so an entry the
+ * indexer has re-read (new tags, stream info) reaches the list.
+ */
 function sameCloudOnlySong(song: Song, cloud: CloudSong): boolean {
-  return (
-    sameRef(song.cloud, cloudRef(cloud)) && song.albumArt === cloud.artUrl && song.albumArtThumb === cloud.thumbUrl
+  const fresh = cloudSongToSong(cloud)
+  if (!sameRef(song.cloud, fresh.cloud)) return false
+  return (Object.keys(fresh) as (keyof Song)[]).every(
+    (field) => PLAYER_FIELDS.has(field) || sameField(song[field], fresh[field]),
   )
 }
 

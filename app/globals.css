@@ -48,6 +48,13 @@
     /* Paper: the text colour on ink, in both themes. */
     --paper: 42.9 20% 93.1%;
 
+    /* The quality meter: gold for hi-res, silver for CD-quality lossless, dim for
+       lossy. Each lit bar holds 3:1 against the surface it sits on; these are
+       the paper ones, the ink ones follow in .dark. */
+    --quality-hires: 40 65% 33%;
+    --quality-lossless: 40 6% 40%;
+    --quality-lossy: 40 4% 50%;
+
     /* The three lights in the wordmark's ring. */
     --mark-1: hsl(var(--blood-300));
     --mark-2: hsl(var(--blood-500));
@@ -111,6 +118,9 @@
     --border: var(--ink-3);
     --input: var(--ink-4);
     --ring: var(--paper);
+    --quality-hires: 40 71% 69%;
+    --quality-lossless: 40 11% 83%;
+    --quality-lossy: 42 5% 52%;
   }
 }
 
@@ -152,6 +162,82 @@
     @apply font-mono tabular-nums;
     font-size: 0.71875rem; /* 11.5px */
     letter-spacing: -0.01em;
+  }
+
+  /* The quality meter: three bars lit by tier, beside the figures that earn
+     them. Spec text, the way hi-fi gear labels things: no pill, no box. */
+  .quality {
+    @apply font-mono tabular-nums;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.75rem; /* 12px */
+    white-space: nowrap;
+  }
+  .quality-format {
+    color: hsl(var(--muted-foreground));
+  }
+  /* A further spec, set off by a hairline. */
+  .quality-detail {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    color: hsl(var(--muted-foreground));
+  }
+  .quality-detail::before {
+    content: "";
+    width: 1px;
+    height: 0.95em;
+    background: hsl(var(--border));
+  }
+  .quality-bars {
+    display: inline-flex;
+    align-items: flex-end;
+    gap: 2px;
+    height: 11px;
+  }
+  .quality-bars > span {
+    display: block;
+    width: 3px;
+    border-radius: 1px;
+    background: currentColor;
+    opacity: 0.2;
+    transform-origin: 50% 100%;
+  }
+  .quality-bars > span:nth-child(1) {
+    height: 5px;
+  }
+  .quality-bars > span:nth-child(2) {
+    height: 8px;
+  }
+  .quality-bars > span:nth-child(3) {
+    height: 11px;
+  }
+  .quality[data-tier="hi-res"] .quality-bars {
+    color: hsl(var(--quality-hires));
+  }
+  .quality[data-tier="lossless"] .quality-bars {
+    color: hsl(var(--quality-lossless));
+  }
+  .quality[data-tier="lossy"] .quality-bars {
+    color: hsl(var(--quality-lossy));
+  }
+  .quality[data-tier="hi-res"] .quality-bars > span,
+  .quality[data-tier="lossless"] .quality-bars > span:nth-child(-n + 2),
+  .quality[data-tier="lossy"] .quality-bars > span:first-child {
+    opacity: 1;
+  }
+  /* A hi-res song starting fills its meter once, bar by bar, like a level
+     rising, then holds still: the design language's meter, 560 ms on the
+     decay curve with each bar 80 ms behind the last. */
+  .quality[data-rise] .quality-bars > span {
+    animation: quality-rise 560ms var(--ease-decay) backwards;
+  }
+  .quality[data-rise] .quality-bars > span:nth-child(2) {
+    animation-delay: 80ms;
+  }
+  .quality[data-rise] .quality-bars > span:nth-child(3) {
+    animation-delay: 160ms;
   }
 
   /* The song's colours. A player root carries the cover's colours as custom
@@ -406,6 +492,12 @@
   }
 }
 
+@keyframes quality-rise {
+  from {
+    transform: scaleY(0);
+  }
+}
+
 @keyframes play-arc-turn {
   to {
     transform: rotate(1turn);
@@ -445,6 +537,9 @@
   }
   .play-button[data-loading] .play-button-arc {
     animation-duration: 2.4s;
+  }
+  .quality[data-rise] .quality-bars > span {
+    animation: none;
   }
   .roll-out {
     animation: fade-out var(--motion-attack) linear forwards;

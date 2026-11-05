@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto"
 
 import { MetadataExtractor } from "@/lib/metadata-extractor"
+import { runBounded } from "@/lib/run-bounded"
+import { readStreamDetails } from "@/lib/stream-info"
 
 import { AUDIO_SIGNATURE_BYTES, looksLikeAudio } from "./audio-signature"
 import type { CloudConfig } from "./config"
@@ -9,6 +11,7 @@ import { readJson, updateJson } from "./json-object"
 import {
   ART_PREFIX,
   ENTRY_FORMAT,
+  canAddStreamInfo,
   isOutdated,
   parseLibraryIndex,
   type IndexEntry,
@@ -17,7 +20,7 @@ import {
 import { LIBRARY_PREFIX, isAudioKey } from "./library-keys"
 import type { R2Object } from "./list-parse"
 import { R2Client } from "./r2"
-import { R2RangeSource } from "./r2-source"
+import { R2HeaderSource, R2RangeSource } from "./r2-source"
 import type { CloudIndexResponse, CloudLibraryResponse, CloudSong } from "./types"
 
 /**
@@ -188,22 +191,40 @@ async function indexObject(client: R2Client, object: R2Object, signal: AbortSign
       discNumber: metadata.discNumber,
       duration: metadata.duration,
       bitrate: metadata.bitrate,
-      isHiRes: metadata.isHiRes,
+      sampleRate: metadata.sampleRate,
+      bitDepth: metadata.bitDepth,
       format: metadata.format,
     },
     covers,
   }
 }
 
-/** Run `task` over `items` with at most `limit` in flight, starting none after `deadline`. */
-async function runBounded<T>(items: T[], limit: number, deadline: number, task: (item: T) => Promise<void>) {
-  let next = 0
-  const worker = async () => {
-    while (next < items.length && Date.now() < deadline) {
-      await task(items[next++])
-    }
+/**
+ * Bring an entry that lacks only stream info up to date. Its tags and covers
+ * are already right, so only headers are read — the head of the file and,
+ * for FLAC, each metadata block's 4-byte header, to find where the audio
+ * starts and so its bitrate without the cover — and no cover is rendered or
+ * written again. A file with no stream info to give (MP3, say) is current all
+ * the same, so it is never read for this again.
+ */
+async function addStreamInfo(
+  client: R2Client,
+  object: R2Object,
+  entry: IndexEntry,
+  signal: AbortSignal,
+): Promise<IndexEntry> {
+  const source = new R2HeaderSource(client, object.key, object.size, signal)
+  const stream = await readStreamDetails(source, object.size, entry.tags.duration)
+  return {
+    ...entry,
+    format: ENTRY_FORMAT,
+    tags: {
+      ...entry.tags,
+      sampleRate: stream?.sampleRate,
+      bitDepth: stream?.bitDepth,
+      bitrate: stream?.bitrate ?? entry.tags.bitrate,
+    },
   }
-  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker))
 }
 
 /**
@@ -230,16 +251,26 @@ export async function indexPending(config: CloudConfig): Promise<CloudIndexRespo
   const todo = [...missing, ...upgrades]
   const fresh: Record<string, IndexEntry> = {}
 
-  await runBounded(todo, INDEX_CONCURRENCY, startedAt + INDEX_START_BUDGET_MS, async (object) => {
-    try {
-      fresh[object.key] = await indexObject(client, object, abandon)
-    } catch (error) {
-      // One unreadable file must not stall the library; it stays pending and
-      // is retried on the next pass. A file abandoned at the time limit is
-      // expected, not worth a log line.
-      if (!abandon.aborted) console.error(`Could not index ${object.key}:`, error)
-    }
-  })
+  const startDeadline = startedAt + INDEX_START_BUDGET_MS
+  await runBounded(
+    todo,
+    INDEX_CONCURRENCY,
+    async (object) => {
+      try {
+        const entry = index.entries[object.key]
+        fresh[object.key] =
+          isCurrent(entry, object) && canAddStreamInfo(entry)
+            ? await addStreamInfo(client, object, entry, abandon)
+            : await indexObject(client, object, abandon)
+      } catch (error) {
+        // One unreadable file must not stall the library; it stays pending and
+        // is retried on the next pass. A file abandoned at the time limit is
+        // expected, not worth a log line.
+        if (!abandon.aborted) console.error(`Could not index ${object.key}:`, error)
+      }
+    },
+    () => Date.now() >= startDeadline,
+  )
 
   const liveKeys = new Set(objects.map((object) => object.key))
   await saveIndex(client, fresh, liveKeys)

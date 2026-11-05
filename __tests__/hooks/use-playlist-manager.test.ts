@@ -349,4 +349,43 @@ describe('usePlaylistManager', () => {
       expect(result.current.getCurrentPlaylist()[0].id).toBe('2')
     })
   })
+
+  describe('the current song', () => {
+    it('takes up stream info its list entry learns later, keeping its URL', () => {
+      const song = makeSong({ id: 'a', format: 'FLAC' })
+      const { result } = renderHook(() => usePlaylistManager())
+      act(() => {
+        result.current.setSongs([song])
+        result.current.setCurrentSong({ ...song, url: 'blob:a' })
+      })
+
+      act(() => {
+        result.current.setSongs([{ ...song, sampleRate: 96_000, bitDepth: 24, bitrate: 2400 }])
+      })
+
+      expect(result.current.currentSong).toMatchObject({
+        id: 'a',
+        url: 'blob:a',
+        sampleRate: 96_000,
+        bitDepth: 24,
+        bitrate: 2400,
+      })
+    })
+
+    it('stays the same object while its stream info is unchanged', () => {
+      const song = makeSong({ id: 'a', format: 'FLAC', sampleRate: 44_100, bitDepth: 16, bitrate: 900 })
+      const { result } = renderHook(() => usePlaylistManager())
+      act(() => {
+        result.current.setSongs([song])
+        result.current.setCurrentSong({ ...song, url: 'blob:a' })
+      })
+      const current = result.current.currentSong
+
+      act(() => {
+        result.current.setSongs([{ ...song, title: 'Renamed' }, makeSong({ id: 'b' })])
+      })
+
+      expect(result.current.currentSong).toBe(current)
+    })
+  })
 })

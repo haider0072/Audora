@@ -16,6 +16,8 @@ export interface FakeR2 {
   objects: Map<string, StoredObject>
   /** Every request seen, as `METHOD key` (or `LIST prefix`). */
   requests: string[]
+  /** Every ranged GET, with the byte range asked for (`end` inclusive, as in the header). */
+  ranges: Array<{ key: string; start: number; end?: number }>
   /** Store an object directly, as an upload from another tool would. */
   put(key: string, body: Uint8Array | string): void
   /** Make the next `count` PUTs fail their precondition, as a concurrent writer would. */
@@ -41,6 +43,7 @@ export function installFakeR2(): FakeR2 {
   const original = globalThis.fetch
   const objects = new Map<string, StoredObject>()
   const requests: string[] = []
+  const ranges: FakeR2["ranges"] = []
   let version = 0
   let conflicts = 0
 
@@ -87,6 +90,7 @@ export function installFakeR2(): FakeR2 {
       const range = headers.get("range")?.match(/^bytes=(\d+)-(\d*)$/)
       if (!range) return new Response(stored.body.slice(), { status: 200, headers: { etag: stored.etag } })
       const start = Number(range[1])
+      ranges.push({ key, start, end: range[2] ? Number(range[2]) : undefined })
       if (start >= stored.body.length) return new Response(null, { status: 416 })
       const end = range[2] ? Math.min(Number(range[2]), stored.body.length - 1) : stored.body.length - 1
       return new Response(stored.body.slice(start, end + 1), { status: 206, headers: { etag: stored.etag } })
@@ -119,6 +123,7 @@ export function installFakeR2(): FakeR2 {
   return {
     objects,
     requests,
+    ranges,
     put(key, body) {
       objects.set(key, { body: bytesOf(body), etag: nextEtag() })
     },

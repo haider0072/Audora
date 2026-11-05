@@ -10,6 +10,7 @@ import { AlbumArtDisplay } from "./album-art-display"
 import { AlbumArtBackground } from "./album-art-background"
 import { EnhancedPlaylist, type Song } from "./enhanced-playlist"
 import { PlayButton } from "./player/play-button"
+import { QualityLabel } from "./player/quality-label"
 import { SeekBar } from "./player/seek-bar"
 import { SkipIcon, TransportButton } from "./player/transport-button"
 import { useState, useEffect, useLayoutEffect, useCallback, useRef } from "react"
@@ -252,6 +253,7 @@ export function FullscreenPlayer({
               {currentSong.album && (
                 <p className="text-sm text-white/50">{currentSong.album}</p>
               )}
+              <QualityLabel song={currentSong} withBitrate className="pt-1" />
             </div>
           </div>
         ) : (

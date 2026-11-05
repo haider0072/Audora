@@ -32,6 +32,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sh
 import { SyncPanel } from "@/components/sync-panel"
 import { CloudLibraryPanel } from "@/components/cloud-library-panel"
 import { useCloudLibrary } from "@/hooks/use-cloud-library"
+import { useStreamInfoBackfill } from "@/hooks/use-stream-info-backfill"
 import { useCloudUploadSync } from "@/hooks/use-cloud-upload-sync"
 import { useDeviceSync } from "@/hooks/use-device-sync"
 import type { SyncPlaybackAdapter } from "@/hooks/use-sync-playback"
@@ -191,6 +192,7 @@ export default function MobileMusicPlayer() {
 
   const { isInitialized, isRestoringPlaylist, restorePlaylist, savePlaylist } = usePlaylistPersistence()
   const cloud = useCloudLibrary({ isReady: isInitialized, songCount: songs.length, setSongs })
+  useStreamInfoBackfill(songs, setSongs)
   useCloudUploadSync(cloud.refresh)
   useWarmNextSong(currentSong?.id, isPlaying, peekNextSong)
 

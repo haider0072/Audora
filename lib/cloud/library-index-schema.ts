@@ -22,8 +22,15 @@ export const ART_PREFIX = "art/"
  *
  * 1. Tags and the original embedded cover (`artKey`).
  * 2. Rendered covers (`covers`) in place of the original.
+ * 3. Stream info (`sampleRate`, `bitDepth`) from the file's header, in place
+ *    of the old `isHiRes` guess, and the `bitrate` of the audio alone. A
+ *    format 2 entry needs only its file's headers read again to get there
+ *    (see `canAddStreamInfo`).
  */
-export const ENTRY_FORMAT = 2
+export const ENTRY_FORMAT = 3
+
+/** The format whose entries already hold everything else format 3 records. */
+const COVERS_FORMAT = 2
 
 /** Tag fields kept per song: everything on `CloudSong` the listing does not already know. */
 export type SongTags = Omit<CloudSong, "id" | "key" | "fileName" | "fileSize" | "streamUrl" | "artUrl" | "thumbUrl">
@@ -42,7 +49,8 @@ const tagsSchema: z.ZodType<SongTags> = z.object({
   discNumber: text.optional(),
   duration: z.number().nonnegative().optional(),
   bitrate: z.number().nonnegative().optional(),
-  isHiRes: z.boolean().optional(),
+  sampleRate: z.number().int().positive().optional(),
+  bitDepth: z.number().int().positive().optional(),
   format: text.optional(),
 })
 
@@ -67,6 +75,14 @@ export type IndexEntry = z.infer<typeof entrySchema>
 /** Whether an entry was written by an older version of the indexer and should be re-read. */
 export function isOutdated(entry: IndexEntry): boolean {
   return !entry.rejected && (entry.format ?? 1) < ENTRY_FORMAT
+}
+
+/**
+ * Whether an outdated entry lacks only its stream info, so it can be brought
+ * up to date from its file's headers rather than read and rendered again.
+ */
+export function canAddStreamInfo(entry: IndexEntry): boolean {
+  return !entry.rejected && entry.format === COVERS_FORMAT
 }
 
 export interface LibraryIndex {

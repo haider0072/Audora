@@ -1,4 +1,5 @@
 import { ByteSourceReadError, type ByteSource } from "@/lib/metadata-extractor"
+import type { ByteRange } from "@/lib/stream-info"
 
 import { audioContentType } from "./audio-files"
 import type { R2Client } from "./r2"
@@ -80,5 +81,39 @@ export class R2RangeSource implements ByteSource {
     grown.set(this.prefix)
     grown.set(bytes, this.prefix.length)
     this.prefix = grown
+  }
+}
+
+/**
+ * An object in R2 read a few bytes at a time, for headers spread through a
+ * file. The first range read is kept and serves any range inside it; any
+ * other range is read on its own, exactly as asked. Walking a FLAC file's
+ * metadata blocks this way reads the 4-byte header past its cover, where
+ * `R2RangeSource`'s contiguous prefix would read the cover too.
+ *
+ * Server only — it reads through the credentialed client.
+ */
+export class R2HeaderSource implements ByteRange {
+  private kept: Uint8Array = new Uint8Array(0)
+
+  constructor(
+    private readonly client: R2Client,
+    private readonly key: string,
+    readonly size: number,
+    /** Aborts every read still to come, e.g. at an indexing pass's time limit. */
+    private readonly signal?: AbortSignal,
+  ) {}
+
+  slice(start: number, end: number): { arrayBuffer(): Promise<ArrayBuffer> } {
+    const from = Math.max(0, Math.min(start, this.size))
+    const to = Math.max(from, Math.min(end, this.size))
+    return {
+      arrayBuffer: async () => {
+        if (to <= this.kept.length) return this.kept.slice(from, to).buffer
+        const bytes = await this.client.readRange(this.key, from, to - 1, this.signal)
+        if (from === 0 && this.kept.length === 0) this.kept = bytes
+        return bytes.slice().buffer
+      },
+    }
   }
 }

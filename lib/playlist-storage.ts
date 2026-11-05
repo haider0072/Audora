@@ -38,8 +38,8 @@ interface StoredSong {
   genre?: string
   bitrate?: number
   sampleRate?: number
+  bitDepth?: number
   duration?: number
-  isHiRes?: boolean
   albumArt?: string
   fileSize?: number
   format?: string
