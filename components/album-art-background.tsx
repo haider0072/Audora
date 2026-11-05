@@ -11,7 +11,6 @@ interface AlbumArtBackgroundProps {
   albumArt?: string
   songId?: string
   isTransitioning?: boolean
-  positioning?: "fixed" | "absolute"
 }
 
 interface BackgroundArt {
@@ -37,9 +36,10 @@ async function loadArt(songId: string, albumArt: string): Promise<BackgroundArt 
   }
 }
 
-export function AlbumArtBackground({ albumArt, songId, isTransitioning = false, positioning = "fixed" }: AlbumArtBackgroundProps) {
-  // A background that opens over a song already shown, as full screen does,
-  // starts with its cover rather than flashing ink first.
+/** The phone player's backdrop: the cover, blurred and tinted in its colour, fixed behind everything. */
+export function AlbumArtBackground({ albumArt, songId, isTransitioning = false }: AlbumArtBackgroundProps) {
+  // Mounted over a song whose cover is already cached, it starts with that
+  // cover rather than flashing ink first.
   const [art, setArt] = useState(() => cachedArt(songId, albumArt))
 
   // A new song's cover replaces the last one once it has loaded, so the
@@ -70,24 +70,19 @@ export function AlbumArtBackground({ albumArt, songId, isTransitioning = false, 
     veryDarkColor: ColorExtractor.darkenColor(dominantColor, 60),
   }), [dominantColor])
 
-  const pos = positioning
-  const z = positioning === "fixed"
-    ? { base: "-z-40", bg: "-z-30", color: "-z-20", texture: "-z-10", dark: "-z-10", fallback: "-z-20" }
-    : { base: "", bg: "", color: "", texture: "", dark: "", fallback: "" }
-
   // Shown when the song has no art: plain ink, dark in both themes.
   if (!shown) {
-    return <div className={`${pos} inset-0 bg-gradient-to-br from-ink-2 via-ink-2/95 to-ink-0 ${z.fallback}`} />
+    return <div className="fixed inset-0 -z-20 bg-gradient-to-br from-ink-2 via-ink-2/95 to-ink-0" />
   }
 
   return (
     <>
       {/* Ink beneath it all, so a light theme's page never shows through the cover. */}
-      <div className={`${pos} inset-0 bg-ink-0 ${z.base}`} />
+      <div className="fixed inset-0 -z-40 bg-ink-0" />
 
       {/* Background Image with Blur */}
       <div
-        className={`${pos} inset-0 ${z.bg} transition-all duration-1000 ease-out ${
+        className={`fixed inset-0 -z-30 transition-all duration-1000 ease-out ${
           isTransitioning ? "scale-105 opacity-20" : "scale-100 opacity-30"
         }`}
         style={{
@@ -101,7 +96,7 @@ export function AlbumArtBackground({ albumArt, songId, isTransitioning = false, 
 
       {/* Color Tinted Overlay */}
       <div
-        className={`${pos} inset-0 ${z.color} transition-all duration-1000 ease-out ${
+        className={`fixed inset-0 -z-20 transition-all duration-1000 ease-out ${
           isTransitioning ? "opacity-70" : "opacity-85"
         }`}
         style={{
@@ -121,7 +116,7 @@ export function AlbumArtBackground({ albumArt, songId, isTransitioning = false, 
 
       {/* Additional subtle texture overlay */}
       <div
-        className={`${pos} inset-0 ${z.texture} opacity-40`}
+        className="fixed inset-0 -z-10 opacity-40"
         style={{
           background: `
             radial-gradient(circle at 20% 50%, ${dominantColor}10 0%, transparent 30%),
@@ -133,7 +128,7 @@ export function AlbumArtBackground({ albumArt, songId, isTransitioning = false, 
 
       {/* The last layer keeps text readable over any cover: even under a white
           one, muted text over it holds 4.5:1. */}
-      <div className={`${pos} inset-0 bg-ink-0/60 ${z.dark}`} />
+      <div className="fixed inset-0 -z-10 bg-ink-0/60" />
     </>
   )
 }

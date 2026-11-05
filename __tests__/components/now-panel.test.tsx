@@ -40,7 +40,6 @@ function renderPanel(props: Partial<NowPanelProps> = {}) {
     },
     musicPlaying: false,
     onVideoPlay: jest.fn(),
-    layout: "side",
     ...props,
   }
   return { ...render(<NowPanel {...all} />), props: all }
@@ -76,20 +75,5 @@ describe("NowPanel", () => {
   it("shows the queue when that tab is open", () => {
     renderPanel({ tab: "queue" })
     expect(screen.getByText("Nothing to play next")).toBeInTheDocument()
-  })
-
-  it("adds a Library tab where it is offered, with the content it is given", () => {
-    renderPanel({
-      tabs: ["lyrics", "queue", "about", "video", "library"],
-      tab: "library",
-      library: <p>The whole library</p>,
-    })
-    expect(screen.getByRole("tab", { name: "Library" })).toHaveAttribute("aria-selected", "true")
-    expect(screen.getByText("The whole library")).toBeInTheDocument()
-  })
-
-  it("puts what it is given at the end of the tabs' row", () => {
-    renderPanel({ trailing: <button type="button">Close the panel</button> })
-    expect(screen.getByRole("button", { name: "Close the panel" })).toBeInTheDocument()
   })
 })

@@ -3080,9 +3080,9 @@
     transition: transform var(--motion-decay) var(--ease-decay);
   }
 
-  /* The Now panel (components/now): everything about the song playing, a tab
-     apart. The tabs are words; the open one takes the song's colour in a line
-     beneath it. Only the open tab is drawn. */
+  /* The Now panel (components/now), on the phone's sheet: everything about
+     the song playing, a tab apart. The tabs are words; the open one takes
+     the song's colour in a line beneath it. Only the open tab is drawn. */
   .now {
     display: flex;
     flex: 1;
@@ -3098,35 +3098,23 @@
     gap: 8px;
     border-bottom: 1px solid hsl(var(--foreground) / 0.1);
   }
-  /* Level with the full-screen player's own header. */
-  .now[data-layout="side"] .now-head {
-    height: 56px;
-    padding: 0 8px 0 12px;
-  }
-  .now[data-layout="side"] .now-head > .transport-button {
-    align-self: center;
-  }
   .now-tabs {
     display: flex;
     flex: 1;
     gap: 2px;
     min-width: 0;
   }
+  /* The sheet is narrow, so its tabs share its width out among them. */
   .now-tab {
-    --tab-inset: 12px;
+    --tab-inset: 8px;
     position: relative;
-    flex: none;
+    flex: 1 1 auto;
     min-height: 40px;
     padding: 0 var(--tab-inset);
     font-size: 0.875rem; /* 14px */
     font-weight: 500;
     color: hsl(var(--muted-foreground));
     transition: color var(--motion-release) var(--ease-release);
-  }
-  /* A narrow panel shares its width out among the tabs. */
-  .now:is([data-layout="side"], [data-layout="sheet"]) .now-tab {
-    --tab-inset: 8px;
-    flex: 1 1 auto;
   }
   .now-tab::after {
     content: "";
@@ -3319,7 +3307,7 @@
     gap: 32px;
     padding: 20px 16px 32px 10px;
   }
-  .now[data-layout="sheet"] .about {
+  .now .about {
     padding-inline: 4px;
   }
   .about-section {
@@ -3539,7 +3527,7 @@
     gap: 16px;
     padding: 16px 16px 32px 10px;
   }
-  .now[data-layout="sheet"] .video {
+  .now .video {
     padding-inline: 4px;
   }
   .video-stage {

@@ -1,9 +1,9 @@
 "use client"
 
-import { NOW_TAB_LABELS, type NowViewTab } from "@/components/now/now-tabs"
+import { NOW_TAB_LABELS, type NowTab } from "@/components/now/now-tabs"
 
 /** The song's views on the desktop, in order. What plays next lives over the library instead, while songs are queued. */
-export const DESKTOP_VIEWS = ["lyrics", "about", "video"] as const satisfies readonly NowViewTab[]
+export const DESKTOP_VIEWS = ["lyrics", "about", "video"] as const satisfies readonly NowTab[]
 
 export type DesktopView = (typeof DESKTOP_VIEWS)[number]
 
