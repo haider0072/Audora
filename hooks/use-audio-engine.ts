@@ -748,6 +748,10 @@ export function useAudioEngine(options: UseAudioEngineOptions): UseAudioEngineRe
     const audio = getActiveAudio()
     if (audio) {
       audio.currentTime = time
+      // Publish the new position now. The next timeupdate can be a moment away
+      // on a streamed file, and until then the seek bar would snap back to
+      // where the song was.
+      setPlaybackTime(audio.currentTime)
     }
   }, [getActiveAudio, finalizeCrossfade])
 
