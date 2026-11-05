@@ -83,7 +83,7 @@ export default function MobileMusicPlayer() {
   })
   const {
     isPlaying, setIsPlaying,
-    duration, setDuration, volume, setVolume, isMuted,
+    duration, setDuration, volume, isMuted,
     filterNodes, audioContextRef,
     pause, seek,
     changeVolume, toggleMute, adjustVolume,
@@ -226,7 +226,8 @@ export default function MobileMusicPlayer() {
       setActiveEqPresetId(settings.activeEqPresetId)
       if (settings.normalizationEnabled !== undefined) setNormalizationEnabledState(settings.normalizationEnabled)
       if (settings.preampDb !== undefined) setPreampDbState(settings.preampDb)
-      if (settings.volume !== undefined) setVolume([settings.volume])
+      // Through the engine, so a saved volume of 0 comes back muted.
+      if (settings.volume !== undefined) changeVolume([settings.volume])
       if (settings.shuffleMode !== undefined) setShuffleMode(settings.shuffleMode)
       if (settings.viewMode) setViewMode(settings.viewMode)
       if (settings.showEqualizer !== undefined) setShowEqualizer(settings.showEqualizer)

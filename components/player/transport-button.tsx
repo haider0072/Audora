@@ -1,4 +1,4 @@
-import type { ButtonHTMLAttributes } from "react"
+import { forwardRef, type ButtonHTMLAttributes } from "react"
 
 import { cn } from "@/lib/utils"
 
@@ -17,11 +17,16 @@ interface TransportButtonProps extends Omit<ButtonHTMLAttributes<HTMLButtonEleme
 
 /**
  * Previous, next, and the player's other quiet buttons and toggles. Styled by
- * `.transport-button` in app/globals.css.
+ * `.transport-button` in app/globals.css. It passes its ref on, so it can be
+ * a menu's trigger.
  */
-export function TransportButton({ label, size = "md", pressed, className, children, ...props }: TransportButtonProps) {
+export const TransportButton = forwardRef<HTMLButtonElement, TransportButtonProps>(function TransportButton(
+  { label, size = "md", pressed, className, children, ...props },
+  ref,
+) {
   return (
     <button
+      ref={ref}
       type="button"
       aria-label={label}
       aria-pressed={pressed}
@@ -31,7 +36,7 @@ export function TransportButton({ label, size = "md", pressed, className, childr
       {children}
     </button>
   )
-}
+})
 
 /** Glyph sizes that sit in each button size. */
 const ICON_SIZES = {

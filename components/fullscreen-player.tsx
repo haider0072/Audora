@@ -388,7 +388,7 @@ export function FullscreenPlayer({
               max={100}
               step={1}
               onValueChange={onVolumeChange}
-              className="w-20 [&>span:first-child]:h-1 [&_[role=slider]]:h-3 [&_[role=slider]]:w-3 [&_[role=slider]]:opacity-0 [&_[role=slider]]:transition-all [&_[role=slider]]:duration-200 hover:[&_[role=slider]]:opacity-100"
+              className="volume-slider w-20"
               aria-label="Volume"
             />
           </div>
