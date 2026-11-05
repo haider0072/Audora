@@ -59,12 +59,16 @@ interface AllMatchesProps extends Omit<LibrarySide, "onShowPage"> {
   onBack: () => void
 }
 
-/** Every song in the library that matches, as the library lists them, with their own pages over them. */
+/**
+ * Every song in the library that matches, as the library lists them, with
+ * their own pages over them. It covers Show all, which had focus, so Back
+ * takes focus as it shows.
+ */
 function AllMatches({ query, total, onBack, viewMode, onViewModeChange, ...library }: AllMatchesProps) {
   const navigation = useLibraryNavigation(library.songs, query)
   return (
     <div className="search-all">
-      <BackHeader to="Results" onBack={onBack} meta={`${formatCount(total, "song")} in your library`}>
+      <BackHeader to="Results" onBack={onBack} meta={`${formatCount(total, "song")} in your library`} autoFocus>
         <ViewModeToggle value={viewMode} onChange={onViewModeChange} />
       </BackHeader>
       <LibraryPanel layout="desktop" viewMode={viewMode} query={query} navigation={navigation} {...library} />

@@ -34,14 +34,16 @@ interface BackHeaderProps {
   onBack: () => void
   /** What the view shows, set as data. */
   meta?: string
+  /** Back takes focus as the head shows: for something opened over the control that opened it. */
+  autoFocus?: boolean
   children?: ReactNode
 }
 
 /** The head of something opened in the library's place: the way back to it first, then what it shows and its tools. */
-export function BackHeader({ to, onBack, meta, children }: BackHeaderProps) {
+export function BackHeader({ to, onBack, meta, autoFocus, children }: BackHeaderProps) {
   return (
     <header className="view-head">
-      <button type="button" className="view-back" onClick={onBack}>
+      <button type="button" className="view-back" onClick={onBack} autoFocus={autoFocus}>
         <ChevronLeft aria-hidden="true" />
         <span className="sr-only">Back to </span>
         {to}
