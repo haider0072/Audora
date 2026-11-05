@@ -1242,8 +1242,9 @@
     padding: 0 8px;
   }
 
-  /* A word lit by an LED in the song's colour while it is the one on: where
-     the header's search looks, and where the online search does. */
+  /* A word lit by an LED in the song's colour while it is the one on: the
+     song's views under the transport, where the online search looks, and
+     the Sound panel's presets. */
   .led-choice {
     display: flex;
     flex: none;
@@ -2411,7 +2412,7 @@
       transition-duration: var(--motion-attack);
     }
   }
-  /* A narrow panel: the phone, or the fullscreen player's sidebar. */
+  /* A narrow panel, as on the phone. */
   @container (max-width: 440px) {
     .library-page-head {
       gap: 16px;
