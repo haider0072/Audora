@@ -24,6 +24,19 @@ export interface PlaylistPersistenceData {
   preampDb: number
 }
 
+export interface RestoredPlaylist {
+  /** The songs stored on this device. */
+  songs: Song[]
+  /** The song that was current when the app last closed, if it is among `songs`. */
+  currentSong: Song | null
+  /**
+   * That song's id, found or not. A song that lives only in the cloud is not
+   * stored here, and arrives with the cloud library once restore has finished.
+   */
+  savedSongId?: string
+  settings: Partial<PlaylistPersistenceData>
+}
+
 export interface UsePlaylistPersistenceOptions {
   autoSave?: boolean
   saveDelay?: number
@@ -32,11 +45,7 @@ export interface UsePlaylistPersistenceOptions {
 export interface UsePlaylistPersistenceReturn {
   isInitialized: boolean
   isRestoringPlaylist: boolean
-  restorePlaylist: () => Promise<{
-    songs: Song[]
-    currentSong: Song | null
-    settings: Partial<PlaylistPersistenceData>
-  }>
+  restorePlaylist: () => Promise<RestoredPlaylist>
   savePlaylist: (data: PlaylistPersistenceData) => void
 }
 
@@ -85,7 +94,7 @@ export function usePlaylistPersistence(
   /**
    * Restore playlist from storage on mount
    */
-  const restorePlaylist = useCallback(async () => {
+  const restorePlaylist = useCallback(async (): Promise<RestoredPlaylist> => {
     // Captured inside the try, consumed by the sweep in the finally.
     let knownSongIds: string[] = []
 
@@ -132,6 +141,7 @@ export function usePlaylistPersistence(
       // are judged unreachable. Left empty when metadata failed to load, which
       // is what keeps the sweep from running in that state — see runOrphanSweep.
       knownSongIds = playlistData?.songs.map((song) => song.id) ?? []
+      const savedSongId = playlistData?.currentSongId
 
       if (playlistData && playlistData.songs.length > 0) {
         const validSongs = await PlaylistStorage.validateStoredFiles(playlistData.songs)
@@ -181,19 +191,12 @@ export function usePlaylistPersistence(
               description: `Restored ${restoredSongs.length} song(s).`,
             })
 
-            // Find current song
-            let currentSong: Song | null = null
-            if (playlistData.currentSongId) {
-              const current = restoredSongs.find((s) => s.id === playlistData.currentSongId)
-              if (current) {
-                currentSong = current
-              }
-            }
+            const currentSong = restoredSongs.find((s) => s.id === savedSongId) ?? null
 
             setIsInitialized(true)
             setIsRestoringPlaylist(false)
 
-            return { songs: restoredSongs, currentSong, settings }
+            return { songs: restoredSongs, currentSong, savedSongId, settings }
           }
         }
       }
@@ -201,7 +204,7 @@ export function usePlaylistPersistence(
       setIsInitialized(true)
       setIsRestoringPlaylist(false)
 
-      return { songs: [], currentSong: null, settings }
+      return { songs: [], currentSong: null, savedSongId, settings }
     } catch (error) {
       console.error("Error loading saved data:", error)
       setIsInitialized(true)

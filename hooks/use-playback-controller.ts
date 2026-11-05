@@ -36,6 +36,11 @@ export type TransportEvents = ReturnType<typeof useTransportEvents>
 interface SelectOptions {
   /** The song follows on from the last one: gapless when it was preloaded. */
   isAutoAdvance?: boolean
+  /**
+   * Played off the queue, so the library carries on from where it was once
+   * the queue is done. An advance to a queued song is; so is a queued song picked.
+   */
+  fromQueue?: boolean
   /** Which way the change reads on screen: 1 forward, -1 back. */
   direction?: RollDirection
 }
@@ -130,18 +135,21 @@ export function usePlaybackController({
 
   /** The picked song is now the one playing. */
   const commit = useCallback(
-    (song: Song, isAutoAdvance: boolean) => {
+    (song: Song, isAutoAdvance: boolean, fromQueue: boolean) => {
       releaseOutgoingUrl(song)
       setCurrentSong(song)
       setIsPlaying(true)
-      notifySongSelected(song, isAutoAdvance)
+      notifySongSelected(song, isAutoAdvance, fromQueue)
       preloadUpcomingSongs()
     },
     [releaseOutgoingUrl, setCurrentSong, setIsPlaying, notifySongSelected, preloadUpcomingSongs],
   )
 
   const selectSong = useCallback(
-    async (song: Song, { isAutoAdvance = false, direction: changeDirection = 1 }: SelectOptions = {}) => {
+    async (
+      song: Song,
+      { isAutoAdvance = false, fromQueue = isAutoAdvance, direction: changeDirection = 1 }: SelectOptions = {},
+    ) => {
       // A newer pick supersedes this one at every await below.
       selectionRef.current?.abort()
       const abort = new AbortController()
@@ -160,7 +168,7 @@ export function usePlaybackController({
         applyNormalization(song.gainCorrection ?? 0)
         gaplessNextRef.current = null
         if (swapToPreloaded()) {
-          commit(song, isAutoAdvance)
+          commit(song, isAutoAdvance, fromQueue)
           return
         }
         setPendingSong(song) // the swap fell through; load it the slow way
@@ -199,7 +207,7 @@ export function usePlaybackController({
       const faded = await crossfadeTo(source, abort.signal)
       if (!isCurrent()) return
       if (faded) {
-        commit(song, isAutoAdvance)
+        commit(song, isAutoAdvance, fromQueue)
         setPendingSong(null)
         return
       }
@@ -210,7 +218,7 @@ export function usePlaybackController({
       releaseOutgoingUrl(song)
       preloadUpcomingSongs()
       setIsPlaying(false)
-      notifySongSelected(song, isAutoAdvance)
+      notifySongSelected(song, isAutoAdvance, fromQueue)
 
       const audio = audioRef.current
       if (!audio) {
@@ -258,6 +266,41 @@ export function usePlaybackController({
     loadIntoPrimary(audio, currentSong, source)
     await waitForCanPlay(audio)
   }, [audioRef, currentSong, resetGaplessState, loadIntoPrimary])
+
+  /** Make `song` the current song again, paused, with its source loading so it is ready to play. */
+  const restoreSong = useCallback(
+    (song: Song) => {
+      const audio = audioRef.current
+      const source = songSource(song)
+      if (audio && source) loadIntoPrimary(audio, song, source)
+      else setCurrentSong(song)
+    },
+    [audioRef, loadIntoPrimary, setCurrentSong],
+  )
+
+  // The saved song, while it waits for the cloud library to bring it. A song
+  // picked in the meantime wins over it.
+  const [awaitedSongId, setAwaitedSongId] = useState<string | null>(null)
+  if (awaitedSongId && (currentSong || pendingSong)) setAwaitedSongId(null)
+  const awaitedSong =
+    awaitedSongId && !currentSong && !pendingSong ? sortedSongs.find((song) => song.id === awaitedSongId) : undefined
+
+  useEffect(() => {
+    if (awaitedSong) restoreSong(awaitedSong)
+  }, [awaitedSong, restoreSong])
+
+  /**
+   * Bring back the song that was current when the app last closed. One stored
+   * on this device is back at once. One that lives only in the cloud comes
+   * back when the cloud library arrives.
+   */
+  const resumeSession = useCallback(
+    (current: Song | null, savedSongId?: string) => {
+      if (current) restoreSong(current)
+      else setAwaitedSongId(savedSongId ?? null)
+    },
+    [restoreSong],
+  )
 
   const startPlayback = useCallback(async () => {
     try {
@@ -309,6 +352,11 @@ export function usePlaybackController({
     void select(song, { direction: from !== -1 && to < from ? -1 : 1 })
   }, [])
 
+  /** A queued song picked from the queue: it plays now, and the library then carries on from where it was. */
+  const playFromQueue = useCallback((song: Song) => {
+    void listState.current.selectSong(song, { fromQueue: true })
+  }, [])
+
   /** Preload the next song into the idle element so the change is gapless. */
   const prepareGaplessNext = useCallback(() => {
     const next = getNextSong()
@@ -326,6 +374,8 @@ export function usePlaybackController({
   return {
     selectSong,
     handleSongSelect,
+    playFromQueue,
+    resumeSession,
     startPlayback,
     togglePlayPause,
     skipToNext,

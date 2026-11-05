@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 
-import { QUALITY_TIER_NAMES, qualityOf, type QualitySource } from "@/lib/audio-quality"
+import { QUALITY_TIER_NAMES, formatKilobits, qualityOf, type QualitySource } from "@/lib/audio-quality"
 import { cn } from "@/lib/utils"
 
 interface QualityLabelProps {
@@ -62,7 +62,7 @@ export function QualityLabel({
       </span>
       {!compact && quality.figures && <span>{quality.figures}</span>}
       <span className="quality-format">{quality.format}</span>
-      {bitrate && <span className="quality-detail">{Math.round(bitrate).toLocaleString("en-US")} kbps</span>}
+      {bitrate && <span className="quality-detail">{formatKilobits(bitrate)}</span>}
     </span>
   )
 }

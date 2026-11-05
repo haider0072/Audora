@@ -37,9 +37,11 @@ interface Setup {
   playing?: Song | null
   crossfade?: (source: unknown, signal?: AbortSignal) => Promise<boolean>
   isPreloaded?: boolean
+  /** The library to start from, when it should not be the three test songs. */
+  library?: Song[]
 }
 
-function setup({ playing = null, crossfade = async () => false, isPreloaded = false }: Setup = {}) {
+function setup({ playing = null, crossfade = async () => false, isPreloaded = false, library }: Setup = {}) {
   const songs = ["a", "b", "c"].map(makeSong)
   const audio = {
     src: "",
@@ -63,16 +65,19 @@ function setup({ playing = null, crossfade = async () => false, isPreloaded = fa
     crossfadeTo: jest.fn(crossfade),
   }
 
+  const notifySongSelected = jest.fn()
   const hook = renderHook(() => {
     const [currentSong, setCurrentSong] = useState<Song | null>(playing)
+    // Changes when the cloud library arrives.
+    const [sortedSongs, setLibrary] = useState<Song[]>(library ?? songs)
     const playlist = {
       currentSong,
       setCurrentSong,
       setSongs: jest.fn(),
-      sortedSongs: songs,
+      sortedSongs,
       getNextSong: () => songs[1],
       getPreviousSong: () => songs[0],
-      notifySongSelected: jest.fn(),
+      notifySongSelected,
     }
     const events = useTransportEvents()
     const controller = usePlaybackController({
@@ -85,9 +90,9 @@ function setup({ playing = null, crossfade = async () => false, isPreloaded = fa
       isFollowingRef: { current: false },
       events,
     })
-    return { ...controller, currentSong, events }
+    return { ...controller, currentSong, events, setLibrary }
   })
-  return { hook, songs, engine, audio }
+  return { hook, songs, engine, audio, notifySongSelected }
 }
 
 beforeEach(() => {
@@ -199,5 +204,65 @@ describe("usePlaybackController", () => {
 
     await act(async () => hook.result.current.handleSongSelect(songs[1]))
     expect(hook.result.current.direction).toBe(1)
+  })
+
+  it("plays a queued song picked from the queue as one off the queue", async () => {
+    const { hook, songs, notifySongSelected } = setup({ playing: makeSong("x"), crossfade: async () => true })
+    await act(async () => hook.result.current.playFromQueue(songs[2]))
+    expect(notifySongSelected).toHaveBeenLastCalledWith(songs[2], false, true)
+  })
+
+  it("plays a pick from the list as a pick, and an advance as one off the queue where it was queued", async () => {
+    const { hook, songs, notifySongSelected } = setup({ playing: makeSong("x"), crossfade: async () => true })
+    await act(async () => hook.result.current.handleSongSelect(songs[2]))
+    expect(notifySongSelected).toHaveBeenLastCalledWith(songs[2], false, false)
+
+    await act(async () => hook.result.current.skipToNext())
+    expect(notifySongSelected).toHaveBeenLastCalledWith(songs[1], true, true)
+  })
+})
+
+describe("usePlaybackController resuming the last session", () => {
+  it("brings back a song stored on this device at once, paused, with its source loading", () => {
+    const { hook, songs, engine, audio } = setup()
+
+    act(() => hook.result.current.resumeSession(songs[1], songs[1].id))
+
+    expect(hook.result.current.currentSong?.id).toBe("b")
+    expect(audio.src).toBe("blob:b.flac")
+    expect(audio.load).toHaveBeenCalledTimes(1)
+    expect(engine.play).not.toHaveBeenCalled()
+  })
+
+  it("waits for a song that lives only in the cloud, and brings it back when the cloud library arrives", () => {
+    const { hook, audio } = setup({ library: [] })
+
+    act(() => hook.result.current.resumeSession(null, "cloud"))
+    expect(hook.result.current.currentSong).toBeNull()
+
+    act(() => hook.result.current.setLibrary([makeSong("other"), makeSong("cloud")]))
+
+    expect(hook.result.current.currentSong?.id).toBe("cloud")
+    expect(audio.src).toBe("blob:cloud.flac")
+    expect(audio.load).toHaveBeenCalledTimes(1)
+  })
+
+  it("keeps a song picked before the cloud library arrives", async () => {
+    const { hook, songs } = setup({ library: [] })
+    act(() => hook.result.current.resumeSession(null, "cloud"))
+
+    await act(async () => void (await hook.result.current.selectSong(songs[0])))
+    act(() => hook.result.current.setLibrary([songs[0], makeSong("cloud")]))
+
+    expect(hook.result.current.currentSong?.id).toBe("a")
+  })
+
+  it("leaves the player empty when nothing was saved", () => {
+    const { hook, audio } = setup()
+
+    act(() => hook.result.current.resumeSession(null, undefined))
+
+    expect(hook.result.current.currentSong).toBeNull()
+    expect(audio.load).not.toHaveBeenCalled()
   })
 })

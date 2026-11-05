@@ -3,6 +3,7 @@ import type { ButtonHTMLAttributes } from "react"
 import { cn } from "@/lib/utils"
 
 const SIZES = {
+  xs: "h-8 w-8",
   sm: "h-9 w-9",
   md: "h-11 w-11",
 } as const
@@ -14,7 +15,10 @@ interface TransportButtonProps extends Omit<ButtonHTMLAttributes<HTMLButtonEleme
   pressed?: boolean
 }
 
-/** Previous, next and the transport toggles. Styled by `.transport-button` in app/globals.css. */
+/**
+ * Previous, next, and the player's other quiet buttons and toggles. Styled by
+ * `.transport-button` in app/globals.css.
+ */
 export function TransportButton({ label, size = "md", pressed, className, children, ...props }: TransportButtonProps) {
   return (
     <button

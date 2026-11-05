@@ -25,11 +25,10 @@ import { LibraryPanel } from "@/components/library/library-panel"
 import { rowPlayback } from "@/components/library/song-row"
 import { MobilePlayerBar } from "@/components/mobile-player-bar"
 import { MobileEqualizerSheet } from "@/components/mobile-equalizer-sheet"
-import { MobileLyricsDisplay } from "@/components/mobile-lyrics-display"
 import { AlbumArtBackground } from "@/components/album-art-background"
-import { MobileYouTubeVideoPlayer } from "@/components/mobile-youtube-video-player"
-import { MobileSongInsights } from "@/components/mobile-song-insights"
-import { MobileArtistInfo } from "@/components/mobile-artist-info"
+import { LazyNowPanel } from "@/components/now/lazy-now-panel"
+import type { NowTab } from "@/components/now/now-tabs"
+import { useNowPlayer } from "@/components/now/use-now-player"
 import { OnlineSearchSidebar } from "@/components/dab/online-search-sidebar"
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { SyncPanel } from "@/components/sync-panel"
@@ -40,7 +39,7 @@ import { useCloudUploadSync } from "@/hooks/use-cloud-upload-sync"
 import { useDeviceSync } from "@/hooks/use-device-sync"
 import type { SyncPlaybackAdapter } from "@/hooks/use-sync-playback"
 import { findTrackByKey, trackLabel, trackSyncKey } from "@/lib/sync/song-match"
-import { createMediaUrl, releaseMediaUrl, songSource } from "@/lib/media-source"
+import { releaseMediaUrl } from "@/lib/media-source"
 
 import type { EqualizerBand } from "@/components/refined-equalizer"
 import { formatTotalDuration } from "@/lib/utils"
@@ -106,7 +105,7 @@ export default function MobileMusicPlayer() {
     },
   })
   const {
-    songs, setSongs, currentSong, setCurrentSong,
+    songs, setSongs, currentSong,
     shuffleMode, setShuffleMode, viewMode, setViewMode,
     sortedSongs, peekNextSong,
     toggleShuffle, removeSong, resetPlaylist, playNext, addToQueue,
@@ -166,18 +165,13 @@ export default function MobileMusicPlayer() {
     setActiveEqPresetId((prev) => (prev === id ? undefined : prev))
   }, [])
 
-  // New state for lyrics and network sharing
-  const [showLyrics, setShowLyrics] = useState(false)
-  const [forceRefreshTrigger, setForceRefreshTrigger] = useState(0)
-  const [showVideo, setShowVideo] = useState(false)
-  const [showInsights, setShowInsights] = useState(false)
-  const [showArtist, setShowArtist] = useState(false)
-
-  useEffect(() => {
-    if (showVideo && isPlaying) {
-      pause();
-    }
-  }, [showVideo, isPlaying, pause]);
+  // Lyrics, the queue, about and video share one sheet, opened at the tab asked for.
+  const [showNow, setShowNow] = useState(false)
+  const [nowTab, setNowTab] = useState<NowTab>("lyrics")
+  const openNow = useCallback((tab: NowTab) => {
+    setNowTab(tab)
+    setShowNow(true)
+  }, [])
 
   // Use album art preloader hook
   const { preloadUpcomingSongs } = useAlbumArtPreloader(songs, currentSong?.id, 3)
@@ -187,12 +181,7 @@ export default function MobileMusicPlayer() {
     handleFileUpload, handleFolderUpload, addSongsToPlaylist,
   } = useFileImporter({
     songs,
-    onSongsAdded: (newSongs) => {
-      setSongs((prev) => [...prev, ...newSongs])
-      if (newSongs.length === 1) {
-        setTimeout(() => setForceRefreshTrigger(prev => prev + 1), 100)
-      }
-    },
+    onSongsAdded: (newSongs) => setSongs((prev) => [...prev, ...newSongs]),
   })
 
   const { isInitialized, isRestoringPlaylist, restorePlaylist, savePlaylist } = usePlaylistPersistence()
@@ -204,35 +193,6 @@ export default function MobileMusicPlayer() {
   const totalDuration = useMemo(() => {
     return songs.reduce((total, song) => total + (song.duration || 0), 0)
   }, [songs])
-
-  // Restore playlist on mount
-  useEffect(() => {
-    restorePlaylist().then(({ songs: restoredSongs, currentSong: current, settings }) => {
-      if (settings.equalizerBands) setEqualizerBands(settings.equalizerBands)
-      if (settings.eqPresets) setCustomEqPresets(settings.eqPresets)
-      setActiveEqPresetId(settings.activeEqPresetId)
-      if (settings.normalizationEnabled !== undefined) setNormalizationEnabledState(settings.normalizationEnabled)
-      if (settings.preampDb !== undefined) setPreampDbState(settings.preampDb)
-      if (settings.volume !== undefined) setVolume([settings.volume])
-      if (settings.shuffleMode !== undefined) setShuffleMode(settings.shuffleMode)
-      if (settings.viewMode) setViewMode(settings.viewMode)
-      if (settings.showEqualizer !== undefined) setShowEqualizer(settings.showEqualizer)
-
-      if (restoredSongs.length > 0) {
-        setSongs(restoredSongs)
-        if (current) {
-          setCurrentSong(current)
-          const source = songSource(current)
-          if (audioRef.current && source) {
-            const audioUrl = createMediaUrl(source)
-            setCurrentSong({ ...current, url: audioUrl })
-            audioRef.current.src = audioUrl
-            audioRef.current.load()
-          }
-        }
-      }
-    })
-  }, [])
 
   // Auto-save playlist data
   const persistenceData = useMemo(() => ({
@@ -246,7 +206,7 @@ export default function MobileMusicPlayer() {
 
   // Player control functions
   const {
-    selectSong, handleSongSelect, startPlayback, togglePlayPause, skipToNext, skipToPrevious,
+    selectSong, handleSongSelect, playFromQueue, resumeSession, startPlayback, togglePlayPause, skipToNext, skipToPrevious,
     displaySong, isLoading: isLoadingSong, direction: changeDirection,
   } = usePlaybackController({
     audioRef,
@@ -257,6 +217,24 @@ export default function MobileMusicPlayer() {
     isFollowingRef,
     events: transportEvents,
   })
+
+  // Restore playlist on mount
+  useEffect(() => {
+    restorePlaylist().then(({ songs: restoredSongs, currentSong: current, savedSongId, settings }) => {
+      if (settings.equalizerBands) setEqualizerBands(settings.equalizerBands)
+      if (settings.eqPresets) setCustomEqPresets(settings.eqPresets)
+      setActiveEqPresetId(settings.activeEqPresetId)
+      if (settings.normalizationEnabled !== undefined) setNormalizationEnabledState(settings.normalizationEnabled)
+      if (settings.preampDb !== undefined) setPreampDbState(settings.preampDb)
+      if (settings.volume !== undefined) setVolume([settings.volume])
+      if (settings.shuffleMode !== undefined) setShuffleMode(settings.shuffleMode)
+      if (settings.viewMode) setViewMode(settings.viewMode)
+      if (settings.showEqualizer !== undefined) setShowEqualizer(settings.showEqualizer)
+
+      if (restoredSongs.length > 0) setSongs(restoredSongs)
+      resumeSession(current, savedSongId)
+    })
+  }, [])
 
   // --- Multi-device sync --------------------------------------------------
 
@@ -299,6 +277,18 @@ export default function MobileMusicPlayer() {
     // Seeks are not visible to the effect above, so they announce themselves.
     if (isHosting) syncBroadcast()
   }, [seek, isHosting, syncBroadcast])
+
+  const now = useNowPlayer({
+    playlist,
+    displaySong,
+    isLoading: isLoadingSong,
+    isPlaying,
+    pause,
+    onSeek: handleSeek,
+    onSelect: handleSongSelect,
+    onPlayQueued: playFromQueue,
+    layout: "phone",
+  })
 
 
 
@@ -443,10 +433,7 @@ export default function MobileMusicPlayer() {
           onSkipNext={skipToNext}
           onSeek={handleSeek}
           onSettingsClick={() => setShowEqualizer(true)}
-          onLyricsClick={() => setShowLyrics(true)}
-          onVideoClick={() => setShowVideo(true)}
-          onInsightsClick={() => setShowInsights(true)}
-          onArtistClick={() => setShowArtist(true)}
+          onOpenNow={openNow}
         />
 
         {/* Two-device playback — its own sheet so the live readout only
@@ -495,36 +482,24 @@ export default function MobileMusicPlayer() {
           onPresetDelete={handlePresetDelete}
         />
 
-        {/* Lyrics Sheet */}
-        <MobileLyricsDisplay
-          isOpen={showLyrics}
-          onOpenChange={setShowLyrics}
-          currentSong={currentSong}
-          isPlaying={isPlaying}
-          forceRefresh={forceRefreshTrigger}
-        />
-
-        {/* Video Player Sheet */}
-        <MobileYouTubeVideoPlayer
-          currentSong={currentSong}
-          isOpen={showVideo}
-          onOpenChange={setShowVideo}
-          forceRefresh={forceRefreshTrigger}
-        />
-
-        {/* AI Song Insights Sheet */}
-        <MobileSongInsights
-          isOpen={showInsights}
-          onOpenChange={setShowInsights}
-          currentSong={currentSong}
-        />
-
-        {/* Artist Info Sheet */}
-        <MobileArtistInfo
-          isOpen={showArtist}
-          onOpenChange={setShowArtist}
-          currentSong={currentSong}
-        />
+        {/* Portalled out of the player, so it carries the song's colours itself. */}
+        <Sheet open={showNow} onOpenChange={setShowNow}>
+          <SheetContent
+            side="bottom"
+            className="song-scope flex h-[85dvh] flex-col gap-0 p-0"
+            style={songColors}
+            data-playing={isPlaying || undefined}
+            aria-describedby={undefined}
+          >
+            <SheetHeader className="space-y-0 px-5 pb-1 pr-12 pt-4 text-left">
+              <SheetTitle className="truncate text-base">{displaySong?.title || "Now playing"}</SheetTitle>
+              {displaySong?.artist && <p className="truncate text-sm text-muted-foreground">{displaySong.artist}</p>}
+            </SheetHeader>
+            <div className="flex min-h-0 flex-1 flex-col px-3 pb-[env(safe-area-inset-bottom)]">
+              <LazyNowPanel layout="sheet" tab={nowTab} onTabChange={setNowTab} {...now} />
+            </div>
+          </SheetContent>
+        </Sheet>
 
       </div>
       {draggingFiles && <DropOverlay busy={libraryBusy} />}

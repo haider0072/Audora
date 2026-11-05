@@ -28,6 +28,13 @@ export function formatCount(count: number, noun: string): string {
   return `${count} ${count === 1 ? noun : `${noun}s`}`
 }
 
+const compactNumber = new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 })
+
+/** A large count, shortened: "12.3M", "4.5K", "950". */
+export function formatCompact(count: number): string {
+  return compactNumber.format(count)
+}
+
 /**
  * Wait for an audio element to fire "canplay", with a timeout fallback.
  * Rejects on error or timeout to prevent infinite UI hang.
