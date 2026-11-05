@@ -31,7 +31,7 @@ export function AddMusicControls({
         <div>
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
-                          <Button variant="outline" size="sm" className="h-8 w-8 p-0" disabled={isLoadingSongs || isRestoringPlaylist || isSyncing}>
+                          <Button variant="outline" size="sm" className="h-8 w-8 p-0" aria-label="Add music" title="Add music" disabled={isLoadingSongs || isRestoringPlaylist || isSyncing}>
                             <Plus className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`}/>
                           </Button>
                         </DropdownMenuTrigger>

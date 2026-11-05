@@ -12,5 +12,5 @@ export const NOW_TAB_LABELS: Record<NowTab, string> = {
 /** The tabs every Now panel has, in order. */
 export const NOW_TABS: readonly NowTab[] = ["lyrics", "queue", "about", "video"]
 
-/** In the player's column, at the side of full screen, or in the phone's sheet. */
-export type NowLayout = "column" | "side" | "sheet"
+/** A column at the side of the desktop or of full screen, or the phone's sheet. */
+export type NowLayout = "side" | "sheet"

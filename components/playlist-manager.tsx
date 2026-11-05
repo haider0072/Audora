@@ -311,7 +311,7 @@ export function PlaylistManager({ songCount, songs, onPlaylistReset }: PlaylistM
 
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+          <Button variant="ghost" size="sm" className="h-8 w-8 p-0" aria-label="Library settings" title="Library settings">
             <EllipsisVertical className="w-4 h-4" />
           </Button>
         </DropdownMenuTrigger>

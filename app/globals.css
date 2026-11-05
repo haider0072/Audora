@@ -482,6 +482,305 @@
     animation: roll-in 520ms var(--ease-decay) 60ms backwards;
   }
 
+  /* The desktop's frame: the sidebar, the open view and the Now panel side by
+     side, over the player bar. It fills the window exactly, so the page never
+     scrolls; each part scrolls on its own. */
+  .desktop-shell {
+    --sidebar-width: 220px;
+    --now-width: 360px;
+    position: relative;
+    z-index: 10;
+    display: grid;
+    grid-template-columns: var(--sidebar-width) minmax(0, 1fr) auto;
+    grid-template-rows: minmax(0, 1fr) auto;
+    height: 100dvh;
+  }
+  /* The frame's surfaces: ink over the song's colours, open enough to let them through. */
+  .desktop-sidebar,
+  .desktop-now,
+  .player-bar {
+    background: hsl(var(--ink-0) / 0.5);
+  }
+  .desktop-sidebar {
+    grid-area: 1 / 1;
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+    min-height: 0;
+    padding: 20px 12px;
+    border-right: 1px solid hsl(var(--border));
+  }
+  .desktop-lockup {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 0 10px;
+    font-size: 1.5rem; /* 24px, for the wordmark */
+  }
+  .desktop-nav {
+    display: grid;
+    gap: 2px;
+  }
+  .desktop-nav-item {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    height: 38px;
+    padding: 0 10px;
+    border-radius: 8px;
+    color: hsl(var(--muted-foreground));
+    font-size: 0.875rem; /* 14px */
+    font-weight: 500;
+    text-align: left;
+    transition:
+      color var(--motion-release) var(--ease-release),
+      background-color var(--motion-release) var(--ease-release);
+  }
+  .desktop-nav-item > svg {
+    flex: none;
+    width: 18px;
+    height: 18px;
+  }
+  .desktop-nav-item:hover {
+    color: hsl(var(--foreground));
+    background-color: hsl(var(--foreground) / 0.05);
+    transition-duration: var(--motion-attack);
+  }
+  .desktop-nav-item:focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: -2px;
+  }
+  .desktop-nav-item[aria-current="page"] {
+    color: hsl(var(--foreground));
+    background-color: hsl(var(--foreground) / 0.07);
+  }
+  /* The open view: a stroke of Audora's red at its edge. */
+  .desktop-nav-item[aria-current="page"]::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 10px;
+    bottom: 10px;
+    width: 2px;
+    border-radius: 1px;
+    background: hsl(var(--primary));
+  }
+  .desktop-nav-aside {
+    margin-left: auto;
+    color: hsl(var(--muted-foreground));
+  }
+  /* The cloud at a glance: lit while connected, red when it could not connect. */
+  .desktop-nav-dot {
+    margin-left: auto;
+    width: 6px;
+    height: 6px;
+    border-radius: 9999px;
+    background: hsl(var(--muted-foreground) / 0.5);
+  }
+  .desktop-nav-dot[data-status="ready"] {
+    background: hsl(var(--foreground));
+  }
+  .desktop-nav-dot[data-status="error"] {
+    background: hsl(var(--destructive));
+  }
+  .desktop-main {
+    grid-area: 1 / 2;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+  }
+  /* The open view's content, below its head. */
+  .desktop-view {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-height: 0;
+  }
+  .desktop-view[data-view="online"] {
+    padding: 0 24px;
+  }
+  .desktop-now {
+    grid-area: 1 / 3;
+    display: flex;
+    flex-direction: column;
+    width: var(--now-width);
+    min-height: 0;
+    padding: 0 12px;
+    border-left: 1px solid hsl(var(--border));
+  }
+
+  /* A view's head: its title and what it holds, then its tools. */
+  .view-head {
+    /* What it holds gives way to its tools as it narrows, below. */
+    container-type: inline-size;
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: 16px;
+    min-height: 64px;
+    padding: 12px 24px;
+  }
+  .view-title {
+    @apply font-display;
+    font-size: 1.5rem; /* 24px */
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    line-height: 1;
+    white-space: nowrap;
+  }
+  .view-meta {
+    color: hsl(var(--muted-foreground));
+    white-space: nowrap;
+  }
+  .view-tools {
+    display: flex;
+    flex: 1;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+    min-width: 0;
+  }
+  .view-toggle {
+    display: flex;
+    gap: 2px;
+  }
+  /* A narrow head, as beside an open Now panel: what the view holds goes, so
+     the search keeps room to type in. */
+  @container (max-width: 600px) {
+    .view-meta {
+      display: none;
+    }
+  }
+
+  /* Search: a field that says where it looks. */
+  .search-field {
+    display: flex;
+    /* The first of the head's tools to give way, down to a width still worth typing in. */
+    flex: 0 1 320px;
+    align-items: center;
+    gap: 8px;
+    min-width: 120px;
+    height: 36px;
+    padding: 0 12px;
+    border: 1px solid hsl(var(--border));
+    border-radius: 8px;
+    background: hsl(var(--foreground) / 0.05);
+    color: hsl(var(--muted-foreground));
+    transition: border-color var(--motion-release) var(--ease-release);
+  }
+  .search-field:focus-within {
+    border-color: hsl(var(--foreground) / 0.4);
+    color: hsl(var(--foreground));
+    transition-duration: var(--motion-attack);
+  }
+  .search-field > svg {
+    flex: none;
+    width: 16px;
+    height: 16px;
+  }
+  .search-field input {
+    flex: 1;
+    min-width: 0;
+    background: transparent;
+    color: hsl(var(--foreground));
+    font-size: 0.875rem; /* 14px */
+    outline: none;
+  }
+  .search-field input::placeholder {
+    color: hsl(var(--muted-foreground));
+  }
+
+  /* The player bar: what is playing, the transport, and the player's tools. */
+  .player-bar {
+    grid-area: 2 / 1 / 3 / -1;
+    display: grid;
+    grid-template-columns: minmax(0, 1.1fr) minmax(0, 1.4fr) minmax(0, 1fr);
+    align-items: center;
+    gap: 24px;
+    height: 88px;
+    padding: 0 16px;
+    border-top: 1px solid hsl(var(--border));
+  }
+  .player-bar-track {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-width: 0;
+  }
+  .player-bar-cover {
+    flex: none;
+    border-radius: 8px;
+    transition: transform var(--motion-pluck) var(--ease-pluck);
+  }
+  .player-bar-cover:active {
+    transform: scale(0.96);
+    transition: transform var(--motion-attack) var(--ease-attack);
+  }
+  .player-bar-text {
+    display: grid;
+    gap: 3px;
+    min-width: 0;
+  }
+  .player-bar-title {
+    font-size: 0.9375rem; /* 15px */
+    font-weight: 600;
+    line-height: 1.25;
+  }
+  .player-bar-credits {
+    font-size: 0.8125rem; /* 13px */
+    line-height: 1.3;
+    color: hsl(var(--muted-foreground));
+  }
+  .player-bar-link {
+    text-underline-offset: 2px;
+    transition: color var(--motion-attack) var(--ease-attack);
+  }
+  .player-bar-link:hover {
+    color: hsl(var(--foreground));
+    text-decoration: underline;
+  }
+  .player-bar-link:focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 1px;
+    border-radius: 2px;
+  }
+  .player-bar-centre {
+    display: grid;
+    justify-items: center;
+    gap: 2px;
+    min-width: 0;
+  }
+  .player-bar-transport {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .player-bar-tools {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 4px;
+    min-width: 0;
+  }
+  /* Volume: a thin track whose knob shows under the pointer or the keyboard. */
+  .volume-slider > span:first-child {
+    height: 4px;
+  }
+  .volume-slider [role="slider"] {
+    width: 14px;
+    height: 14px;
+    opacity: 0;
+    transition: opacity var(--motion-release) var(--ease-release);
+  }
+  .volume-slider:hover [role="slider"],
+  .volume-slider [role="slider"]:focus-visible {
+    opacity: 1;
+    transition-duration: var(--motion-attack);
+  }
+
   /* The library. The list is as long as the whole library but drawn a
      screenful at a time: each row sits at a fixed place, from heights kept in
      components/library/library-list.tsx. An artist's header holds the top
@@ -1434,9 +1733,6 @@
     transition:
       opacity 600ms var(--ease-decay),
       transform 600ms var(--ease-decay);
-  }
-  .now[data-layout="column"] .lyrics-line {
-    font-size: 1.625rem; /* 26px */
   }
   .lyrics-line[data-state="past"] {
     opacity: 0.16;

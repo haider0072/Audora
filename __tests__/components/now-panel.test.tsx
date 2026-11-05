@@ -40,7 +40,7 @@ function renderPanel(props: Partial<NowPanelProps> = {}) {
     },
     musicPlaying: false,
     onVideoPlay: jest.fn(),
-    layout: "column",
+    layout: "side",
     ...props,
   }
   return { ...render(<NowPanel {...all} />), props: all }
