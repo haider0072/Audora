@@ -25,7 +25,9 @@ export interface CloudSong {
   discNumber?: string
   duration?: number
   bitrate?: number
-  isHiRes?: boolean
+  /** From the file's header, for lossless formats. */
+  sampleRate?: number
+  bitDepth?: number
   format?: string
   /** Signed GET for the audio. */
   streamUrl: string

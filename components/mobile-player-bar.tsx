@@ -7,18 +7,19 @@ import { Button } from "@/components/ui/button"
 import { Slider } from "@/components/ui/slider"
 import { AlbumArtDisplay } from "@/components/album-art-display"
 import { PlayButton } from "@/components/player/play-button"
+import { QualityLabel } from "@/components/player/quality-label"
 import { RollingText, type RollDirection } from "@/components/player/rolling-text"
 import { SeekBar } from "@/components/player/seek-bar"
 import { SkipIcon, TransportButton } from "@/components/player/transport-button"
+import type { QualitySource } from "@/lib/audio-quality"
 
 /** The volume slider tucks itself away after this long without a touch. */
 const VOLUME_IDLE_MS = 3000
 
-interface Song {
+interface Song extends QualitySource {
   id: string
   title?: string
   artist?: string
-  format?: string
   albumArt?: string
   albumArtThumb?: string
 }
@@ -121,11 +122,7 @@ export function MobilePlayerBar({
             </p>
           </div>
 
-          {currentSong.format && (
-            <span className="type-data uppercase text-muted-foreground">
-              {currentSong.format}
-            </span>
-          )}
+          <QualityLabel song={currentSong} compact />
 
           <div className="flex items-center gap-1">
             <TransportButton label="Previous track" size="sm" onClick={onSkipPrevious}>

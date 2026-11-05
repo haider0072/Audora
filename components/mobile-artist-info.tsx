@@ -5,6 +5,8 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Badge } from "@/components/ui/badge"
+import { QualityLabel } from "@/components/player/quality-label"
+import { formatKilohertz } from "@/lib/audio-quality"
 import { SpotifyService, type SpotifyResult } from "@/lib/spotify-service"
 import { Loader2, User, X, RefreshCw, AlertCircle, ExternalLink, Disc3, Music, Calendar, FileAudio } from "lucide-react"
 import type { Song } from "@/components/enhanced-playlist"
@@ -43,11 +45,6 @@ function formatFileSize(bytes?: number): string {
 function formatBitrate(bitrate?: number): string {
   if (!bitrate) return ""
   return bitrate >= 1000 ? `${(bitrate / 1000).toFixed(1)} Mbps` : `${Math.round(bitrate)} kbps`
-}
-
-function formatSampleRate(rate?: number): string {
-  if (!rate) return ""
-  return `${(rate / 1000).toFixed(1)} kHz`
 }
 
 function formatLocalDuration(seconds?: number): string {
@@ -389,7 +386,13 @@ export function MobileArtistInfo({ isOpen, onOpenChange, currentSong }: MobileAr
                 {currentSong.sampleRate && (
                   <div className="bg-muted/30 rounded-lg p-2">
                     <p className="text-xs text-muted-foreground">Sample Rate</p>
-                    <p className="font-medium">{formatSampleRate(currentSong.sampleRate)}</p>
+                    <p className="font-medium">{formatKilohertz(currentSong.sampleRate)} kHz</p>
+                  </div>
+                )}
+                {currentSong.bitDepth && (
+                  <div className="bg-muted/30 rounded-lg p-2">
+                    <p className="text-xs text-muted-foreground">Bit Depth</p>
+                    <p className="font-medium">{currentSong.bitDepth}-bit</p>
                   </div>
                 )}
                 {currentSong.duration && (
@@ -417,11 +420,7 @@ export function MobileArtistInfo({ isOpen, onOpenChange, currentSong }: MobileAr
                   </div>
                 )}
               </div>
-              {currentSong.isHiRes && (
-                <Badge variant="secondary" className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100">
-                  Hi-Res Audio
-                </Badge>
-              )}
+              <QualityLabel song={currentSong} hideWhenUnknown />
             </div>
           )}
         </div>

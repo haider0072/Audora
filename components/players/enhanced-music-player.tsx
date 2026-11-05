@@ -14,6 +14,7 @@ import {
 import Image from "next/image"
 import { Wordmark } from "@/components/brand/wordmark"
 import { PlayButton } from "@/components/player/play-button"
+import { QualityLabel } from "@/components/player/quality-label"
 import { RollingText } from "@/components/player/rolling-text"
 import { SeekBar } from "@/components/player/seek-bar"
 import { SkipIcon, TransportButton } from "@/components/player/transport-button"
@@ -43,6 +44,7 @@ import { FullscreenPlayer } from "@/components/fullscreen-player"
 import { SyncPanel } from "@/components/sync-panel"
 import { CloudLibraryPanel } from "@/components/cloud-library-panel"
 import { useCloudLibrary } from "@/hooks/use-cloud-library"
+import { useStreamInfoBackfill } from "@/hooks/use-stream-info-backfill"
 import { useCloudUploadSync } from "@/hooks/use-cloud-upload-sync"
 import { useDeviceSync } from "@/hooks/use-device-sync"
 import type { SyncPlaybackAdapter } from "@/hooks/use-sync-playback"
@@ -218,6 +220,7 @@ export default function EnhancedMusicPlayer() {
 
   const { isInitialized, isRestoringPlaylist, restorePlaylist, savePlaylist } = usePlaylistPersistence()
   const cloud = useCloudLibrary({ isReady: isInitialized, songCount: songs.length, setSongs })
+  useStreamInfoBackfill(songs, setSongs)
   useCloudUploadSync(cloud.refresh)
   useWarmNextSong(currentSong?.id, isPlaying, peekNextSong)
 
@@ -635,6 +638,7 @@ export default function EnhancedMusicPlayer() {
                               )}
                             </RollingText>
                           </p>
+                          <QualityLabel song={displaySong} withBitrate className="mt-2" />
                         </div>
                       </>
                     ) : (
