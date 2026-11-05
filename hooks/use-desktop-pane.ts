@@ -16,6 +16,8 @@ export interface DesktopPanes {
   setView: (view: DesktopView | null) => void
   toggleSettings: () => void
   closeSettings: () => void
+  /** Close the search and Settings, leaving the song's view as it is: what full screen has room for. */
+  closeSearchAndSettings: () => void
   /** Bring the search out, in place of whatever is open. */
   startSearch: () => void
   /** Back to the library, closing whatever is open in its place. */
@@ -48,6 +50,11 @@ export function useDesktopPane(search: Pick<DesktopSearch, "active" | "start" | 
 
   const closeSettings = useCallback(() => setSettingsOpen(false), [])
 
+  const closeSearchAndSettings = useCallback(() => {
+    close()
+    setSettingsOpen(false)
+  }, [close])
+
   const startSearch = useCallback(() => {
     setViewState(null)
     setSettingsOpen(false)
@@ -66,7 +73,7 @@ export function useDesktopPane(search: Pick<DesktopSearch, "active" | "start" | 
   else if (view) pane = "view"
 
   return useMemo(
-    () => ({ pane, view, setView, toggleSettings, closeSettings, startSearch, showLibrary }),
-    [pane, view, setView, toggleSettings, closeSettings, startSearch, showLibrary],
+    () => ({ pane, view, setView, toggleSettings, closeSettings, closeSearchAndSettings, startSearch, showLibrary }),
+    [pane, view, setView, toggleSettings, closeSettings, closeSearchAndSettings, startSearch, showLibrary],
   )
 }

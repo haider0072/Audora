@@ -51,6 +51,21 @@ describe("useDesktopPane", () => {
     expect(result.current.pane).toBe("library")
   })
 
+  it("closes the search and Settings for full screen, leaving the song's view as it is", () => {
+    const { result } = renderPanes()
+    act(() => result.current.startSearch())
+    act(() => result.current.closeSearchAndSettings())
+    expect(result.current).toMatchObject({ pane: "library", searching: false })
+
+    act(() => result.current.toggleSettings())
+    act(() => result.current.closeSearchAndSettings())
+    expect(result.current.pane).toBe("library")
+
+    act(() => result.current.setView("lyrics"))
+    act(() => result.current.closeSearchAndSettings())
+    expect(result.current).toMatchObject({ pane: "view", view: "lyrics" })
+  })
+
   it("goes back to the library from anything open in its place", () => {
     const { result } = renderPanes()
     act(() => result.current.startSearch())

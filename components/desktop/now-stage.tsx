@@ -1,6 +1,6 @@
 "use client"
 
-import { useRef, type ReactNode } from "react"
+import { useRef, type ReactNode, type RefObject } from "react"
 import { Maximize2, Minimize2, MonitorSpeaker, MoreHorizontal, Shuffle, SlidersHorizontal } from "lucide-react"
 
 import { AlbumArtDisplay } from "@/components/album-art-display"
@@ -48,6 +48,8 @@ export interface NowStageProps {
   fullscreen: boolean
   /** Into full screen from the cover or More, and back out from More. */
   onToggleFullscreen: () => void
+  /** The More button, for focus to come back to from elsewhere. */
+  moreRef: RefObject<HTMLButtonElement>
   /** The equalizer and the rest of the sound settings. */
   onOpenSound: () => void
   onOpenSync: () => void
@@ -86,6 +88,7 @@ export function NowStage({
   onShowPage,
   fullscreen,
   onToggleFullscreen,
+  moreRef,
   onOpenSound,
   onOpenSync,
   syncConnected,
@@ -94,7 +97,6 @@ export function NowStage({
   // What the menu asks for opens once the menu has closed, with focus back on
   // the menu's button, so a dialog can hand it back there.
   const afterMenu = useRef<(() => void) | null>(null)
-  const moreRef = useRef<HTMLButtonElement>(null)
 
   return (
     <section className="stage" aria-label="Now playing">

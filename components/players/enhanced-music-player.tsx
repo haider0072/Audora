@@ -89,8 +89,10 @@ export default function EnhancedMusicPlayer() {
   const searchInputRef = useRef<HTMLInputElement>(null)
   const searchButtonRef = useRef<HTMLButtonElement>(null)
   const settingsToggleRef = useRef<HTMLButtonElement>(null)
-  // Full screen's way in, in a view's head, and its way out, in the brand's corner.
+  // Full screen's ways in, in a view's head and in the stage's More, and its
+  // way out, in the brand's corner.
   const fullscreenButtonRef = useRef<HTMLButtonElement>(null)
+  const stageMoreRef = useRef<HTMLButtonElement>(null)
   const fullscreenExitRef = useRef<HTMLButtonElement>(null)
   // A tool in the library's head to hand focus to once the head is back, as
   // the search or Settings closes from the keyboard.
@@ -170,30 +172,45 @@ export default function EnhancedMusicPlayer() {
   // right half, which shows the library or one thing at a time in its place.
   const search = useDesktopSearch(tidalSearch)
   const panes = useDesktopPane(search)
-  // Full screen: the frame without the library, the song alone or beside its open view.
-  const fullscreen = useDesktopFullscreen({ exitRef: fullscreenExitRef, returnRef: fullscreenButtonRef })
-  const { exit: exitFullscreen } = fullscreen
+  // On the way out of full screen, focus with nowhere else to go takes a way
+  // back in: the button in a view's head while one is open, or More.
+  const fullscreenReturn = useCallback(() => fullscreenButtonRef.current ?? stageMoreRef.current, [])
+  // Full screen: the frame without the library, the song alone or beside its
+  // open view. The search and Settings are the library's, so they close.
+  const fullscreen = useDesktopFullscreen({
+    exitRef: fullscreenExitRef,
+    returnTo: fullscreenReturn,
+    onEnter: panes.closeSearchAndSettings,
+  })
+  const { exitWith: exitFullscreenWith } = fullscreen
   const libraryNavigation = useLibraryNavigation(sortedSongs)
   const { show: showLibraryPage } = libraryNavigation
   const { showLibrary } = panes
 
-  /** Show an artist's or an album's page, from the player or the search: in the library, in place of anything open there, and out of full screen. */
+  /**
+   * Show an artist's or an album's page, from the player or the search: in
+   * the library, in place of anything open there, and out of full screen in
+   * the same step, so the page opens in sight and takes focus.
+   */
   const showInLibrary = useCallback((page: LibraryPage) => {
-    exitFullscreen()
-    showLibrary()
-    showLibraryPage(page)
-  }, [exitFullscreen, showLibrary, showLibraryPage])
+    exitFullscreenWith(() => {
+      showLibrary()
+      showLibraryPage(page)
+    })
+  }, [exitFullscreenWith, showLibrary, showLibraryPage])
 
   useSearchShortcut(() => {
-    // The search is the library's, so it brings the library back.
-    exitFullscreen()
-    if (!search.active) {
-      // The field takes focus as it comes out.
-      panes.startSearch()
-      return
-    }
-    searchInputRef.current?.focus()
-    searchInputRef.current?.select()
+    // The search is the library's, so it brings the library back, out of
+    // full screen in the same step, so the field can take focus.
+    exitFullscreenWith(() => {
+      if (!search.active) {
+        // The field takes focus as it comes out.
+        panes.startSearch()
+        return
+      }
+      searchInputRef.current?.focus()
+      searchInputRef.current?.select()
+    })
   })
 
   // Runs once the library's head is back, so the tool it hands focus to is there.
@@ -609,6 +626,7 @@ export default function EnhancedMusicPlayer() {
           onShowPage={showInLibrary}
           fullscreen={fullscreen.full}
           onToggleFullscreen={fullscreen.toggle}
+          moreRef={stageMoreRef}
           onOpenSound={openSound}
           onOpenSync={openSync}
           syncConnected={syncConnected}

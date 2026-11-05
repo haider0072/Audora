@@ -1,37 +1,83 @@
-import { useRef } from "react"
+import { useCallback, useRef, useState } from "react"
 import { act, fireEvent, render, screen } from "@testing-library/react"
 
 import { FULLSCREEN_IDLE_MS, useDesktopFullscreen } from "@/hooks/use-desktop-fullscreen"
 
+const nothing = () => {}
+
+/** An artist's page, which keeps whether full screen was still on as it opened. */
+function ArtistPage({ full }: { full: boolean }) {
+  const [openedInFull] = useState(full)
+  return <section aria-label="Artist page" data-opened-in-full={openedInFull || undefined} />
+}
+
+interface FrameProps {
+  /** A song's view is open, so its head, with a way in, shows while full screen is off. */
+  view?: boolean
+  onEnter?: () => void
+}
+
 /**
- * The frame in miniature: More and Play stay in full screen, the way in in a
- * view's head goes with the head, and the way out comes in its place.
+ * The frame in miniature: More, Play and the artist's link stay in full
+ * screen; a view's head, with its way in, goes with the library, and the way
+ * out comes in its place; the artist's link opens a page where the library is.
  */
-function Frame() {
+function Frame({ view = true, onEnter = nothing }: FrameProps) {
+  const more = useRef<HTMLButtonElement>(null)
   const wayIn = useRef<HTMLButtonElement>(null)
   const wayOut = useRef<HTMLButtonElement>(null)
-  const { full, idle, enter, exit, toggle } = useDesktopFullscreen({ exitRef: wayOut, returnRef: wayIn })
+  const returnTo = useCallback(() => wayIn.current ?? more.current, [])
+  const [page, setPage] = useState(false)
+  const { full, idle, enter, exit, exitWith, toggle } = useDesktopFullscreen({ exitRef: wayOut, returnTo, onEnter })
   return (
     <div data-testid="frame" data-full={full || undefined} data-idle={idle || undefined}>
-      <button type="button" onClick={toggle}>
+      <button ref={more} type="button" onClick={toggle}>
         More
       </button>
       <button type="button" tabIndex={-1} onClick={enter}>
         Cover
       </button>
       <button type="button">Play</button>
+      <button type="button" onClick={() => exitWith(() => setPage(true))}>
+        Artist
+      </button>
       {full ? (
         <button ref={wayOut} type="button" onClick={exit}>
           Exit full screen
         </button>
       ) : (
-        <button ref={wayIn} type="button" onClick={enter}>
-          Full screen
-        </button>
+        view && (
+          <button ref={wayIn} type="button" onClick={enter}>
+            Full screen
+          </button>
+        )
       )}
+      {page && <ArtistPage full={full} />}
     </div>
   )
 }
+
+/** The browser's view transitions, the change held until the test lets it run, as a busy page holds it a frame or more. */
+function holdViewTransitions() {
+  const held: ViewTransitionUpdateCallback[] = []
+  Object.defineProperty(document, "startViewTransition", {
+    value: (update: ViewTransitionUpdateCallback) => {
+      held.push(update)
+      return {} as ViewTransition
+    },
+    configurable: true,
+  })
+  return {
+    release: () =>
+      act(() => {
+        held.splice(0).forEach((update) => void update())
+      }),
+  }
+}
+
+afterEach(() => {
+  Reflect.deleteProperty(document, "startViewTransition")
+})
 
 /** Presses a button the way the keyboard does, with focus on it. */
 function press(name: string): HTMLElement {
@@ -69,6 +115,46 @@ describe("useDesktopFullscreen", () => {
     render(<Frame />)
     press("Cover")
     expect(screen.getByRole("button", { name: "Exit full screen" })).toHaveFocus()
+  })
+
+  it("hands focus to More on the way out from the cover, with no view's head to go back to", () => {
+    render(<Frame view={false} />)
+    press("Cover")
+    press("Exit full screen")
+    expect(frame()).not.toHaveAttribute("data-full")
+    expect(screen.getByRole("button", { name: "More" })).toHaveFocus()
+  })
+
+  it("closes what full screen has no room for in the same step it opens", () => {
+    const transitions = holdViewTransitions()
+    const onEnter = jest.fn()
+    render(<Frame onEnter={onEnter} />)
+    press("More")
+    expect(onEnter).not.toHaveBeenCalled()
+    expect(frame()).not.toHaveAttribute("data-full")
+
+    transitions.release()
+    expect(onEnter).toHaveBeenCalledTimes(1)
+    expect(frame()).toHaveAttribute("data-full")
+  })
+
+  it("leaves with a page to show in the same step, so the page opens out of full screen", () => {
+    const transitions = holdViewTransitions()
+    render(<Frame />)
+    press("More")
+    transitions.release()
+
+    press("Artist")
+    expect(screen.queryByRole("region", { name: "Artist page" })).not.toBeInTheDocument()
+    transitions.release()
+    expect(frame()).not.toHaveAttribute("data-full")
+    expect(screen.getByRole("region", { name: "Artist page" })).not.toHaveAttribute("data-opened-in-full")
+  })
+
+  it("shows a page at once outside full screen", () => {
+    render(<Frame />)
+    press("Artist")
+    expect(screen.getByRole("region", { name: "Artist page" })).toBeInTheDocument()
   })
 
   it("leaves focus that moved on inside full screen where it is", () => {

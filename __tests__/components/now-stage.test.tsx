@@ -1,3 +1,4 @@
+import { createRef } from "react"
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 
 import { NowStage, type NowStageProps } from "@/components/desktop/now-stage"
@@ -33,6 +34,7 @@ function renderStage(props: Partial<NowStageProps> = {}) {
     onShowPage: jest.fn(),
     fullscreen: false,
     onToggleFullscreen: jest.fn(),
+    moreRef: createRef<HTMLButtonElement>(),
     onOpenSound: jest.fn(),
     onOpenSync: jest.fn(),
     syncConnected: false,

@@ -14,24 +14,35 @@ export interface DesktopFullscreen {
   idle: boolean
   enter: () => void
   exit: () => void
+  /**
+   * Out of full screen, if in it, with another change in the same step, such
+   * as a page to show, so the change lands in the frame it is for: in sight,
+   * and in reach of focus. Outside full screen the change simply happens.
+   */
+  exitWith: (change: () => void) => void
   toggle: () => void
 }
 
-interface FullscreenFocus {
+interface FullscreenOptions {
   /** The way out, which takes focus when what opened full screen is gone or was the cover. */
   exitRef: RefObject<HTMLElement>
-  /** The way in that comes back with the library's head, for focus when what opened full screen went with it. */
-  returnRef: RefObject<HTMLElement>
+  /**
+   * Where focus goes on the way out when what opened full screen has gone,
+   * or was the cover. The same function from render to render.
+   */
+  returnTo: () => HTMLElement | null
+  /** What full screen closes as it opens, in the same step: what it has no room for. The same function from render to render. */
+  onEnter: () => void
 }
 
 /**
  * Full screen on the desktop: a mode of the frame rather than a player of its
  * own, so the song stays where it is and only the rest of the window changes.
  * Escape leaves it, unless something in it took the key first, such as a
- * menu closing. Focus goes back to what opened it, or, when that went away
- * with the library's head, to the way in that comes back with it.
+ * menu closing. Focus goes back to what opened it, or, when that has gone or
+ * was the cover, to where `returnTo` says.
  */
-export function useDesktopFullscreen({ exitRef, returnRef }: FullscreenFocus): DesktopFullscreen {
+export function useDesktopFullscreen({ exitRef, returnTo, onEnter }: FullscreenOptions): DesktopFullscreen {
   const [full, setFull] = useState(false)
   const [idle, setIdle] = useState(false)
   // What opened full screen, to hand focus back to on the way out: only
@@ -44,12 +55,29 @@ export function useDesktopFullscreen({ exitRef, returnRef }: FullscreenFocus): D
     const active = document.activeElement
     opener.current = active instanceof HTMLElement && active.tabIndex >= 0 ? active : null
     setIdle(false)
-    withViewTransition(() => setFull(true))
-  }, [full])
+    withViewTransition(() => {
+      onEnter()
+      setFull(true)
+    })
+  }, [full, onEnter])
 
   const exit = useCallback(() => {
     if (full) withViewTransition(() => setFull(false))
   }, [full])
+
+  const exitWith = useCallback(
+    (change: () => void) => {
+      if (!full) {
+        change()
+        return
+      }
+      withViewTransition(() => {
+        setFull(false)
+        change()
+      })
+    },
+    [full],
+  )
 
   useLayoutEffect(() => {
     if (full) {
@@ -65,9 +93,9 @@ export function useDesktopFullscreen({ exitRef, returnRef }: FullscreenFocus): D
     // on the way out, which has just gone, goes back to what opened full screen.
     const active = document.activeElement
     if (active instanceof HTMLElement && active !== document.body) return
-    const target = from?.isConnected ? from : returnRef.current
+    const target = from?.isConnected ? from : returnTo()
     target?.focus()
-  }, [full, exitRef, returnRef])
+  }, [full, exitRef, returnTo])
 
   useEffect(() => {
     if (!full) return
@@ -94,5 +122,5 @@ export function useDesktopFullscreen({ exitRef, returnRef }: FullscreenFocus): D
     }
   }, [full])
 
-  return { full, idle: full && idle, enter, exit, toggle: full ? exit : enter }
+  return { full, idle: full && idle, enter, exit, exitWith, toggle: full ? exit : enter }
 }
