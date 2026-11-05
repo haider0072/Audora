@@ -4,6 +4,7 @@ import { useCallback, useLayoutEffect, useMemo, useRef, useState, type ReactNode
 
 import { AlphabetSidebar } from "@/components/alphabet-sidebar"
 import type { Song } from "@/lib/song"
+import type { StatusAction } from "@/components/status-message"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { rowAt, rowOffsets, useRowWindow } from "@/hooks/use-row-window"
 import { useScrollActivity } from "@/hooks/use-scroll-activity"
@@ -15,7 +16,7 @@ import {
   type LibraryRows,
   type LibraryViewMode,
 } from "@/lib/library-rows"
-import { EmptyLibrary, NoMatches, type EmptyAction } from "./library-empty"
+import { EmptyLibrary, NoMatches } from "./library-empty"
 import { AlbumHeader, ArtistHeader } from "./library-headers"
 import { SongRow, type LibraryLayout, type RowPlayback } from "./song-row"
 import { useRowActions, type LibraryActions } from "./use-row-actions"
@@ -49,7 +50,7 @@ interface LibraryListProps {
   /** Open an artist's or an album's page: from its header, or from a song's menu. */
   onOpen: (page: LibraryPage) => void
   /** Offered by an empty library. */
-  emptyAction?: EmptyAction
+  emptyAction?: StatusAction
 }
 
 /** What the list last showed, so a change of view can keep the reader's place. */

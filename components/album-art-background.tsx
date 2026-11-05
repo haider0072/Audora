@@ -1,8 +1,11 @@
 "use client"
 
-import { useState, useEffect, useLayoutEffect, useMemo } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { AlbumArtCache } from "@/lib/album-art-cache"
 import { ColorExtractor } from "@/lib/color-extractor"
+
+/** The tint behind a song whose cover gives no colour. */
+const FALLBACK_COLOR = "#1a1a1a"
 
 interface AlbumArtBackgroundProps {
   albumArt?: string
@@ -11,65 +14,54 @@ interface AlbumArtBackgroundProps {
   positioning?: "fixed" | "absolute"
 }
 
+interface BackgroundArt {
+  url: string
+  color: string
+}
+
+/** The song's cover and its colour, when the cache already holds the cover; null otherwise. */
+function cachedArt(songId?: string, albumArt?: string): BackgroundArt | null {
+  if (!songId || !albumArt) return null
+  const url = AlbumArtCache.getCachedAlbumArt(songId)
+  return url ? { url, color: ColorExtractor.getCachedColor(url) ?? FALLBACK_COLOR } : null
+}
+
+async function loadArt(songId: string, albumArt: string): Promise<BackgroundArt | null> {
+  const url = AlbumArtCache.getCachedAlbumArt(songId) ?? (await AlbumArtCache.preloadAlbumArt(songId, albumArt))
+  if (!url) return null
+  try {
+    return { url, color: ColorExtractor.getCachedColor(url) ?? (await ColorExtractor.extractDominantColor(url)) }
+  } catch (error) {
+    console.error("Error extracting dominant color:", error)
+    return { url, color: FALLBACK_COLOR }
+  }
+}
+
 export function AlbumArtBackground({ albumArt, songId, isTransitioning = false, positioning = "fixed" }: AlbumArtBackgroundProps) {
-  const [backgroundImage, setBackgroundImage] = useState<string | null>(null)
-  const [dominantColor, setDominantColor] = useState<string>("#1a1a1a")
-  const [isMounted, setIsMounted] = useState(false)
+  // A background that opens over a song already shown, as full screen does,
+  // starts with its cover rather than flashing ink first.
+  const [art, setArt] = useState(() => cachedArt(songId, albumArt))
 
-  // useLayoutEffect ensures cached image + color are set before browser paint,
-  // eliminating the black/fallback flash when opening fullscreen
-  useLayoutEffect(() => {
-    setIsMounted(true)
-    if (songId && albumArt) {
-      const cachedUrl = AlbumArtCache.getCachedAlbumArt(songId)
-      if (cachedUrl) {
-        setBackgroundImage(cachedUrl)
-        const cachedColor = ColorExtractor.getCachedColor(cachedUrl)
-        if (cachedColor) {
-          setDominantColor(cachedColor)
-        }
-      }
-    }
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps -- mount-only init
-
+  // A new song's cover replaces the last one once it has loaded, so the
+  // background never falls back to ink between two songs.
   useEffect(() => {
-    if (!isMounted || !songId || !albumArt) {
-      setBackgroundImage(null) // eslint-disable-line react-hooks/set-state-in-effect -- cleanup on unmount/missing data
-      setDominantColor("#1a1a1a") // eslint-disable-line react-hooks/set-state-in-effect
-      return
-    }
-
-    const loadBackgroundImage = async () => {
-      try {
-        // Try to get from cache first
-        let cachedUrl = AlbumArtCache.getCachedAlbumArt(songId)
-
-        if (!cachedUrl) {
-          // Preload if not cached
-          cachedUrl = await AlbumArtCache.preloadAlbumArt(songId, albumArt)
-        }
-
-        if (cachedUrl) {
-          setBackgroundImage(cachedUrl)
-
-          // Extract dominant color for background tinting
-          try {
-            const color = await ColorExtractor.extractDominantColor(cachedUrl)
-            setDominantColor(color)
-          } catch (error) {
-            console.error("Error extracting dominant color:", error)
-            setDominantColor("#1a1a1a")
-          }
-        }
-      } catch (error) {
+    if (!songId || !albumArt) return
+    let current = true
+    loadArt(songId, albumArt)
+      .then((loaded) => {
+        if (current) setArt(loaded)
+      })
+      .catch((error: unknown) => {
         console.error("Error loading background image:", error)
-        setBackgroundImage(null)
-        setDominantColor("#1a1a1a")
-      }
+        if (current) setArt(null)
+      })
+    return () => {
+      current = false
     }
+  }, [albumArt, songId])
 
-    loadBackgroundImage()
-  }, [albumArt, songId, isMounted])
+  const shown = songId && albumArt ? art : null
+  const dominantColor = shown?.color ?? FALLBACK_COLOR
 
   // Memoize color variations (must be before early returns to satisfy hook ordering rules)
   const { lightColor, darkColor, veryDarkColor } = useMemo(() => ({
@@ -80,23 +72,26 @@ export function AlbumArtBackground({ albumArt, songId, isTransitioning = false, 
 
   const pos = positioning
   const z = positioning === "fixed"
-    ? { bg: "-z-30", color: "-z-20", texture: "-z-10", dark: "-z-10", fallback: "-z-20" }
-    : { bg: "", color: "", texture: "", dark: "", fallback: "" }
+    ? { base: "-z-40", bg: "-z-30", color: "-z-20", texture: "-z-10", dark: "-z-10", fallback: "-z-20" }
+    : { base: "", bg: "", color: "", texture: "", dark: "", fallback: "" }
 
-  // Shown before mount and when the song has no art: plain ink, dark in both themes.
-  if (!isMounted || !backgroundImage) {
+  // Shown when the song has no art: plain ink, dark in both themes.
+  if (!shown) {
     return <div className={`${pos} inset-0 bg-gradient-to-br from-ink-2 via-ink-2/95 to-ink-0 ${z.fallback}`} />
   }
 
   return (
     <>
+      {/* Ink beneath it all, so a light theme's page never shows through the cover. */}
+      <div className={`${pos} inset-0 bg-ink-0 ${z.base}`} />
+
       {/* Background Image with Blur */}
       <div
         className={`${pos} inset-0 ${z.bg} transition-all duration-1000 ease-out ${
           isTransitioning ? "scale-105 opacity-20" : "scale-100 opacity-30"
         }`}
         style={{
-          backgroundImage: `url(${backgroundImage})`,
+          backgroundImage: `url(${shown.url})`,
           backgroundSize: "cover",
           backgroundPosition: "center",
           backgroundRepeat: "no-repeat",
@@ -136,8 +131,9 @@ export function AlbumArtBackground({ albumArt, songId, isTransitioning = false, 
         }}
       />
 
-      {/* Final dark overlay for text readability */}
-      <div className={`${pos} inset-0 bg-black/20 ${z.dark}`} />
+      {/* The last layer keeps text readable over any cover: even under a white
+          one, muted text over it holds 4.5:1. */}
+      <div className={`${pos} inset-0 bg-ink-0/60 ${z.dark}`} />
     </>
   )
 }

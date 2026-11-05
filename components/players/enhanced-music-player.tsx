@@ -1,14 +1,13 @@
 "use client"
 
-import { useState, useRef, useEffect, useCallback, useMemo, lazy, Suspense } from "react"
-import { Button } from "@/components/ui/button"
+import { useState, useRef, useEffect, useCallback, useMemo } from "react"
 import { Slider } from "@/components/ui/slider"
 import { toast } from "@/hooks/use-toast"
 import { ToastAction } from "@/components/ui/toast"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import {
-  Volume2, VolumeX, Settings, Mic, Youtube, Sparkles, Shuffle, Maximize2, User,
-  Search, Music, List, Globe, Library, MonitorSpeaker, Cloud,
+  Volume2, VolumeX, Settings, Shuffle, Maximize2,
+  Search, Music, List, ListMusic, Globe, Library, MonitorSpeaker, Cloud,
 } from "lucide-react"
 
 import Image from "next/image"
@@ -21,6 +20,9 @@ import { SkipIcon, TransportButton } from "@/components/player/transport-button"
 import { DropOverlay } from "@/components/library/drop-overlay"
 import { LibraryPanel } from "@/components/library/library-panel"
 import { rowPlayback } from "@/components/library/song-row"
+import { LazyNowPanel } from "@/components/now/lazy-now-panel"
+import type { NowTab } from "@/components/now/now-tabs"
+import { useNowPlayer } from "@/components/now/use-now-player"
 import { RefinedEqualizer, type EqualizerBand } from "@/components/refined-equalizer"
 import { AlbumArtBackground } from "@/components/album-art-background"
 import { AlbumArtDisplay } from "@/components/album-art-display"
@@ -54,20 +56,7 @@ import { useCloudUploadSync } from "@/hooks/use-cloud-upload-sync"
 import { useDeviceSync } from "@/hooks/use-device-sync"
 import type { SyncPlaybackAdapter } from "@/hooks/use-sync-playback"
 import { findTrackByKey, trackLabel, trackSyncKey } from "@/lib/sync/song-match"
-import { createMediaUrl, releaseMediaUrl, songSource } from "@/lib/media-source"
-
-const LyricsDisplay = lazy(() =>
-  import("@/components/lyrics-display").then(mod => ({ default: mod.LyricsDisplay }))
-)
-const YouTubeVideoPlayer = lazy(() =>
-  import("@/components/youtube-video-player").then(mod => ({ default: mod.YouTubeVideoPlayer }))
-)
-const SongInsightsDisplay = lazy(() =>
-  import("@/components/song-insights-display").then(mod => ({ default: mod.SongInsightsDisplay }))
-)
-const ArtistInfoDisplay = lazy(() =>
-  import("@/components/artist-info-display").then(mod => ({ default: mod.ArtistInfoDisplay }))
-)
+import { releaseMediaUrl } from "@/lib/media-source"
 
 /** Auto-advance crossfade (song ends on its own). 0 = gapless, no overlap. */
 const CROSSFADE_AUTO_SECONDS = 0
@@ -78,8 +67,9 @@ const CROSSFADE_MANUAL_SECONDS = 0.4
 const PAGE_LINK_CLASS = "hover:text-foreground hover:underline underline-offset-2 transition-colors duration-attack ease-attack"
 
 export default function EnhancedMusicPlayer() {
-  const [activeView, setActiveView] = useState<"player" | "lyrics" | "youtube" | "insights" | "artist">("player");
-  const [forceRefreshTrigger, setForceRefreshTrigger] = useState(0);
+  // The Now panel takes the cover's place, and keeps the tab last opened.
+  const [nowOpen, setNowOpen] = useState(false)
+  const [nowTab, setNowTab] = useState<NowTab>("lyrics")
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [albumArtSourceRect, setAlbumArtSourceRect] = useState<DOMRect | null>(null);
   const [sidebarMode, setSidebarMode] = useState<"library" | "online">("library");
@@ -137,7 +127,7 @@ export default function EnhancedMusicPlayer() {
     },
   })
   const {
-    songs, setSongs, currentSong, setCurrentSong,
+    songs, setSongs, currentSong,
     shuffleMode, setShuffleMode, viewMode, setViewMode,
     sortedSongs, peekNextSong,
     toggleShuffle, removeSong, resetPlaylist, playNext, addToQueue,
@@ -211,12 +201,7 @@ export default function EnhancedMusicPlayer() {
     handleFileUpload, handleFolderUpload, addSongsToPlaylist,
   } = useFileImporter({
     songs,
-    onSongsAdded: (newSongs) => {
-      setSongs((prev) => [...prev, ...newSongs])
-      if (newSongs.length === 1) {
-        setTimeout(() => setForceRefreshTrigger(prev => prev + 1), 100)
-      }
-    },
+    onSongsAdded: (newSongs) => setSongs((prev) => [...prev, ...newSongs]),
   })
 
   const { isInitialized, isRestoringPlaylist, restorePlaylist, savePlaylist } = usePlaylistPersistence()
@@ -233,14 +218,7 @@ export default function EnhancedMusicPlayer() {
     handleFolderSync,
   } = useFolderSync({
     songs,
-    onSongsAdded: (newSongs) => {
-      setSongs((prev) => [...prev, ...newSongs])
-      if (newSongs.length === 1) {
-        setTimeout(() => {
-          setForceRefreshTrigger(prev => prev + 1)
-        }, 100)
-      }
-    },
+    onSongsAdded: (newSongs) => setSongs((prev) => [...prev, ...newSongs]),
     onSongsRemoved: (removedIds) => {
       const count = removedIds.length
       toast({
@@ -260,35 +238,6 @@ export default function EnhancedMusicPlayer() {
     },
   })
 
-  // Restore playlist on mount
-  useEffect(() => {
-    restorePlaylist().then(({ songs: restoredSongs, currentSong: current, settings }) => {
-      if (settings.equalizerBands) setEqualizerBands(settings.equalizerBands)
-      if (settings.eqPresets) setCustomEqPresets(settings.eqPresets)
-      setActiveEqPresetId(settings.activeEqPresetId)
-      if (settings.normalizationEnabled !== undefined) setNormalizationEnabledState(settings.normalizationEnabled)
-      if (settings.preampDb !== undefined) setPreampDbState(settings.preampDb)
-      if (settings.volume !== undefined) setVolume([settings.volume])
-      if (settings.shuffleMode !== undefined) setShuffleMode(settings.shuffleMode)
-      if (settings.viewMode) setViewMode(settings.viewMode)
-      if (settings.showEqualizer !== undefined) setShowEqualizer(settings.showEqualizer)
-
-      if (restoredSongs.length > 0) {
-        setSongs(restoredSongs)
-        if (current) {
-          setCurrentSong(current)
-          const source = songSource(current)
-          if (audioRef.current && source) {
-            const audioUrl = createMediaUrl(source)
-            setCurrentSong({ ...current, url: audioUrl })
-            audioRef.current.src = audioUrl
-            audioRef.current.load()
-          }
-        }
-      }
-    })
-  }, [])
-
   // Auto-save playlist data
   const persistenceData = useMemo(() => ({
     songs, currentSongId: currentSong?.id, equalizerBands,
@@ -300,7 +249,7 @@ export default function EnhancedMusicPlayer() {
   useAutoSave(persistenceData, isInitialized, isRestoringPlaylist, savePlaylist)
 
   const {
-    selectSong, handleSongSelect, startPlayback, togglePlayPause, skipToNext, skipToPrevious,
+    selectSong, handleSongSelect, playFromQueue, resumeSession, startPlayback, togglePlayPause, skipToNext, skipToPrevious,
     displaySong, isLoading: isLoadingSong, direction: changeDirection,
   } = usePlaybackController({
     audioRef,
@@ -311,6 +260,24 @@ export default function EnhancedMusicPlayer() {
     isFollowingRef,
     events: transportEvents,
   })
+
+  // Restore playlist on mount
+  useEffect(() => {
+    restorePlaylist().then(({ songs: restoredSongs, currentSong: current, savedSongId, settings }) => {
+      if (settings.equalizerBands) setEqualizerBands(settings.equalizerBands)
+      if (settings.eqPresets) setCustomEqPresets(settings.eqPresets)
+      setActiveEqPresetId(settings.activeEqPresetId)
+      if (settings.normalizationEnabled !== undefined) setNormalizationEnabledState(settings.normalizationEnabled)
+      if (settings.preampDb !== undefined) setPreampDbState(settings.preampDb)
+      if (settings.volume !== undefined) setVolume([settings.volume])
+      if (settings.shuffleMode !== undefined) setShuffleMode(settings.shuffleMode)
+      if (settings.viewMode) setViewMode(settings.viewMode)
+      if (settings.showEqualizer !== undefined) setShowEqualizer(settings.showEqualizer)
+
+      if (restoredSongs.length > 0) setSongs(restoredSongs)
+      resumeSession(current, savedSongId)
+    })
+  }, [])
 
   // --- Multi-device sync --------------------------------------------------
 
@@ -368,6 +335,18 @@ export default function EnhancedMusicPlayer() {
     if (isHosting) syncBroadcast()
   }, [seek, isHosting, syncBroadcast])
 
+  const now = useNowPlayer({
+    playlist,
+    displaySong,
+    isLoading: isLoadingSong,
+    isPlaying,
+    pause,
+    onSeek: handleSeek,
+    onSelect: handleSongSelect,
+    onPlayQueued: playFromQueue,
+    layout: "desktop",
+  })
+
   useMediaControls({
     currentSong, isPlaying, songs, audioRef,
     onPlayPause: togglePlayPause,
@@ -416,12 +395,6 @@ export default function EnhancedMusicPlayer() {
       AlbumArtCache.clearCache()
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps -- intentional: cleanup only on unmount
-
-  useEffect(() => {
-    if (activeView === "youtube" && isPlaying) {
-      pause();
-    }
-  }, [activeView, isPlaying, pause]);
 
   const handleOpenFullscreen = useCallback(() => {
     if (albumArtRef.current) {
@@ -558,220 +531,151 @@ export default function EnhancedMusicPlayer() {
           </div>
         </div>
         <div className="grid lg:grid-cols-2 gap-6 h-[calc(100vh-70px)] overflow-hidden">
-          <div className="flex flex-col gap-6 h-full overflow-hidden">
-            {activeView === "lyrics" ? (
-              <Suspense fallback={null}>
-                <LyricsDisplay
-                  isVisible={true}
-                  onClose={() => setActiveView("player")}
-                  currentSong={currentSong}
-                  forceRefresh={forceRefreshTrigger}
-                />
-              </Suspense>
-            ) : activeView === "youtube" ? (
-              <Suspense fallback={null}>
-                <YouTubeVideoPlayer
-                  currentSong={currentSong}
-                  isVisible={true}
-                  onClose={() => setActiveView("player")}
-                  className="h-full"
-                  forceRefresh={forceRefreshTrigger}
-                />
-              </Suspense>
-            ) : activeView === "insights" ? (
-              <Suspense fallback={null}>
-                <SongInsightsDisplay
-                  isVisible={true}
-                  onClose={() => setActiveView("player")}
-                  currentSong={currentSong}
-                />
-              </Suspense>
-            ) : activeView === "artist" ? (
-              <Suspense fallback={null}>
-                <ArtistInfoDisplay
-                  isVisible={true}
-                  onClose={() => setActiveView("player")}
-                  currentSong={currentSong}
-                />
-              </Suspense>
-            ) : (
-              <>
-                <div className="flex flex-col h-full px-6 pb-6 pt-2">
-
-                    {displaySong ? (
-                      <>
-                        {/* Album Art */}
-                        <div ref={albumArtRef} className="flex-1 min-h-0 min-w-0 flex items-center justify-center [container-type:size]">
-                          <div className="aspect-square h-[min(100cqw,100cqh)]">
-                            <AlbumArtDisplay
-                              songId={displaySong.id}
-                              albumArt={displaySong.albumArt}
-                              title={`${displaySong.title} album art`}
-                              isTransitioning={isLoadingSong}
-                              className="!w-full !h-full shadow-2xl shadow-black/30"
-                            />
-                          </div>
-                        </div>
-
-                        {/* Song info — left aligned, flows into controls */}
-                        <div className="flex-shrink-0 min-w-0 pt-4 pb-2">
-                          <h2 className="font-display text-2xl font-semibold leading-tight tracking-[-0.02em]">
-                            <RollingText text={displaySong.title || "Unknown title"} direction={changeDirection} />
-                          </h2>
-                          <p className="mt-1 text-base text-muted-foreground">
-                            <RollingText
-                              text={[displaySong.artist, displaySong.album].filter(Boolean).join(" \u2014 ")}
-                              direction={changeDirection}
-                            >
-                              {displaySong.artist && (
-                                <button
-                                  type="button"
-                                  onClick={() => showInLibrary(artistPage(displaySong))}
-                                  className={PAGE_LINK_CLASS}
-                                  title={`Go to ${displaySong.artist}`}
-                                >
-                                  {displaySong.artist}
-                                </button>
-                              )}
-                              {displaySong.artist && displaySong.album && " \u2014 "}
-                              {displaySong.album && (
-                                <button
-                                  type="button"
-                                  onClick={() => showInLibrary(albumPage(displaySong))}
-                                  className={PAGE_LINK_CLASS}
-                                  title={`Go to ${displaySong.album}`}
-                                >
-                                  {displaySong.album}
-                                </button>
-                              )}
-                            </RollingText>
-                          </p>
-                          <QualityLabel song={displaySong} withBitrate className="mt-2" />
-                        </div>
-                      </>
-                    ) : (
-                      <div className="flex-1" />
-                    )}
-
-                    {/* Controls — right after song info, not pushed to bottom */}
-                    <div className="flex-shrink-0 space-y-2">
-                      {/* While a pick loads, the bar already belongs to it: empty, at its length. */}
-                      <SeekBar
-                        duration={isLoadingSong ? (displaySong?.duration ?? 0) : duration}
-                        onSeek={handleSeek}
-                        isPlaying={isPlaying}
-                        disabled={isLoadingSong}
-                      />
-
-                      {/* Transport: shuffle, prev, play, next */}
-                      <div className="flex items-center justify-center gap-5">
-                        <TransportButton label="Shuffle" size="sm" pressed={shuffleMode} onClick={toggleShuffle}>
-                          <Shuffle className="h-4 w-4" />
-                        </TransportButton>
-                        <TransportButton label="Previous track" onClick={skipToPrevious} disabled={songs.length === 0}>
-                          <SkipIcon direction="back" />
-                        </TransportButton>
-                        <PlayButton
-                          isPlaying={isPlaying}
-                          isLoading={isLoadingSong}
-                          onClick={() => void togglePlayPause()}
-                          disabled={!displaySong}
-                        />
-                        <TransportButton label="Next track" onClick={skipToNext} disabled={songs.length === 0}>
-                          <SkipIcon direction="forward" />
-                        </TransportButton>
-                        {/* Balances the shuffle button so play sits at the centre. */}
-                        <div className="h-9 w-9" aria-hidden="true" />
-                      </div>
-
-                      {/* Secondary controls */}
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-1">
-                          <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={() => setShowEqualizer(true)} aria-label="Equalizer settings">
-                            <Settings className="w-3.5 h-3.5" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className={`h-8 w-8 p-0 ${syncConnected ? "text-primary" : ""}`}
-                            onClick={() => setShowSync(true)}
-                            aria-label="Play on two devices"
-                          >
-                            <MonitorSpeaker className="w-3.5 h-3.5" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className={`h-8 w-8 p-0 ${cloud.status === "ready" ? "text-primary" : ""}`}
-                            onClick={() => setShowCloud(true)}
-                            aria-label="Cloud library"
-                          >
-                            <Cloud className="w-3.5 h-3.5" />
-                          </Button>
-                          <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={() => setActiveView("lyrics")} disabled={!currentSong} aria-label="Show lyrics">
-                            <Mic className="w-3.5 h-3.5" />
-                          </Button>
-                          <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={() => setActiveView("youtube")} disabled={!currentSong} aria-label="Show video">
-                            <Youtube className="w-3.5 h-3.5" />
-                          </Button>
-                          <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={() => setActiveView("insights")} disabled={!currentSong} aria-label="Song insights">
-                            <Sparkles className="w-3.5 h-3.5" />
-                          </Button>
-                          <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={() => setActiveView("artist")} disabled={!currentSong} aria-label="Artist info">
-                            <User className="w-3.5 h-3.5" />
-                          </Button>
-                        </div>
-                        <div className="flex items-center gap-1">
-                          <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={toggleMute} aria-label={isMuted ? "Unmute" : "Mute"}>
-                            {isMuted ? <VolumeX className="w-3.5 h-3.5" /> : <Volume2 className="w-3.5 h-3.5" />}
-                          </Button>
-                          <Slider value={volume} max={100} step={1} onValueChange={changeVolume} className="w-20 [&_[role=slider]]:h-3.5 [&_[role=slider]]:w-3.5 [&_[role=slider]]:opacity-0 [&_[role=slider]]:transition-all [&_[role=slider]]:duration-200 [&_[role=slider]]:ease-out hover:[&_[role=slider]]:opacity-100 [&>span:first-child]:h-1" aria-label="Volume" />
-                          <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={handleOpenFullscreen} disabled={!currentSong} aria-label="Fullscreen">
-                            <Maximize2 className="w-3.5 h-3.5" />
-                          </Button>
-                        </div>
-                      </div>
-                    </div>
+          <div className="flex flex-col h-full overflow-hidden px-6 pb-6 pt-2">
+            {nowOpen ? (
+              <LazyNowPanel layout="column" tab={nowTab} onTabChange={setNowTab} {...now} />
+            ) : displaySong ? (
+              <div className="flex-1 min-h-0 min-w-0 flex items-center justify-center [container-type:size]">
+                <div ref={albumArtRef} className="aspect-square h-[min(100cqw,100cqh)]">
+                  <AlbumArtDisplay
+                    songId={displaySong.id}
+                    albumArt={displaySong.albumArt}
+                    title={`${displaySong.title} album art`}
+                    isTransitioning={isLoadingSong}
+                    className="!w-full !h-full shadow-2xl shadow-black/30"
+                  />
                 </div>
-                <Dialog open={showEqualizer} onOpenChange={setShowEqualizer}>
-                  <DialogContent>
-                    <DialogHeader>
-                      <DialogTitle>Equalizer</DialogTitle>
-                    </DialogHeader>
-                    <RefinedEqualizer
-                      bands={equalizerBands}
-                      onBandChange={handleBandChange}
-                      onReset={handleEqReset}
-                      preampDb={preampDb}
-                      onPreampChange={setPreampDbState}
-                      normalizationEnabled={normalizationEnabled}
-                      onNormalizationChange={setNormalizationEnabledState}
-                      presets={eqPresets}
-                      activePresetId={activeEqPresetId}
-                      onPresetSelect={handlePresetSelect}
-                      onPresetSave={handlePresetSave}
-                      onPresetDelete={handlePresetDelete}
-                    />
-                  </DialogContent>
-                </Dialog>
-                <Dialog open={showSync} onOpenChange={setShowSync}>
-                  <DialogContent>
-                    <DialogHeader>
-                      <DialogTitle>Two-device playback</DialogTitle>
-                    </DialogHeader>
-                    <SyncPanel sync={sync} />
-                  </DialogContent>
-                </Dialog>
-                <Dialog open={showCloud} onOpenChange={setShowCloud}>
-                  <DialogContent>
-                    <DialogHeader>
-                      <DialogTitle>Cloud library</DialogTitle>
-                    </DialogHeader>
-                    <CloudLibraryPanel cloud={cloud} songs={songs} />
-                  </DialogContent>
-                </Dialog>
-              </>
+              </div>
+            ) : (
+              <div className="flex-1" />
             )}
+
+            {displaySong && (
+              <div className="flex flex-shrink-0 items-center gap-4 min-w-0 pt-4 pb-2">
+                {/* With the panel open, the cover sits beside the title. */}
+                {nowOpen && (
+                  <div ref={albumArtRef} className="flex-shrink-0">
+                    <AlbumArtDisplay
+                      songId={displaySong.id}
+                      albumArt={displaySong.albumArt}
+                      thumbnail={displaySong.albumArtThumb}
+                      title={`${displaySong.title} album art`}
+                      size="medium"
+                      rounded="rounded-lg"
+                      isTransitioning={isLoadingSong}
+                    />
+                  </div>
+                )}
+                <div className="min-w-0 flex-1">
+                  <h2 className="font-display text-2xl font-semibold leading-tight tracking-[-0.02em]">
+                    <RollingText text={displaySong.title || "Unknown title"} direction={changeDirection} />
+                  </h2>
+                  <p className="mt-1 text-base text-muted-foreground">
+                    <RollingText
+                      text={[displaySong.artist, displaySong.album].filter(Boolean).join(" \u2014 ")}
+                      direction={changeDirection}
+                    >
+                      {displaySong.artist && (
+                        <button
+                          type="button"
+                          onClick={() => showInLibrary(artistPage(displaySong))}
+                          className={PAGE_LINK_CLASS}
+                          title={`Go to ${displaySong.artist}`}
+                        >
+                          {displaySong.artist}
+                        </button>
+                      )}
+                      {displaySong.artist && displaySong.album && " \u2014 "}
+                      {displaySong.album && (
+                        <button
+                          type="button"
+                          onClick={() => showInLibrary(albumPage(displaySong))}
+                          className={PAGE_LINK_CLASS}
+                          title={`Go to ${displaySong.album}`}
+                        >
+                          {displaySong.album}
+                        </button>
+                      )}
+                    </RollingText>
+                  </p>
+                  <QualityLabel song={displaySong} withBitrate className="mt-2" />
+                </div>
+              </div>
+            )}
+
+            <div className="flex-shrink-0 space-y-2">
+              {/* While a pick loads, the bar already belongs to it: empty, at its length. */}
+              <SeekBar
+                duration={isLoadingSong ? (displaySong?.duration ?? 0) : duration}
+                onSeek={handleSeek}
+                isPlaying={isPlaying}
+                disabled={isLoadingSong}
+              />
+
+              {/* Transport: shuffle, prev, play, next */}
+              <div className="flex items-center justify-center gap-5">
+                <TransportButton label="Shuffle" size="sm" pressed={shuffleMode} onClick={toggleShuffle}>
+                  <Shuffle className="h-4 w-4" />
+                </TransportButton>
+                <TransportButton label="Previous track" onClick={skipToPrevious} disabled={songs.length === 0}>
+                  <SkipIcon direction="back" />
+                </TransportButton>
+                <PlayButton
+                  isPlaying={isPlaying}
+                  isLoading={isLoadingSong}
+                  onClick={() => void togglePlayPause()}
+                  disabled={!displaySong}
+                />
+                <TransportButton label="Next track" onClick={skipToNext} disabled={songs.length === 0}>
+                  <SkipIcon direction="forward" />
+                </TransportButton>
+                {/* Balances the shuffle button so play sits at the centre. */}
+                <div className="h-9 w-9" aria-hidden="true" />
+              </div>
+
+              {/* Secondary controls */}
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1">
+                  <TransportButton label="Equalizer settings" size="xs" onClick={() => setShowEqualizer(true)}>
+                    <Settings className="h-4 w-4" />
+                  </TransportButton>
+                  <TransportButton
+                    label="Play on two devices"
+                    size="xs"
+                    className={syncConnected ? "text-primary" : undefined}
+                    onClick={() => setShowSync(true)}
+                  >
+                    <MonitorSpeaker className="h-4 w-4" />
+                  </TransportButton>
+                  <TransportButton
+                    label="Cloud library"
+                    size="xs"
+                    className={cloud.status === "ready" ? "text-primary" : undefined}
+                    onClick={() => setShowCloud(true)}
+                  >
+                    <Cloud className="h-4 w-4" />
+                  </TransportButton>
+                </div>
+                <div className="flex items-center gap-1">
+                  <TransportButton
+                    label="Now playing"
+                    title="Lyrics, queue, about and video"
+                    size="xs"
+                    pressed={nowOpen}
+                    onClick={() => setNowOpen((open) => !open)}
+                  >
+                    <ListMusic className="h-4 w-4" />
+                  </TransportButton>
+                  <TransportButton label={isMuted ? "Unmute" : "Mute"} size="xs" onClick={toggleMute}>
+                    {isMuted ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
+                  </TransportButton>
+                  <Slider value={volume} max={100} step={1} onValueChange={changeVolume} className="w-20 [&_[role=slider]]:h-3.5 [&_[role=slider]]:w-3.5 [&_[role=slider]]:opacity-0 [&_[role=slider]]:transition-all [&_[role=slider]]:duration-200 [&_[role=slider]]:ease-out hover:[&_[role=slider]]:opacity-100 [&>span:first-child]:h-1" aria-label="Volume" />
+                  <TransportButton label="Fullscreen" size="xs" onClick={handleOpenFullscreen} disabled={!currentSong}>
+                    <Maximize2 className="h-4 w-4" />
+                  </TransportButton>
+                </div>
+              </div>
+            </div>
           </div>
           <div className="h-full bg-transparent overflow-hidden">
             {sidebarMode === "online" ? (
@@ -799,6 +703,43 @@ export default function EnhancedMusicPlayer() {
           </div>
         </div>
       </div>
+      <Dialog open={showEqualizer} onOpenChange={setShowEqualizer}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Equalizer</DialogTitle>
+          </DialogHeader>
+          <RefinedEqualizer
+            bands={equalizerBands}
+            onBandChange={handleBandChange}
+            onReset={handleEqReset}
+            preampDb={preampDb}
+            onPreampChange={setPreampDbState}
+            normalizationEnabled={normalizationEnabled}
+            onNormalizationChange={setNormalizationEnabledState}
+            presets={eqPresets}
+            activePresetId={activeEqPresetId}
+            onPresetSelect={handlePresetSelect}
+            onPresetSave={handlePresetSave}
+            onPresetDelete={handlePresetDelete}
+          />
+        </DialogContent>
+      </Dialog>
+      <Dialog open={showSync} onOpenChange={setShowSync}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Two-device playback</DialogTitle>
+          </DialogHeader>
+          <SyncPanel sync={sync} />
+        </DialogContent>
+      </Dialog>
+      <Dialog open={showCloud} onOpenChange={setShowCloud}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Cloud library</DialogTitle>
+          </DialogHeader>
+          <CloudLibraryPanel cloud={cloud} songs={songs} />
+        </DialogContent>
+      </Dialog>
       <FullscreenPlayer
         isOpen={isFullscreen}
         onClose={() => setIsFullscreen(false)}
@@ -822,10 +763,7 @@ export default function EnhancedMusicPlayer() {
         onSongSelect={handleSongSelect}
         libraryActions={libraryActions}
         onShowEqualizer={() => setShowEqualizer(true)}
-        onShowLyrics={() => setActiveView("lyrics")}
-        onShowYoutube={() => setActiveView("youtube")}
-        onShowInsights={() => setActiveView("insights")}
-        onShowArtist={() => setActiveView("artist")}
+        now={now}
         albumArtSourceRect={albumArtSourceRect}
       />
       {draggingFiles && <DropOverlay busy={libraryBusy} />}

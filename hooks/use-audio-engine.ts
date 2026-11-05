@@ -903,22 +903,21 @@ export function useAudioEngine(options: UseAudioEngineOptions): UseAudioEngineRe
   }, [])
 
   /**
-   * Setup audio event listeners for time updates, metadata, and end events.
-   * Listens on BOTH audio elements — uses activeElementRef to filter events.
+   * Setup audio event listeners for time updates, metadata, end and pause
+   * events. Listens on BOTH audio elements; events from the idle one (a
+   * preload, or a track fading out) are not the player's and are ignored.
    */
   useEffect(() => {
     const primaryAudio = audioRef.current
     const secondaryAudio = secondaryAudioRef?.current
     if (!primaryAudio) return
 
+    const isActive = (audio: HTMLAudioElement) =>
+      activeElementRef.current === (audio === primaryAudio ? "primary" : "secondary")
+
     const handleTimeUpdate = (e: Event) => {
       const audio = e.target as HTMLAudioElement
-      const isPrimary = audio === primaryAudio
-      const isActive =
-        (isPrimary && activeElementRef.current === "primary") ||
-        (!isPrimary && activeElementRef.current === "secondary")
-
-      if (!isActive) return
+      if (!isActive(audio)) return
 
       const time = audio.currentTime
       setPlaybackTime(time)
@@ -956,12 +955,7 @@ export function useAudioEngine(options: UseAudioEngineOptions): UseAudioEngineRe
 
     const handleLoadedMetadata = (e: Event) => {
       const audio = e.target as HTMLAudioElement
-      const isPrimary = audio === primaryAudio
-      const isActive =
-        (isPrimary && activeElementRef.current === "primary") ||
-        (!isPrimary && activeElementRef.current === "secondary")
-
-      if (!isActive) return
+      if (!isActive(audio)) return
 
       const dur = audio.duration
       setDuration(dur)
@@ -970,12 +964,7 @@ export function useAudioEngine(options: UseAudioEngineOptions): UseAudioEngineRe
 
     const handleEnded = (e: Event) => {
       const audio = e.target as HTMLAudioElement
-      const isPrimary = audio === primaryAudio
-      const isActive =
-        (isPrimary && activeElementRef.current === "primary") ||
-        (!isPrimary && activeElementRef.current === "secondary")
-
-      if (!isActive) return
+      if (!isActive(audio)) return
 
       setIsPlaying(false)
       nearEndFiredRef.current = false
@@ -983,25 +972,30 @@ export function useAudioEngine(options: UseAudioEngineOptions): UseAudioEngineRe
       onEnded?.()
     }
 
-    primaryAudio.addEventListener("timeupdate", handleTimeUpdate)
-    primaryAudio.addEventListener("loadedmetadata", handleLoadedMetadata)
-    primaryAudio.addEventListener("ended", handleEnded)
+    // The player's own pauses set the state before the element stops. This
+    // follows the ones it did not make, such as a call coming in or headphones
+    // being unplugged, so the play button never shows a stopped song as
+    // playing. A song reaching its end pauses the element too; `ended` has that.
+    const handlePause = (e: Event) => {
+      const audio = e.target as HTMLAudioElement
+      if (!isActive(audio) || audio.ended) return
+      setIsPlaying(false)
+    }
 
-    if (secondaryAudio) {
-      secondaryAudio.addEventListener("timeupdate", handleTimeUpdate)
-      secondaryAudio.addEventListener("loadedmetadata", handleLoadedMetadata)
-      secondaryAudio.addEventListener("ended", handleEnded)
+    const listeners: [string, (e: Event) => void][] = [
+      ["timeupdate", handleTimeUpdate],
+      ["loadedmetadata", handleLoadedMetadata],
+      ["ended", handleEnded],
+      ["pause", handlePause],
+    ]
+    const elements = secondaryAudio ? [primaryAudio, secondaryAudio] : [primaryAudio]
+    for (const element of elements) {
+      for (const [type, listener] of listeners) element.addEventListener(type, listener)
     }
 
     return () => {
-      primaryAudio.removeEventListener("timeupdate", handleTimeUpdate)
-      primaryAudio.removeEventListener("loadedmetadata", handleLoadedMetadata)
-      primaryAudio.removeEventListener("ended", handleEnded)
-
-      if (secondaryAudio) {
-        secondaryAudio.removeEventListener("timeupdate", handleTimeUpdate)
-        secondaryAudio.removeEventListener("loadedmetadata", handleLoadedMetadata)
-        secondaryAudio.removeEventListener("ended", handleEnded)
+      for (const element of elements) {
+        for (const [type, listener] of listeners) element.removeEventListener(type, listener)
       }
     }
   }, [audioRef, secondaryAudioRef, onTimeUpdate, onDurationChange, onEnded, onNearEnd, onCrossfadeStart])

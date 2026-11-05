@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { Settings, Mic, Music, Volume2, VolumeX, Youtube, Sparkles, User } from "lucide-react"
+import { Info, ListMusic, Mic, Music, Settings, Volume2, VolumeX, Youtube, type LucideIcon } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Slider } from "@/components/ui/slider"
@@ -11,10 +11,19 @@ import { QualityLabel } from "@/components/player/quality-label"
 import { RollingText, type RollDirection } from "@/components/player/rolling-text"
 import { SeekBar } from "@/components/player/seek-bar"
 import { SkipIcon, TransportButton } from "@/components/player/transport-button"
+import type { NowTab } from "@/components/now/now-tabs"
 import type { QualitySource } from "@/lib/audio-quality"
 
 /** The volume slider tucks itself away after this long without a touch. */
 const VOLUME_IDLE_MS = 3000
+
+/** The bar's ways into the Now sheet, each opening it at its own tab. */
+const NOW_BUTTONS: { tab: NowTab; label: string; Icon: LucideIcon }[] = [
+  { tab: "lyrics", label: "Lyrics", Icon: Mic },
+  { tab: "queue", label: "Queue", Icon: ListMusic },
+  { tab: "about", label: "About this song", Icon: Info },
+  { tab: "video", label: "Video", Icon: Youtube },
+]
 
 interface Song extends QualitySource {
   id: string
@@ -41,10 +50,8 @@ interface MobilePlayerBarProps {
   onSkipNext: () => void
   onSeek: (seconds: number) => void
   onSettingsClick: () => void
-  onLyricsClick: () => void
-  onVideoClick: () => void
-  onInsightsClick?: () => void
-  onArtistClick?: () => void
+  /** Open the Now sheet at a tab. */
+  onOpenNow: (tab: NowTab) => void
 }
 
 export function MobilePlayerBar({
@@ -62,10 +69,7 @@ export function MobilePlayerBar({
   onSkipNext,
   onSeek,
   onSettingsClick,
-  onLyricsClick,
-  onVideoClick,
-  onInsightsClick,
-  onArtistClick,
+  onOpenNow,
 }: MobilePlayerBarProps) {
   const [showVolumeControl, setShowVolumeControl] = useState(false)
 
@@ -149,25 +153,11 @@ export function MobilePlayerBar({
               {isMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
             </Button>
 
-            <Button variant="ghost" size="icon" className="w-8 h-8" onClick={onLyricsClick} aria-label="Show lyrics">
-              <Mic className="w-4 h-4" />
-            </Button>
-
-            <Button variant="ghost" size="icon" className="w-8 h-8" onClick={onVideoClick} aria-label="Show video">
-              <Youtube className="w-4 h-4" />
-            </Button>
-
-            {onInsightsClick && (
-              <Button variant="ghost" size="icon" className="w-8 h-8" onClick={onInsightsClick} aria-label="Song insights">
-                <Sparkles className="w-4 h-4" />
+            {NOW_BUTTONS.map(({ tab, label, Icon }) => (
+              <Button key={tab} variant="ghost" size="icon" className="w-8 h-8" onClick={() => onOpenNow(tab)} aria-label={label}>
+                <Icon className="w-4 h-4" />
               </Button>
-            )}
-
-            {onArtistClick && (
-              <Button variant="ghost" size="icon" className="w-8 h-8" onClick={onArtistClick} aria-label="Artist info">
-                <User className="w-4 h-4" />
-              </Button>
-            )}
+            ))}
           </div>
 
           <Button variant="ghost" size="icon" className="w-8 h-8" onClick={onSettingsClick} aria-label="Equalizer settings">

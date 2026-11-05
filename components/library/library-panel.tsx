@@ -2,6 +2,7 @@
 
 import { useCallback, useLayoutEffect, useRef, type ComponentProps, type ReactNode } from "react"
 
+import { useInert } from "@/hooks/use-inert"
 import type { LibraryNavigation } from "@/hooks/use-library-navigation"
 import { pageKey, pageTitle, type LibraryPage } from "@/lib/library-pages"
 import { ImportProgress } from "./import-progress"
@@ -21,9 +22,7 @@ interface LibraryPanelProps extends Omit<ComponentProps<typeof LibraryList>, "on
  */
 function Layer({ covered, kind, children }: { covered: boolean; kind: "list" | "page"; children: ReactNode }) {
   const ref = useRef<HTMLDivElement>(null)
-  useLayoutEffect(() => {
-    ref.current?.toggleAttribute("inert", covered)
-  }, [covered])
+  useInert(ref, covered)
   return (
     <div ref={ref} className="library-layer" data-kind={kind} data-covered={covered || undefined} tabIndex={-1}>
       {children}

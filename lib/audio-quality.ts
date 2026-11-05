@@ -45,6 +45,11 @@ const LOSSY_FORMATS = new Set(["MP3", "AAC", "OGG", "OPUS"])
 const CD_CLASS_BIT_DEPTH = 16
 const CD_CLASS_MAX_SAMPLE_RATE = 48_000
 
+/** A bitrate the way the quality meter shows it, whatever its size: 2966 → "2,966 kbps". */
+export function formatKilobits(kbps: number): string {
+  return `${Math.round(kbps).toLocaleString("en-US")} kbps`
+}
+
 /** A sample rate in kHz without trailing zeros: 44100 → "44.1", 96000 → "96", 22050 → "22.05". */
 export function formatKilohertz(sampleRate: number): string {
   return String(Number((sampleRate / 1000).toFixed(3)))

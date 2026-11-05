@@ -1,51 +1,68 @@
 import { NextRequest, NextResponse } from "next/server"
 
+import type { SpotifyResult } from "@/lib/spotify-cache"
+
 const CLIENT_ID = process.env.SPOTIFY_CLIENT_ID || ""
 const CLIENT_SECRET = process.env.SPOTIFY_CLIENT_SECRET || ""
 const TOKEN_URL = "https://accounts.spotify.com/api/token"
 const API_BASE = "https://api.spotify.com/v1"
 
+/** Enough of Spotify's own explanation to show, without passing on a whole error page. */
+const MAX_REASON_LENGTH = 240
+
 // In-memory token cache
 let cachedToken: string | null = null
 let tokenExpiresAt = 0
 
-async function getAccessToken(): Promise<string | null> {
-  if (cachedToken && Date.now() < tokenExpiresAt) {
-    return cachedToken
-  }
+type SpotifyReply = { ok: true; data: any } | { ok: false; status: number; reason: string }
 
+/** Spotify's explanation of a refusal: the message in its JSON error, or the plain text it sent. */
+async function refusalReason(res: Response): Promise<string> {
+  const body = (await res.text()).trim()
+  let reason = body
   try {
-    const res = await fetch(TOKEN_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-        Authorization: `Basic ${Buffer.from(`${CLIENT_ID}:${CLIENT_SECRET}`).toString("base64")}`,
-      },
-      body: "grant_type=client_credentials",
-    })
-
-    if (!res.ok) {
-      console.error("Spotify token error:", res.status, await res.text())
-      return null
-    }
-
-    const data = await res.json()
-    cachedToken = data.access_token
-    // Refresh 60s before actual expiry
-    tokenExpiresAt = Date.now() + (data.expires_in - 60) * 1000
-    return cachedToken
-  } catch (error) {
-    console.error("Spotify token fetch error:", error)
-    return null
+    const parsed = JSON.parse(body)
+    reason = parsed?.error?.message ?? parsed?.error_description ?? parsed?.error ?? body
+  } catch {
+    // Not JSON: Spotify sends some refusals as plain text, which is the reason as it stands.
   }
+  return String(reason || `HTTP ${res.status}`).slice(0, MAX_REASON_LENGTH)
 }
 
-async function spotifyFetch(path: string, token: string) {
+async function getAccessToken(): Promise<SpotifyReply> {
+  if (cachedToken && Date.now() < tokenExpiresAt) {
+    return { ok: true, data: cachedToken }
+  }
+
+  const res = await fetch(TOKEN_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+      Authorization: `Basic ${Buffer.from(`${CLIENT_ID}:${CLIENT_SECRET}`).toString("base64")}`,
+    },
+    body: "grant_type=client_credentials",
+  })
+  if (!res.ok) return { ok: false, status: res.status, reason: await refusalReason(res) }
+
+  const data = await res.json()
+  cachedToken = data.access_token
+  // Refresh 60s before actual expiry
+  tokenExpiresAt = Date.now() + (data.expires_in - 60) * 1000
+  return { ok: true, data: cachedToken }
+}
+
+async function spotifyFetch(path: string, token: string): Promise<SpotifyReply> {
   const res = await fetch(`${API_BASE}${path}`, {
     headers: { Authorization: `Bearer ${token}` },
   })
-  if (!res.ok) return null
-  return res.json()
+  if (!res.ok) return { ok: false, status: res.status, reason: await refusalReason(res) }
+  return { ok: true, data: await res.json() }
+}
+
+/** Spotify could not be asked. Logged, because the listener only sees that artist info is missing. */
+function unavailable(step: string, reply: { status: number; reason: string }) {
+  console.error(`Spotify refused the ${step}:`, reply.status, reply.reason)
+  return NextResponse.json<SpotifyResult>({ found: false, unavailable: reply.reason })
 }
 
 export async function GET(request: NextRequest) {
@@ -57,46 +74,44 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "artist and title are required" }, { status: 400 })
   }
 
-  // Graceful fallback: no credentials configured
   if (!CLIENT_ID || !CLIENT_SECRET) {
-    return NextResponse.json({ found: false })
+    return NextResponse.json<SpotifyResult>({ found: false, unavailable: "Spotify isn't set up for this app." })
   }
 
   try {
-    const token = await getAccessToken()
-    if (!token) {
-      return NextResponse.json({ found: false })
-    }
+    const auth = await getAccessToken()
+    if (!auth.ok) return unavailable("sign-in", auth)
+    const token = auth.data as string
 
     // Search for the track — try structured query first, fall back to simple query
     const structuredQuery = encodeURIComponent(`track:${title} artist:${artist}`)
-    let searchData = await spotifyFetch(`/search?q=${structuredQuery}&type=track&limit=1`, token)
+    let search = await spotifyFetch(`/search?q=${structuredQuery}&type=track&limit=1`, token)
+    if (!search.ok) return unavailable("search", search)
 
-    // If structured search fails, try a simple query
-    if (!searchData?.tracks?.items?.length) {
+    if (!search.data?.tracks?.items?.length) {
       const simpleQuery = encodeURIComponent(`${artist} ${title}`)
-      searchData = await spotifyFetch(`/search?q=${simpleQuery}&type=track&limit=1`, token)
+      search = await spotifyFetch(`/search?q=${simpleQuery}&type=track&limit=1`, token)
+      if (!search.ok) return unavailable("search", search)
     }
 
-    if (!searchData?.tracks?.items?.length) {
-      return NextResponse.json({ found: false })
+    const track = search.data?.tracks?.items?.[0]
+    const artistId = track?.artists?.[0]?.id
+    if (!track || !artistId) {
+      return NextResponse.json<SpotifyResult>({ found: false })
     }
-
-    const track = searchData.tracks.items[0]
-    const artistId = track.artists?.[0]?.id
     const album = track.album
 
-    if (!artistId) {
-      return NextResponse.json({ found: false })
-    }
-
-    // Fetch artist details and related artists in parallel
-    const [artistData, relatedData] = await Promise.all([
+    // Related artists are closed to apps registered since November 2024, so
+    // their absence is normal and not worth a log line.
+    const [artistReply, relatedReply] = await Promise.all([
       spotifyFetch(`/artists/${artistId}`, token),
       spotifyFetch(`/artists/${artistId}/related-artists`, token),
     ])
+    if (!artistReply.ok) console.error("Spotify refused the artist:", artistReply.status, artistReply.reason)
+    const artistData = artistReply.ok ? artistReply.data : null
+    const relatedData = relatedReply.ok ? relatedReply.data : null
 
-    const response = {
+    const response: SpotifyResult = {
       found: true,
       track: {
         spotifyId: track.id,
@@ -139,6 +154,6 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(response)
   } catch (error) {
     console.error("Spotify API route error:", error)
-    return NextResponse.json({ found: false })
+    return NextResponse.json<SpotifyResult>({ found: false, unavailable: "Couldn't reach Spotify." })
   }
 }

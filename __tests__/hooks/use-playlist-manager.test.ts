@@ -465,5 +465,93 @@ describe('usePlaylistManager', () => {
       })
       expect(result.current.peekNextSong()?.id).toBe('3')
     })
+
+    it('carries on with the library from where it was once a queued song has played', () => {
+      const { result, songs } = withSongs()
+      act(() => result.current.addToQueue(songs[3]))
+
+      // Song 4 comes off the queue and plays.
+      act(() => result.current.notifySongSelected(songs[3], true))
+      act(() => result.current.setCurrentSong(songs[3]))
+
+      // Not 1, which follows 4 in the library: 2, which follows the song before the queue.
+      expect(result.current.peekNextSong()?.id).toBe('2')
+      expect(result.current.upNext.map((s) => s.id)).toEqual(['2', '3', '4'])
+    })
+
+    it('carries on from where it was after a queued song picked from the queue, too', () => {
+      const { result, songs } = withSongs()
+      act(() => {
+        result.current.addToQueue(songs[2])
+        result.current.addToQueue(songs[3])
+      })
+
+      // Song 4 picked out of the queue: it plays now and leaves the queue; 3 stays queued.
+      act(() => result.current.notifySongSelected(songs[3], false, true))
+      act(() => result.current.setCurrentSong(songs[3]))
+
+      expect(result.current.manualQueue.map((s) => s.id)).toEqual(['3'])
+      act(() => result.current.notifySongSelected(songs[2], true))
+      act(() => result.current.setCurrentSong(songs[2]))
+      // Then the library, from after 1, where it was before the queue.
+      expect(result.current.peekNextSong()?.id).toBe('2')
+    })
+
+    it('carries on from a queued song picked anywhere else, which is a pick like any other', () => {
+      const { result, songs } = withSongs()
+      act(() => result.current.addToQueue(songs[2]))
+
+      act(() => result.current.notifySongSelected(songs[2], false))
+      act(() => result.current.setCurrentSong(songs[2]))
+
+      expect(result.current.manualQueue).toEqual([])
+      expect(result.current.peekNextSong()?.id).toBe('4')
+    })
+
+    it('keeps the shuffle where it was while a queued song plays', () => {
+      const { result, songs } = withSongs()
+      act(() => result.current.toggleShuffle())
+      const due = result.current.peekNextSong()!
+      const queued = songs.find((s) => s.id !== due.id && s.id !== '1')!
+      act(() => result.current.addToQueue(queued))
+
+      act(() => result.current.notifySongSelected(queued, true))
+
+      expect(result.current.peekNextSong()?.id).toBe(due.id)
+      expect(result.current.upNext[0].id).toBe(due.id)
+    })
+
+    it('lists what follows the current song in the library, going round', () => {
+      const { result, songs } = withSongs()
+      act(() => result.current.notifySongSelected(songs[1], false))
+      act(() => result.current.setCurrentSong(songs[1]))
+
+      expect(result.current.upNext.map((s) => s.id)).toEqual(['3', '4', '1'])
+    })
+
+    it('lists the rest of the shuffle while shuffling', () => {
+      const { result } = withSongs()
+      act(() => result.current.toggleShuffle())
+
+      expect(result.current.upNext).toEqual(result.current.shuffledQueue)
+      act(() => result.current.notifySongSelected(result.current.shuffledQueue[0], true))
+      expect(result.current.upNext).toEqual(result.current.shuffledQueue.slice(1))
+    })
+
+    it('takes a song off the queue, and clears it', () => {
+      const { result, songs } = withSongs()
+      act(() => {
+        result.current.addToQueue(songs[1])
+        result.current.addToQueue(songs[2])
+        result.current.addToQueue(songs[3])
+      })
+
+      act(() => result.current.removeFromQueue('3'))
+      expect(result.current.manualQueue.map((s) => s.id)).toEqual(['2', '4'])
+
+      act(() => result.current.clearQueue())
+      expect(result.current.manualQueue).toEqual([])
+      expect(result.current.peekNextSong()?.id).toBe('2')
+    })
   })
 })

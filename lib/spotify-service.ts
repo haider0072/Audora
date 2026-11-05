@@ -3,6 +3,10 @@ import { SpotifyCache, type SpotifyResult } from './spotify-cache'
 export type { SpotifyResult, SpotifyTrackData, SpotifyAlbumData, SpotifyArtistData, SpotifyRelatedArtist } from './spotify-cache'
 
 export class SpotifyService {
+  /**
+   * What Spotify knows about a song and its artist. An answer is cached; a
+   * refusal is not, so artist info comes back as soon as Spotify does.
+   */
   static async getArtistInfo(artist: string, title: string): Promise<SpotifyResult> {
     const cached = SpotifyCache.getCachedResult(artist, title)
     if (cached) {
@@ -19,11 +23,11 @@ export class SpotifyService {
 
       const data: SpotifyResult = await response.json()
 
-      SpotifyCache.cacheResult(artist, title, data)
+      if (!data.unavailable) SpotifyCache.cacheResult(artist, title, data)
       return data
     } catch (error) {
       console.error('Error fetching Spotify info:', error)
-      return { found: false }
+      return { found: false, unavailable: "Couldn't reach Spotify." }
     }
   }
 

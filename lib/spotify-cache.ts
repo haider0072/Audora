@@ -36,6 +36,11 @@ export interface SpotifyRelatedArtist {
 
 export interface SpotifyResult {
   found: boolean
+  /**
+   * Why Spotify could not be asked, in its own words where it gave any: set
+   * when it refused or could not be reached, rather than searched and found nothing.
+   */
+  unavailable?: string
   track?: SpotifyTrackData
   album?: SpotifyAlbumData
   artist?: SpotifyArtistData
@@ -49,7 +54,14 @@ export interface SpotifyCacheEntry {
 }
 
 export class SpotifyCache {
-  private static readonly CACHE_KEY = 'music_player_spotify_cache'
+  private static readonly CACHE_KEY = 'music_player_spotify_cache_v2'
+  /**
+   * Results cached before refusals were told apart from "not found": a
+   * refusal was stored as not found, and would hide an artist for a week
+   * after Spotify starts answering again. Dropped on first use.
+   */
+  private static readonly LEGACY_CACHE_KEY = 'music_player_spotify_cache'
+  private static legacyDropped = false
   private static readonly CACHE_DURATION = 7 * 24 * 60 * 60 * 1000 // 7 days
   private static readonly MAX_CACHE_SIZE = 500
   private static readonly CLEANUP_THRESHOLD = 400
@@ -155,6 +167,10 @@ export class SpotifyCache {
 
   private static loadCache(): Record<string, SpotifyCacheEntry> {
     try {
+      if (!this.legacyDropped) {
+        localStorage.removeItem(this.LEGACY_CACHE_KEY)
+        this.legacyDropped = true
+      }
       const cached = localStorage.getItem(this.CACHE_KEY)
       return cached ? JSON.parse(cached) : {}
     } catch (error) {

@@ -22,7 +22,14 @@ export interface UsePlaylistManagerReturn {
   currentShuffleIndex: number
   playedSongs: Set<string>
   sortedSongs: Song[]
+  /** Songs queued with Play next or Add to queue, in the order they will play. */
   manualQueue: Song[]
+  /**
+   * What plays once the queue is done, in order: the rest of the shuffle, or
+   * the library onward from the last song it played. Sequential order goes
+   * round, so it holds every other song.
+   */
+  upNext: Song[]
 
   // Setters
   setSongs: React.Dispatch<React.SetStateAction<Song[]>>
@@ -44,13 +51,20 @@ export interface UsePlaylistManagerReturn {
    */
   peekNextSong: () => Song | null
   getPreviousSong: () => Song | null
-  notifySongSelected: (song: Song, isAutoAdvance: boolean) => void
+  /**
+   * A song started. `fromQueue` says it was played off the queue, which an
+   * advance is when the song was queued: the library's order and the shuffle
+   * then carry on from where they were once the queue is done.
+   */
+  notifySongSelected: (song: Song, isAutoAdvance: boolean, fromQueue?: boolean) => void
   toggleShuffle: () => void
   removeSong: (songId: string) => Promise<void>
   resetPlaylist: () => Promise<void>
   playNext: (song: Song) => void
   /** Queue a song after the ones already queued. */
   addToQueue: (song: Song) => void
+  removeFromQueue: (songId: string) => void
+  clearQueue: () => void
 }
 
 /** `song` with its list entry's stream info, or `song` itself when they already agree. */
@@ -85,6 +99,10 @@ export function usePlaylistManager(options: UsePlaylistManagerOptions = {}): Use
   const [currentShuffleIndex, setCurrentShuffleIndex] = useState(0)
   const [playedSongs, setPlayedSongs] = useState<Set<string>>(new Set())
   const [manualQueue, setManualQueue] = useState<Song[]>([])
+  // The last song played in the library's own order rather than off the
+  // queue. Queued songs are an interlude: once they are done, the library
+  // carries on from here, not from wherever the last queued song sits in it.
+  const [contextSong, setContextSong] = useState<Song | null>(null)
 
   // The current song is a copy of its list entry, taken when it was picked.
   // Stream info can reach the list later — read from an older song's file, or
@@ -202,13 +220,22 @@ export function usePlaylistManager(options: UsePlaylistManagerOptions = {}): Use
     }
 
     // Sequential mode
-    if (!currentSong) return currentPlaylist[0] || null
+    const anchor = contextSong ?? currentSong
+    if (!anchor) return currentPlaylist[0] || null
 
-    const currentIndex = currentPlaylist.findIndex((s) => s.id === currentSong.id)
+    const currentIndex = currentPlaylist.findIndex((s) => s.id === anchor.id)
     if (currentIndex === -1) return currentPlaylist[0] || null
 
     return currentPlaylist[(currentIndex + 1) % currentPlaylist.length]
-  }, [getCurrentPlaylist, shuffleMode, shuffledQueue, currentShuffleIndex, currentSong, manualQueue])
+  }, [getCurrentPlaylist, shuffleMode, shuffledQueue, currentShuffleIndex, contextSong, currentSong, manualQueue])
+
+  const upNext = useMemo(() => {
+    if (shuffleMode) return shuffledQueue.slice(currentShuffleIndex)
+    const anchor = contextSong ?? currentSong
+    const index = anchor ? sortedSongs.findIndex((s) => s.id === anchor.id) : -1
+    if (index === -1) return sortedSongs
+    return [...sortedSongs.slice(index + 1), ...sortedSongs.slice(0, index)]
+  }, [shuffleMode, shuffledQueue, currentShuffleIndex, contextSong, currentSong, sortedSongs])
 
   const getNextSong = useCallback((): Song | null => {
     const next = peekNextSong()
@@ -248,11 +275,12 @@ export function usePlaylistManager(options: UsePlaylistManagerOptions = {}): Use
     return currentPlaylist[currentIndex === 0 ? currentPlaylist.length - 1 : currentIndex - 1]
   }, [getCurrentPlaylist, shuffleMode, shuffledQueue, currentShuffleIndex, currentSong])
 
-  /**
-   * Notify the playlist manager that a song was selected (for shuffle index tracking)
-   * Call this from selectSong in the player component.
-   */
-  const notifySongSelected = useCallback((song: Song, isAutoAdvance: boolean) => {
+  const notifySongSelected = useCallback((song: Song, isAutoAdvance: boolean, fromQueue = isAutoAdvance) => {
+    // A song that played off the queue leaves the library's order and the
+    // shuffle where they were. Advancing the shuffle for it skipped the
+    // shuffled song that was due next.
+    const offQueue = fromQueue && manualQueue.some((s) => s.id === song.id)
+
     // Drop the song from manual queue if it matches (auto-advance from queue head,
     // or user clicked a queued song directly — either way it should leave the queue)
     setManualQueue((prev) => {
@@ -264,6 +292,13 @@ export function usePlaylistManager(options: UsePlaylistManagerOptions = {}): Use
       return next
     })
 
+    if (offQueue) {
+      // A song brought back on reload was never picked, so it is not the
+      // context yet. It becomes it when the queue takes over from it.
+      setContextSong((prev) => prev ?? currentSong)
+      return
+    }
+    setContextSong(song)
     if (!shuffleMode) return
 
     if (isAutoAdvance) {
@@ -273,7 +308,7 @@ export function usePlaylistManager(options: UsePlaylistManagerOptions = {}): Use
       if (songIndex !== -1) setCurrentShuffleIndex(songIndex + 1)
     }
     setPlayedSongs((prev) => new Set(prev).add(song.id))
-  }, [shuffleMode, shuffledQueue])
+  }, [shuffleMode, shuffledQueue, manualQueue, currentSong])
 
   /**
    * Insert a song at the front of the manual queue (LIFO).
@@ -295,6 +330,12 @@ export function usePlaylistManager(options: UsePlaylistManagerOptions = {}): Use
     setManualQueue((prev) => [...prev.filter((s) => s.id !== song.id), song])
     toast({ title: "Added to queue", description: song.title })
   }, [])
+
+  const removeFromQueue = useCallback((songId: string) => {
+    setManualQueue((prev) => prev.filter((s) => s.id !== songId))
+  }, [])
+
+  const clearQueue = useCallback(() => setManualQueue([]), [])
 
   /**
    * Remove a song from the playlist
@@ -353,6 +394,7 @@ export function usePlaylistManager(options: UsePlaylistManagerOptions = {}): Use
 
         // Drop from manual queue too
         setManualQueue((prevQ) => prevQ.filter((s) => s.id !== songId))
+        setContextSong((prevContext) => (prevContext?.id === songId ? null : prevContext))
 
         // Clear current song if it was removed
         if (currentSong?.id === songId) {
@@ -409,6 +451,7 @@ export function usePlaylistManager(options: UsePlaylistManagerOptions = {}): Use
     setCurrentShuffleIndex(0)
     setPlayedSongs(new Set())
     setManualQueue([])
+    setContextSong(null)
 
     onPlaylistReset?.()
     onPlaylistChange?.([])
@@ -425,6 +468,7 @@ export function usePlaylistManager(options: UsePlaylistManagerOptions = {}): Use
     playedSongs,
     sortedSongs,
     manualQueue,
+    upNext,
 
     // Setters
     setSongs,
@@ -447,5 +491,7 @@ export function usePlaylistManager(options: UsePlaylistManagerOptions = {}): Use
     resetPlaylist,
     playNext,
     addToQueue,
+    removeFromQueue,
+    clearQueue,
   }
 }
