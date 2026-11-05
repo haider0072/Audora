@@ -15,6 +15,14 @@ export function formatTime(time: number): string {
   return `${minutes}:${seconds.toString().padStart(2, "0")}`
 }
 
+/** A long stretch of music, such as an album or a whole library: "62h 13m", or "42 min" under an hour. */
+export function formatTotalDuration(seconds: number): string {
+  const h = Math.floor(seconds / 3600)
+  const m = Math.floor((seconds % 3600) / 60)
+  if (h > 0) return `${h}h ${m}m`
+  return `${m} min`
+}
+
 /**
  * Wait for an audio element to fire "canplay", with a timeout fallback.
  * Rejects on error or timeout to prevent infinite UI hang.

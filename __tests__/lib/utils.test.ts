@@ -1,4 +1,16 @@
-import { formatTime, waitForCanPlay } from '@/lib/utils'
+import { formatTime, formatTotalDuration, waitForCanPlay } from '@/lib/utils'
+
+describe('formatTotalDuration', () => {
+  it('gives hours and minutes for a long stretch', () => {
+    expect(formatTotalDuration(62 * 3600 + 13 * 60 + 59)).toBe('62h 13m')
+    expect(formatTotalDuration(3600)).toBe('1h 0m')
+  })
+
+  it('gives minutes under an hour', () => {
+    expect(formatTotalDuration(42 * 60 + 30)).toBe('42 min')
+    expect(formatTotalDuration(0)).toBe('0 min')
+  })
+})
 
 describe('formatTime', () => {
   it('formats zero seconds', () => {

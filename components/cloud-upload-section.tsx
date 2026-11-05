@@ -3,7 +3,7 @@
 import { useMemo, useRef, useState, useSyncExternalStore, type ChangeEvent } from "react"
 import { CloudUpload, FileAudio, FolderUp, RotateCcw, X } from "lucide-react"
 
-import type { Song } from "@/components/enhanced-playlist"
+import type { Song } from "@/lib/song"
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
 import { AUDIO_FILE_ACCEPT, isAudioFileName } from "@/lib/cloud/audio-files"

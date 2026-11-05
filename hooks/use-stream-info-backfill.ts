@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, type Dispatch, type SetStateAction } from "react"
 
-import type { Song } from "@/components/enhanced-playlist"
+import type { Song } from "@/lib/song"
 import { runBounded } from "@/lib/run-bounded"
 import { readStreamDetails, STREAM_INFO_FORMATS, type StreamDetails } from "@/lib/stream-info"
 

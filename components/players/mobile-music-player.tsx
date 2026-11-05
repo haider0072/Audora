@@ -15,11 +15,11 @@ import { useFileImporter } from "@/hooks/use-file-importer"
 import { usePlaylistPersistence, useAutoSave } from "@/hooks/use-playlist-persistence"
 import { useMediaControls } from "@/hooks/use-media-controls"
 import { useTidalSearch } from "@/hooks/use-tidal-search"
-import type { Song } from "@/components/enhanced-playlist"
 
 import { MobileHeader } from "@/components/mobile-header"
 import { MobilePlaylistControls } from "@/components/mobile-playlist-controls"
-import { MobilePlaylist } from "@/components/mobile-playlist"
+import { LibraryPanel } from "@/components/library/library-panel"
+import { rowPlayback } from "@/components/library/song-row"
 import { MobilePlayerBar } from "@/components/mobile-player-bar"
 import { MobileEqualizerSheet } from "@/components/mobile-equalizer-sheet"
 import { MobileLyricsDisplay } from "@/components/mobile-lyrics-display"
@@ -40,7 +40,7 @@ import { findTrackByKey, trackLabel, trackSyncKey } from "@/lib/sync/song-match"
 import { createMediaUrl, releaseMediaUrl, songSource } from "@/lib/media-source"
 
 import type { EqualizerBand } from "@/components/refined-equalizer"
-import { formatTime } from "@/lib/utils"
+import { formatTotalDuration } from "@/lib/utils"
 import { resetPlaybackTime } from "@/lib/playback-time-store"
 
 /** Auto-advance crossfade (song ends on its own). 0 = gapless, no overlap. */
@@ -106,8 +106,9 @@ export default function MobileMusicPlayer() {
     songs, setSongs, currentSong, setCurrentSong,
     shuffleMode, setShuffleMode, viewMode, setViewMode,
     sortedSongs, peekNextSong,
-    toggleShuffle, removeSong, resetPlaylist, playNext,
+    toggleShuffle, removeSong, resetPlaylist, playNext, addToQueue,
   } = playlist
+  const libraryActions = useMemo(() => ({ playNext, addToQueue, removeSong }), [playNext, addToQueue, removeSong])
 
   const {
     showEqualizer, setShowEqualizer,
@@ -195,99 +196,6 @@ export default function MobileMusicPlayer() {
   useStreamInfoBackfill(songs, setSongs)
   useCloudUploadSync(cloud.refresh)
   useWarmNextSong(currentSong?.id, isPlaying, peekNextSong)
-
-  // Filtered songs for search
-  const filteredSongs = useMemo(() => {
-    const songsToFilter = viewMode === "list" ? sortedSongs : songs
-
-    if (!searchQuery.trim()) return songsToFilter
-
-    const query = searchQuery.toLowerCase()
-    return songsToFilter.filter(
-      (song) =>
-        song.title?.toLowerCase().includes(query) ||
-        song.artist?.toLowerCase().includes(query) ||
-        song.album?.toLowerCase().includes(query) ||
-        song.genre?.toLowerCase().includes(query),
-    )
-  }, [songs, sortedSongs, searchQuery, viewMode])
-
-  // Grouped songs for grouped view
-  const groupedSongs = useMemo(() => {
-    if (viewMode === "list") return {}
-
-    const parseYear = (y?: string): number => {
-      if (!y) return Infinity
-      const match = y.match(/\d{4}/)
-      return match ? parseInt(match[0], 10) : Infinity
-    }
-    const parseTrack = (t?: string): number => {
-      if (!t) return Infinity
-      const n = parseInt(t, 10)
-      return Number.isNaN(n) ? Infinity : n
-    }
-
-    const grouped: { [artist: string]: { [album: string]: Song[] } } = {}
-    const artistKeyToDisplay = new Map<string, string>()
-    const albumKeyToDisplay = new Map<string, string>()
-    const albumYearByDisplayKey = new Map<string, number>()
-
-    filteredSongs.forEach((song) => {
-      const artistRaw = (song.artist || "Unknown Artist").trim()
-      const albumRaw = (song.album || "Unknown Album").trim()
-      const artistKey = artistRaw.toLowerCase()
-      const albumKey = `${artistKey}::${albumRaw.toLowerCase()}`
-
-      if (!artistKeyToDisplay.has(artistKey)) {
-        artistKeyToDisplay.set(artistKey, artistRaw)
-      }
-      if (!albumKeyToDisplay.has(albumKey)) {
-        albumKeyToDisplay.set(albumKey, albumRaw)
-      }
-      const artistDisplay = artistKeyToDisplay.get(artistKey)!
-      const albumDisplay = albumKeyToDisplay.get(albumKey)!
-      const displayPairKey = `${artistDisplay}::${albumDisplay}`
-
-      const songYear = parseYear(song.year)
-      const existingYear = albumYearByDisplayKey.get(displayPairKey)
-      if (existingYear === undefined || (existingYear === Infinity && songYear !== Infinity)) {
-        albumYearByDisplayKey.set(displayPairKey, songYear)
-      }
-
-      if (!grouped[artistDisplay]) {
-        grouped[artistDisplay] = {}
-      }
-      if (!grouped[artistDisplay][albumDisplay]) {
-        grouped[artistDisplay][albumDisplay] = []
-      }
-      grouped[artistDisplay][albumDisplay].push(song)
-    })
-
-    // Sort artists alphabetically; albums by year (oldest first, missing last); songs by track number
-    const sortedGrouped: { [artist: string]: { [album: string]: Song[] } } = {}
-    Object.keys(grouped)
-      .sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()))
-      .forEach((artist) => {
-        sortedGrouped[artist] = {}
-        Object.keys(grouped[artist])
-          .sort((a, b) => {
-            const yA = albumYearByDisplayKey.get(`${artist}::${a}`) ?? Infinity
-            const yB = albumYearByDisplayKey.get(`${artist}::${b}`) ?? Infinity
-            if (yA !== yB) return yA - yB
-            return a.toLowerCase().localeCompare(b.toLowerCase())
-          })
-          .forEach((album) => {
-            sortedGrouped[artist][album] = grouped[artist][album].sort((a, b) => {
-              const tA = parseTrack(a.trackNumber)
-              const tB = parseTrack(b.trackNumber)
-              if (tA !== tB) return tA - tB
-              return (a.title || "").localeCompare(b.title || "")
-            })
-          })
-      })
-
-    return sortedGrouped
-  }, [filteredSongs, viewMode])
 
   const totalDuration = useMemo(() => {
     return songs.reduce((total, song) => total + (song.duration || 0), 0)
@@ -478,7 +386,7 @@ export default function MobileMusicPlayer() {
           onViewModeChange={setViewMode}
           onPlaylistReset={resetPlaylist}
           songCount={songs.length}
-          totalDuration={formatTime(totalDuration)}
+          totalDuration={formatTotalDuration(totalDuration)}
           sidebarMode={sidebarMode}
           onSidebarModeChange={setSidebarMode}
           activeDownloadCount={tidalSearch.activeDownloadCount}
@@ -490,17 +398,17 @@ export default function MobileMusicPlayer() {
             <OnlineSearchSidebar dab={tidalSearch} />
           </div>
         ) : (
-          <MobilePlaylist
-            songs={songs}
-            filteredSongs={filteredSongs}
-            groupedSongs={groupedSongs}
-            currentSong={displaySong}
+          <LibraryPanel
+            layout="phone"
+            songs={sortedSongs}
             viewMode={viewMode}
-            onSongSelect={handleSongSelect}
-            onSongRemove={removeSong}
-            onSongPlayNext={playNext}
-            isLoading={isLoadingSongs || isRestoringPlaylist}
-            loadingProgress={loadingProgress}
+            query={searchQuery}
+            currentSongId={displaySong?.id}
+            playback={rowPlayback(isLoadingSong, isPlaying)}
+            loading={isLoadingSongs || isRestoringPlaylist}
+            importProgress={isLoadingSongs ? loadingProgress : null}
+            onSelect={handleSongSelect}
+            actions={libraryActions}
           />
         )}
 

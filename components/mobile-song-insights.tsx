@@ -7,7 +7,7 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { Badge } from "@/components/ui/badge"
 import { InsightsService } from "@/lib/insights-service"
 import { Loader2, Sparkles, X, RefreshCw, BookOpen, Brain, Lightbulb, AlertCircle } from "lucide-react"
-import type { Song } from "@/components/enhanced-playlist"
+import type { Song } from "@/lib/song"
 
 interface MobileSongInsightsProps {
   isOpen: boolean

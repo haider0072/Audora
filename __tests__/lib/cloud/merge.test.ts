@@ -1,4 +1,4 @@
-import type { Song } from "@/components/enhanced-playlist"
+import type { Song } from "@/lib/song"
 import { isCloudOnlySong, mergeCloudLibrary } from "@/lib/cloud/merge"
 import type { CloudSong } from "@/lib/cloud/types"
 
@@ -42,6 +42,22 @@ describe("mergeCloudLibrary", () => {
     expect(merged[0].file).toBe(local.file)
     expect(merged[0].cloud?.key).toBe("library/a.flac")
     expect(isCloudOnlySong(merged[0])).toBe(false)
+  })
+
+  it("gives a local song back the track number its cloud copy has", () => {
+    const local = localSong("a.flac", 10)
+    const [merged] = mergeCloudLibrary([local], [cloudSong("a.flac", 10, { trackNumber: "7" })])
+    expect(merged.trackNumber).toBe("7")
+
+    // Once it has one, it keeps its own and the list stays as it is.
+    const again = mergeCloudLibrary([merged], [cloudSong("a.flac", 10, { trackNumber: "8" })])
+    expect(again[0]).toBe(merged)
+  })
+
+  it("keeps a local song's own track number over its cloud copy's", () => {
+    const local = { ...localSong("a.flac", 10), trackNumber: "3" }
+    const [merged] = mergeCloudLibrary([local], [cloudSong("a.flac", 10, { trackNumber: "7" })])
+    expect(merged.trackNumber).toBe("3")
   })
 
   it("matches regardless of case and Unicode composition", () => {

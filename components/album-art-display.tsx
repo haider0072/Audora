@@ -15,8 +15,8 @@ interface AlbumArtDisplayProps {
   songId?: string
   albumArt?: string
   /**
-   * A smaller rendition of the same cover, drawn instead of `albumArt` at the
-   * small and medium sizes. Cloud songs have one; a list row then fetches a
+   * A smaller rendition of the same cover, drawn instead of `albumArt` at
+   * every size but large. Cloud songs have one; a list row then fetches a
    * few kilobytes rather than the full cover.
    */
   thumbnail?: string
@@ -24,7 +24,8 @@ interface AlbumArtDisplayProps {
   isTransitioning?: boolean
   className?: string
   style?: React.CSSProperties
-  size?: "small" | "medium" | "large"
+  /** `row` is a library row's thumbnail. */
+  size?: "row" | "small" | "medium" | "large"
   showFallback?: boolean
   /** Corner rounding, so a caller with its own clip can match it. */
   rounded?: string
@@ -84,6 +85,7 @@ export function AlbumArtDisplay({
   }, [])
 
   const sizeClasses = {
+    row: "w-10 h-10",
     small: "w-12 h-12",
     medium: "w-16 h-16",
     large: "w-48 h-48",

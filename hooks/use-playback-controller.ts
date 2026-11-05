@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react"
 
-import type { Song } from "@/components/enhanced-playlist"
+import type { Song } from "@/lib/song"
 import type { RollDirection } from "@/components/player/rolling-text"
 import type { useAudioEngine } from "@/hooks/use-audio-engine"
 import type { usePlaylistManager } from "@/hooks/use-playlist-manager"

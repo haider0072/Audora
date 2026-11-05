@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { InsightsService, type InsightsResult } from "@/lib/insights-service"
 import { Loader2, Sparkles, X, RefreshCw, BookOpen, Brain, Lightbulb, AlertCircle } from "lucide-react"
-import type { Song } from "./enhanced-playlist"
+import type { Song } from "@/lib/song"
 
 interface SongInsightsDisplayProps {
   isVisible: boolean

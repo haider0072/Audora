@@ -4,7 +4,7 @@ import { MetadataExtractor } from "@/lib/metadata-extractor"
 import { PlaylistStorage } from "@/lib/playlist-storage"
 import { storedArtRef } from "@/lib/album-art-ref"
 import { StorageFullError } from "@/lib/storage-quota"
-import type { Song } from "@/components/enhanced-playlist"
+import type { Song } from "@/lib/song"
 
 export interface UseFileImporterOptions {
   songs: Song[]

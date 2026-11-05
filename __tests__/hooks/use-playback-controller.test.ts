@@ -1,7 +1,7 @@
 import { act, renderHook } from "@testing-library/react"
 import { useState } from "react"
 
-import type { Song } from "@/components/enhanced-playlist"
+import type { Song } from "@/lib/song"
 import { usePlaybackController, useTransportEvents } from "@/hooks/use-playback-controller"
 import { toast } from "@/hooks/use-toast"
 import { waitForCanPlay } from "@/lib/utils"

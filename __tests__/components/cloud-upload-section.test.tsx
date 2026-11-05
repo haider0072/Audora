@@ -2,7 +2,7 @@ import '@testing-library/jest-dom'
 import { fireEvent, render, screen } from '@testing-library/react'
 
 import { CloudUploadSection } from '@/components/cloud-upload-section'
-import type { Song } from '@/components/enhanced-playlist'
+import type { Song } from '@/lib/song'
 import { cloudUploads, type UploadSnapshot } from '@/lib/cloud/upload-queue'
 import { trackSyncKey } from '@/lib/sync/song-match'
 
