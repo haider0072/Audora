@@ -83,12 +83,9 @@ export function AlbumArtBackground({ albumArt, songId, isTransitioning = false, 
     ? { bg: "-z-30", color: "-z-20", texture: "-z-10", dark: "-z-10", fallback: "-z-20" }
     : { bg: "", color: "", texture: "", dark: "", fallback: "" }
 
-  if (!isMounted) {
-    return <div className={`${pos} inset-0 bg-gradient-to-br from-gray-900 via-gray-900/95 to-black ${z.fallback}`} />
-  }
-
-  if (!backgroundImage) {
-    return <div className={`${pos} inset-0 bg-gradient-to-br from-gray-900 via-gray-900/95 to-black ${z.fallback}`} />
+  // Shown before mount and when the song has no art: plain ink, dark in both themes.
+  if (!isMounted || !backgroundImage) {
+    return <div className={`${pos} inset-0 bg-gradient-to-br from-ink-2 via-ink-2/95 to-ink-0 ${z.fallback}`} />
   }
 
   return (

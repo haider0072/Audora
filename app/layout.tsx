@@ -1,12 +1,16 @@
 import type React from "react"
-import type { Metadata } from "next"
-import { Inter } from "next/font/google"
+import type { Metadata, Viewport } from "next"
+import { Bricolage_Grotesque, Instrument_Sans, Martian_Mono } from "next/font/google"
 import "./globals.css"
 import { ThemeProvider } from "@/components/theme-provider"
 import { Toaster } from "@/components/ui/toaster"
 import { ErrorBoundary } from "@/components/error-boundary"
 
-const inter = Inter({ subsets: ["latin"] })
+// Self-hosted by next/font, so the CSP's font-src 'self' covers them.
+const uiFont = Instrument_Sans({ subsets: ["latin"], variable: "--font-ui" })
+const displayFont = Bricolage_Grotesque({ subsets: ["latin"], variable: "--font-display" })
+// Data text (sizes, codes, values) is never on screen at first paint, so it isn't preloaded.
+const dataFont = Martian_Mono({ subsets: ["latin"], variable: "--font-data", preload: false })
 
 export const metadata: Metadata = {
   title: "Audora Music Player",
@@ -30,11 +34,16 @@ export const metadata: Metadata = {
   },
 }
 
-export const viewport = {
+export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
   maximumScale: 1,
   userScalable: false,
+  // The browser chrome matches --background in each theme.
+  themeColor: [
+    { media: '(prefers-color-scheme: light)', color: '#f4f2ee' },
+    { media: '(prefers-color-scheme: dark)', color: '#0b0b0a' },
+  ],
 }
 
 export default function RootLayout({
@@ -43,12 +52,15 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html
+      lang="en"
+      suppressHydrationWarning
+      className={`${uiFont.variable} ${displayFont.variable} ${dataFont.variable}`}
+    >
       <head>
-        <meta name="theme-color" content="#000000" />
         <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
       </head>
-      <body className={inter.className}>
+      <body className="font-sans">
         <ErrorBoundary>
           <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
             {children}

@@ -1,7 +1,9 @@
 "use client"
+import Image from "next/image"
+import { Wordmark } from "@/components/brand/wordmark"
 import { Button } from "@/components/ui/button"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
-import { Music, Plus, FolderOpen, Upload, MonitorSpeaker, Cloud } from "lucide-react"
+import { Plus, FolderOpen, Upload, MonitorSpeaker, Cloud } from "lucide-react"
 import { ThemeToggle } from "./theme-toggle"
 
 interface MobileHeaderProps {
@@ -30,10 +32,12 @@ export function MobileHeader({
   return (
     <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <div className="container flex h-14 items-center justify-between px-4">
-        {/* Logo and Title */}
+        {/* Logo and name */}
         <div className="flex items-center gap-2">
-          <Music className="w-6 h-6" />
-          <h1 className="text-lg font-bold truncate">Music Player</h1>
+          <Image src="/icon-192x192.png" alt="" width={28} height={28} className="rounded-md" />
+          <h1 className="text-xl">
+            <Wordmark />
+          </h1>
         </div>
 
         {/* Actions */}

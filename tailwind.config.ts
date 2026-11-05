@@ -12,7 +12,29 @@ const config: Config = {
   ],
   theme: {
   	extend: {
+  		fontFamily: {
+  			sans: ['var(--font-ui)', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+  			display: ['var(--font-display)', 'var(--font-ui)', 'ui-sans-serif', 'sans-serif'],
+  			mono: ['var(--font-data)', 'ui-monospace', 'SFMono-Regular', 'Menlo', 'monospace']
+  		},
   		colors: {
+  			blood: {
+  				'300': 'hsl(var(--blood-300))',
+  				'400': 'hsl(var(--blood-400))',
+  				'500': 'hsl(var(--blood-500))',
+  				'600': 'hsl(var(--blood-600))',
+  				'700': 'hsl(var(--blood-700))',
+  				'800': 'hsl(var(--blood-800))',
+  				'900': 'hsl(var(--blood-900))',
+  				'950': 'hsl(var(--blood-950))'
+  			},
+  			ink: {
+  				'0': 'hsl(var(--ink-0))',
+  				'1': 'hsl(var(--ink-1))',
+  				'2': 'hsl(var(--ink-2))',
+  				'3': 'hsl(var(--ink-3))',
+  				'4': 'hsl(var(--ink-4))'
+  			},
   			background: 'hsl(var(--background))',
   			foreground: 'hsl(var(--foreground))',
   			card: {
@@ -68,6 +90,19 @@ const config: Config = {
   			lg: 'var(--radius)',
   			md: 'calc(var(--radius) - 2px)',
   			sm: 'calc(var(--radius) - 4px)'
+  		},
+  		transitionDuration: {
+  			attack: 'var(--motion-attack)',
+  			decay: 'var(--motion-decay)',
+  			release: 'var(--motion-release)',
+  			swell: 'var(--motion-swell)'
+  		},
+  		transitionTimingFunction: {
+  			attack: 'var(--ease-attack)',
+  			decay: 'var(--ease-decay)',
+  			release: 'var(--ease-release)',
+  			swell: 'var(--ease-swell)',
+  			pluck: 'var(--ease-pluck)'
   		},
   		keyframes: {
   			'accordion-down': {

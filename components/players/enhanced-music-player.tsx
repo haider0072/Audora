@@ -16,6 +16,7 @@ import {
 } from "lucide-react"
 
 import Image from "next/image"
+import { Wordmark } from "@/components/brand/wordmark"
 import { EnhancedPlaylist, type Song, type PlaylistScrollTarget } from "@/components/enhanced-playlist"
 import { RefinedEqualizer, type EqualizerBand } from "@/components/refined-equalizer"
 import { AlbumArtBackground } from "@/components/album-art-background"
@@ -687,6 +688,8 @@ export default function EnhancedMusicPlayer() {
           {/* Left: Logo */}
           <div className="flex items-center gap-3">
             <Image src="/icon-192x192.png" alt="Audora" width={32} height={32} className="rounded-lg" />
+            {/* Below 1280 px the centred search pill leaves no room beside the icon. */}
+            <Wordmark aria-hidden="true" className="hidden text-2xl text-white xl:inline" />
             {isRestoringPlaylist && <Badge variant="secondary">Restoring...</Badge>}
           </div>
 
