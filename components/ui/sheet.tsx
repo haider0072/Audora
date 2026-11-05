@@ -46,6 +46,17 @@ const SheetContent = React.forwardRef<React.ElementRef<typeof SheetPrimitive.Con
 )
 SheetContent.displayName = SheetPrimitive.Content.displayName
 
+/**
+ * For a sheet's `onOpenAutoFocus`: open with focus on the sheet itself rather
+ * than on its first control, for a sheet that holds many, so none of them
+ * looks picked before it is touched. Tab still starts at the first.
+ */
+function focusSheetOnOpen(event: Event) {
+  if (!(event.currentTarget instanceof HTMLElement)) return
+  event.preventDefault()
+  event.currentTarget.focus()
+}
+
 const SheetHeader = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
   <div className={cn("surface-head", className)} {...props} />
 )
@@ -83,4 +94,5 @@ export {
   SheetFooter,
   SheetTitle,
   SheetDescription,
+  focusSheetOnOpen,
 }

@@ -6,7 +6,14 @@ import { Settings } from "lucide-react"
 import { toast } from "@/hooks/use-toast"
 import { ToastAction } from "@/components/ui/toast"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet"
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+  focusSheetOnOpen,
+} from "@/components/ui/sheet"
 import { AddMusicMenu } from "@/components/desktop/add-music-menu"
 import { DesktopHeader } from "@/components/desktop/desktop-header"
 import { CloudButton, DownloadsButton } from "@/components/desktop/header-status"
@@ -641,7 +648,12 @@ export default function EnhancedMusicPlayer() {
       </main>
       {/* The sheet and the dialogs are portalled out of the player, so each carries the song's colours itself. */}
       <Sheet open={showEqualizer} onOpenChange={setShowEqualizer}>
-        <SheetContent className="song-scope" style={songColors} onCloseAutoFocus={returnFocus.onCloseAutoFocus}>
+        <SheetContent
+          className="song-scope"
+          style={songColors}
+          onOpenAutoFocus={focusSheetOnOpen}
+          onCloseAutoFocus={returnFocus.onCloseAutoFocus}
+        >
           <SheetHeader>
             <SheetTitle>Sound</SheetTitle>
             <SheetDescription>The equalizer, its preamp, and loudness normalization.</SheetDescription>
