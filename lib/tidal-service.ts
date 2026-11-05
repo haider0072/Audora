@@ -100,28 +100,25 @@ export class TidalService {
     })
   }
 
-  // Album detail
+  // Album detail: null when the store has no such album, which is an answer;
+  // a request that fails throws, so the caller can offer to try again.
   static async getAlbum(albumId: string): Promise<TidalAlbum | null> {
     const cached = TidalCache.getCachedAlbum(albumId)
     if (cached) return cached
 
     return this.enqueue(async () => {
-      try {
-        const res = await fetch(`/api/tidal/album?albumId=${albumId}`)
-        if (!res.ok) return null
+      const res = await fetch(`/api/tidal/album?albumId=${encodeURIComponent(albumId)}`)
+      if (res.status === 404) return null
+      if (!res.ok) throw new Error(`Album request failed: ${res.status}`)
 
-        const data = await res.json()
-        const album: TidalAlbum | null = data.album || null
-        if (album) TidalCache.cacheAlbum(albumId, album)
-        return album
-      } catch (error) {
-        console.error("Tidal album error:", error)
-        return null
-      }
+      const data = await res.json()
+      const album: TidalAlbum | null = data.album || null
+      if (album) TidalCache.cacheAlbum(albumId, album)
+      return album
     })
   }
 
-  // Discography
+  // Discography, the same way
   static async getDiscography(
     artistId: string
   ): Promise<TidalDiscographyResult | null> {
@@ -129,21 +126,17 @@ export class TidalService {
     if (cached) return cached
 
     return this.enqueue(async () => {
-      try {
-        const res = await fetch(`/api/tidal/discography?artistId=${artistId}`)
-        if (!res.ok) return null
+      const res = await fetch(`/api/tidal/discography?artistId=${encodeURIComponent(artistId)}`)
+      if (res.status === 404) return null
+      if (!res.ok) throw new Error(`Discography request failed: ${res.status}`)
 
-        const data = await res.json()
-        const result: TidalDiscographyResult | null =
-          data.artist && data.albums
-            ? { artist: data.artist, albums: data.albums }
-            : null
-        if (result) TidalCache.cacheDiscography(artistId, result)
-        return result
-      } catch (error) {
-        console.error("Tidal discography error:", error)
-        return null
-      }
+      const data = await res.json()
+      const result: TidalDiscographyResult | null =
+        data.artist && data.albums
+          ? { artist: data.artist, albums: data.albums }
+          : null
+      if (result) TidalCache.cacheDiscography(artistId, result)
+      return result
     })
   }
 

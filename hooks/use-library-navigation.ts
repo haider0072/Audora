@@ -11,8 +11,12 @@ export interface LibraryNavigation {
   stack: readonly LibraryPage[]
   /** Open a page from inside the library, going back to it if it is already open. */
   open: (page: LibraryPage) => void
-  /** Show a page asked for from elsewhere in the player: just it, over the list. */
-  show: (page: LibraryPage) => void
+  /**
+   * Show a page asked for from elsewhere in the player: just it, over the
+   * list. `query` is the search it opens under, for a page asked for in the
+   * same moment as the search changes: otherwise the change would close it.
+   */
+  show: (page: LibraryPage, query?: string) => void
   back: () => void
 }
 
@@ -44,7 +48,10 @@ export function useLibraryNavigation(songs: readonly Song[], query = ""): Librar
       startTransition(() => setPages((current) => ({ query, stack: openPage(current.stack, page) }))),
     [query],
   )
-  const show = useCallback((page: LibraryPage) => startTransition(() => setPages({ query, stack: [page] })), [query])
+  const show = useCallback(
+    (page: LibraryPage, under: string = query) => startTransition(() => setPages({ query: under, stack: [page] })),
+    [query],
+  )
   const back = useCallback(
     () => startTransition(() => setPages((current) => ({ ...current, stack: current.stack.slice(0, -1) }))),
     [],

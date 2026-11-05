@@ -69,3 +69,10 @@ export interface DownloadState {
   totalBytes: number
   error?: string
 }
+
+/** A download still under way: waiting its turn, coming down, or being finished. */
+export type ActiveDownload = DownloadState & { status: "queued" | "downloading" | "processing" }
+
+export function isDownloadActive(download: DownloadState): download is ActiveDownload {
+  return download.status === "queued" || download.status === "downloading" || download.status === "processing"
+}

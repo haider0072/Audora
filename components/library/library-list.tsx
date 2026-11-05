@@ -18,13 +18,13 @@ import {
 } from "@/lib/library-rows"
 import { EmptyLibrary, NoMatches } from "./library-empty"
 import { AlbumHeader, ArtistHeader } from "./library-headers"
-import { SongRow, type LibraryLayout, type RowPlayback } from "./song-row"
+import { SONG_ROW_HEIGHT, SongRow, type LibraryLayout, type RowPlayback } from "./song-row"
 import { useRowActions, type LibraryActions } from "./use-row-actions"
 
 /** Each kind of row's height in pixels. Where every row sits follows from these. */
 const ROW_HEIGHTS: Record<LibraryLayout, Record<LibraryRowKind, number>> = {
-  desktop: { artist: 52, album: 32, song: 56 },
-  phone: { artist: 48, album: 30, song: 56 },
+  desktop: { artist: 56, album: 32, song: SONG_ROW_HEIGHT.desktop },
+  phone: { artist: 48, album: 30, song: SONG_ROW_HEIGHT.phone },
 }
 
 /** Rows kept rendered past each edge of the viewport, so a quick scroll does not outrun them. */
@@ -51,6 +51,8 @@ interface LibraryListProps {
   onOpen: (page: LibraryPage) => void
   /** Offered by an empty library. */
   emptyAction?: StatusAction
+  /** Offered by a search that matched nothing, such as looking further afield. */
+  noMatchesAction?: StatusAction
 }
 
 /** What the list last showed, so a change of view can keep the reader's place. */
@@ -89,6 +91,7 @@ export function LibraryList({
   actions,
   onOpen,
   emptyAction,
+  noMatchesAction,
 }: LibraryListProps) {
   const [viewport, setViewport] = useState<HTMLDivElement | null>(null)
 
@@ -196,7 +199,7 @@ export function LibraryList({
       </div>
     )
   } else if (songs.length > 0) {
-    body = <NoMatches query={query} />
+    body = <NoMatches query={query} action={noMatchesAction} />
   } else if (!loading) {
     body = <EmptyLibrary layout={layout} action={emptyAction} />
   }

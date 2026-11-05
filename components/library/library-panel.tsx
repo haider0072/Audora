@@ -2,7 +2,7 @@
 
 import { useCallback, useLayoutEffect, useRef, type ComponentProps, type ReactNode } from "react"
 
-import { useInert } from "@/hooks/use-inert"
+import { StackLayer } from "@/components/stack-layer"
 import type { LibraryNavigation } from "@/hooks/use-library-navigation"
 import { pageKey, pageTitle, type LibraryPage } from "@/lib/library-pages"
 import { ImportProgress } from "./import-progress"
@@ -15,18 +15,12 @@ interface LibraryPanelProps extends Omit<ComponentProps<typeof LibraryList>, "on
   navigation: LibraryNavigation
 }
 
-/**
- * One layer of the panel: the list, or a page. A covered layer stays mounted,
- * so its scroll survives, but is hidden and inert: out of reach of the
- * pointer, the keyboard and assistive technology alike.
- */
+/** One layer of the panel: the list, or a page. Focused only when Back has nothing better to focus. */
 function Layer({ covered, kind, children }: { covered: boolean; kind: "list" | "page"; children: ReactNode }) {
-  const ref = useRef<HTMLDivElement>(null)
-  useInert(ref, covered)
   return (
-    <div ref={ref} className="library-layer" data-kind={kind} data-covered={covered || undefined} tabIndex={-1}>
+    <StackLayer covered={covered} className="library-layer" data-kind={kind} tabIndex={-1}>
       {children}
-    </div>
+    </StackLayer>
   )
 }
 

@@ -1,55 +1,48 @@
 "use client"
 
-import { memo } from "react"
-import { Download, Loader2 } from "lucide-react"
-import type { DownloadState } from "@/lib/tidal-types"
+import { memo, type CSSProperties } from "react"
 
-interface DownloadQueueBarProps {
-  downloads: Map<string, DownloadState>
+import { BusyArc } from "@/components/busy-arc"
+import { isDownloadActive, type ActiveDownload, type DownloadState } from "@/lib/tidal-types"
+import { formatCount } from "@/lib/utils"
+
+const VERBS: Record<ActiveDownload["status"], string> = {
+  queued: "Waiting to download",
+  downloading: "Downloading",
+  processing: "Finishing",
 }
 
-export const DownloadQueueBar = memo(function DownloadQueueBar({
-  downloads,
-}: DownloadQueueBarProps) {
-  const active = Array.from(downloads.values()).filter(
-    (d) => d.status === "downloading" || d.status === "queued" || d.status === "processing"
-  )
+function percentOf(download: ActiveDownload): number {
+  if (download.status === "processing") return 100
+  return download.status === "downloading" ? download.progress : 0
+}
 
+/**
+ * Downloads under way, at the foot of the online search: the song coming
+ * down, how far it has come as a line of the song's colour along the top,
+ * and how many more wait their turn. Gone once nothing is downloading.
+ * Styled by `.online-strip`.
+ */
+export const DownloadQueueBar = memo(function DownloadQueueBar({ downloads }: { downloads: Map<string, DownloadState> }) {
+  const active = Array.from(downloads.values()).filter(isDownloadActive)
   if (active.length === 0) return null
 
-  const downloading = active.find((d) => d.status === "downloading")
-  const queued = active.filter((d) => d.status === "queued").length
+  const current =
+    active.find((download) => download.status === "downloading") ??
+    active.find((download) => download.status === "processing") ??
+    active[0]
+  const percent = percentOf(current)
+  const waiting = active.length - 1
 
   return (
-    <div className="flex-shrink-0 border-t border-white/10 px-3 py-2 bg-white/5">
-      <div className="flex items-center gap-2 text-xs">
-        <Loader2 className="h-3.5 w-3.5 animate-spin text-blue-500" />
-        <div className="flex-1 min-w-0">
-          {downloading ? (
-            <p className="truncate">
-              Downloading: <span className="font-medium">{downloading.trackTitle}</span>
-              {" "}{downloading.progress}%
-            </p>
-          ) : (
-            <p>Processing...</p>
-          )}
-        </div>
-        {queued > 0 && (
-          <span className="text-muted-foreground flex-shrink-0">
-            +{queued} queued
-          </span>
-        )}
-      </div>
-
-      {/* Progress bar */}
-      {downloading && downloading.totalBytes > 0 && (
-        <div className="mt-1 h-1 bg-white/10 rounded-full overflow-hidden">
-          <div
-            className="h-full bg-blue-500 rounded-full transition-all duration-300"
-            style={{ width: `${downloading.progress}%` }}
-          />
-        </div>
-      )}
+    <div className="online-strip" style={{ "--progress": percent / 100 } as CSSProperties}>
+      <span className="online-strip-line" aria-hidden="true" />
+      <BusyArc />
+      <p className="online-strip-text">
+        {VERBS[current.status]} <span className="online-strip-title">{current.trackTitle}</span>
+      </p>
+      {waiting > 0 && <span className="online-strip-more">{formatCount(waiting, "more song")}</span>}
+      <span className="type-data online-strip-percent">{percent}%</span>
     </div>
   )
 })

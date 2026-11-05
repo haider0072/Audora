@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils"
 const SIZES = {
   sm: "h-10 w-10",
   md: "h-14 w-14",
+  lg: "h-[68px] w-[68px]",
 } as const
 
 interface PlayButtonProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, "children" | "type"> {

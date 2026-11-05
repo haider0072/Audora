@@ -5,8 +5,7 @@ import { PlaylistStorage } from "@/lib/playlist-storage"
 import { isStoredArtRef, storedArtRef } from "@/lib/album-art-ref"
 import { requestPersistentStorage, formatBytes } from "@/lib/storage-quota"
 import type { Song } from "@/lib/song"
-import type { EqualizerBand } from "@/components/refined-equalizer"
-import { isValidPreset, type EqPreset } from "@/lib/eq-presets"
+import { isValidPreset, type EqPreset, type EqualizerBand } from "@/lib/eq-presets"
 import { isCloudOnlySong } from "@/lib/cloud/merge"
 
 export interface PlaylistPersistenceData {

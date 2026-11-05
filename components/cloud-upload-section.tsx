@@ -1,10 +1,8 @@
 "use client"
 
-import { useMemo, useRef, useState, useSyncExternalStore, type ChangeEvent } from "react"
-import { CloudUpload, FileAudio, FolderUp, RotateCcw, X } from "lucide-react"
+import { useId, useMemo, useRef, useState, useSyncExternalStore, type ChangeEvent } from "react"
 
 import type { Song } from "@/lib/song"
-import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
 import { AUDIO_FILE_ACCEPT, isAudioFileName } from "@/lib/cloud/audio-files"
 import { cloudUploads, type UploadSnapshot } from "@/lib/cloud/upload-queue"
@@ -36,6 +34,7 @@ interface CloudUploadSectionProps {
 }
 
 export function CloudUploadSection({ songs }: CloudUploadSectionProps) {
+  const headingId = useId()
   const uploads = useSyncExternalStore(cloudUploads.subscribe, cloudUploads.getSnapshot, cloudUploads.getSnapshot)
   const folderInput = useRef<HTMLInputElement>(null)
   const filesInput = useRef<HTMLInputElement>(null)
@@ -71,36 +70,33 @@ export function CloudUploadSection({ songs }: CloudUploadSectionProps) {
   }
 
   return (
-    <section className="space-y-3 border-t pt-4" aria-label="Upload to the cloud">
-      <div className="flex items-center gap-2">
-        <CloudUpload className="h-4 w-4 text-muted-foreground" />
-        <span className="text-sm font-medium">Add to your cloud</span>
-      </div>
+    <section className="surface-section" aria-labelledby={headingId}>
+      <h3 id={headingId} className="surface-heading">
+        Add to your cloud
+      </h3>
 
-      <div className="grid grid-cols-2 gap-2">
-        <Button variant="secondary" onClick={() => folderInput.current?.click()}>
-          <FolderUp className="mr-2 h-4 w-4" />
+      <div className="surface-actions">
+        <button type="button" className="text-button" onClick={() => folderInput.current?.click()}>
           Upload folder
-        </Button>
-        <Button variant="secondary" onClick={() => filesInput.current?.click()}>
-          <FileAudio className="mr-2 h-4 w-4" />
+        </button>
+        <button type="button" className="text-button" onClick={() => filesInput.current?.click()}>
           Upload files
-        </Button>
+        </button>
       </div>
 
       {localOnly.length > 0 && !uploads.active ? (
-        <div className="flex items-center justify-between gap-3 rounded-md border p-3">
-          <p className="text-sm text-muted-foreground">
+        <div className="surface-row">
+          <p className="surface-hint">
             {plural(localOnly.length, "song")} on this device {localOnly.length === 1 ? "isn't" : "aren't"} in
             your cloud yet ({formatBytes(localOnlyBytes)}).
           </p>
-          <Button size="sm" className="shrink-0" onClick={() => upload(localOnly)}>
+          <button type="button" className="solid-button" onClick={() => upload(localOnly)}>
             Sync now
-          </Button>
+          </button>
         </div>
       ) : null}
 
-      {notice ? <p className="text-sm text-muted-foreground">{notice}</p> : null}
+      {notice ? <p className="surface-hint">{notice}</p> : null}
       {uploads.total > 0 ? <UploadStatus uploads={uploads} /> : null}
 
       <input
@@ -129,19 +125,19 @@ function UploadStatus({ uploads }: { uploads: UploadSnapshot }) {
   ].filter(Boolean)
 
   return (
-    <div className="space-y-2 rounded-md border p-3">
-      <div className="flex items-baseline justify-between gap-2 text-sm">
-        <span className="font-medium">
+    <div className="upload-status">
+      <div className="surface-row">
+        <span className="upload-status-title">
           {uploads.active ? `Uploading — ${finished} of ${uploads.total} done` : "Upload finished"}
         </span>
         {uploads.active && uploads.bytesPerSecond > 0 ? (
-          <span className="shrink-0 text-xs text-muted-foreground">{formatBytes(uploads.bytesPerSecond)}/s</span>
+          <span className="surface-meta type-data">{formatBytes(uploads.bytesPerSecond)}/s</span>
         ) : null}
       </div>
 
-      <Progress value={percent} className="h-2" aria-label="Upload progress" />
+      <Progress value={percent} aria-label="Upload progress" />
 
-      <p className="text-xs text-muted-foreground">
+      <p className="upload-status-detail type-data">
         {uploads.active
           ? `${formatBytes(uploads.bytesSent)} of ${formatBytes(uploads.bytesTotal)}${
               remaining > 0 ? ` · ${formatRemaining(remaining)}` : ""
@@ -150,47 +146,45 @@ function UploadStatus({ uploads }: { uploads: UploadSnapshot }) {
       </p>
 
       {uploads.inProgress.length > 0 ? (
-        <ul className="space-y-0.5 text-xs text-muted-foreground">
+        <ul className="upload-files type-data">
           {uploads.inProgress.map((file, index) => (
-            <li key={`${index}:${file.name}`} className="flex justify-between gap-2">
-              <span className="truncate">{file.name}</span>
-              <span className="shrink-0 tabular-nums">{Math.floor((file.sent / file.size) * 100)}%</span>
+            <li key={`${index}:${file.name}`}>
+              <span>{file.name}</span>
+              <span>{Math.floor((file.sent / file.size) * 100)}%</span>
             </li>
           ))}
         </ul>
       ) : null}
 
       {uploads.failed.length > 0 && !uploads.active ? (
-        <ul className="space-y-0.5 text-xs">
+        <ul className="upload-files type-data" aria-label="Failed uploads">
           {uploads.failed.slice(0, FAILURES_SHOWN).map((failure, index) => (
-            <li key={`${index}:${failure.name}`} className="flex justify-between gap-2">
-              <span className="truncate">{failure.name}</span>
-              <span className="shrink-0 text-destructive">{failure.reason}</span>
+            <li key={`${index}:${failure.name}`}>
+              <span>{failure.name}</span>
+              <span>{failure.reason}</span>
             </li>
           ))}
           {uploads.failed.length > FAILURES_SHOWN ? (
-            <li className="text-muted-foreground">and {uploads.failed.length - FAILURES_SHOWN} more</li>
+            <li>and {uploads.failed.length - FAILURES_SHOWN} more</li>
           ) : null}
         </ul>
       ) : null}
 
-      <div className="flex justify-end gap-2">
+      <div className="surface-actions upload-status-actions">
         {uploads.active ? (
-          <Button size="sm" variant="ghost" onClick={() => cloudUploads.cancel()}>
-            <X className="mr-1 h-4 w-4" />
+          <button type="button" className="text-button" onClick={() => cloudUploads.cancel()}>
             Cancel
-          </Button>
+          </button>
         ) : (
           <>
             {canRetry ? (
-              <Button size="sm" variant="secondary" onClick={() => cloudUploads.retryFailed()}>
-                <RotateCcw className="mr-1 h-4 w-4" />
+              <button type="button" className="text-button" onClick={() => cloudUploads.retryFailed()}>
                 Retry failed
-              </Button>
+              </button>
             ) : null}
-            <Button size="sm" variant="ghost" onClick={() => cloudUploads.clear()}>
+            <button type="button" className="text-button" onClick={() => cloudUploads.clear()}>
               Dismiss
-            </Button>
+            </button>
           </>
         )}
       </div>

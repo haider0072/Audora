@@ -1,3 +1,4 @@
+import { useState } from "react"
 import { act, renderHook } from "@testing-library/react"
 
 import { useLibraryNavigation } from "@/hooks/use-library-navigation"
@@ -38,6 +39,18 @@ describe("useLibraryNavigation", () => {
     act(() => result.current.open(MOON))
     act(() => result.current.show(BLOOM))
     expect(result.current.stack).toEqual([BLOOM])
+  })
+
+  it("keeps a page shown under the search that changes in the same moment", () => {
+    const { result } = renderHook(() => {
+      const [query, setQuery] = useState("air")
+      return { setQuery, navigation: useLibraryNavigation(LIBRARY, query) }
+    })
+    act(() => {
+      result.current.setQuery("")
+      result.current.navigation.show(BLOOM, "")
+    })
+    expect(result.current.navigation.stack).toEqual([BLOOM])
   })
 
   it("goes back to the list when the search changes", () => {

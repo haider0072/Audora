@@ -1,10 +1,9 @@
 "use client"
 
-import { memo, useEffect, useId, useMemo, useRef, type KeyboardEvent, type RefObject } from "react"
-import { ChevronLeft, ChevronRight, Play } from "lucide-react"
+import { memo, useId, useMemo, useRef, type RefObject } from "react"
+import { ChevronRight, Play } from "lucide-react"
 
 import { AlbumArtDisplay } from "@/components/album-art-display"
-import { ScrollArea } from "@/components/ui/scroll-area"
 import {
   albumPage,
   artistPage,
@@ -13,7 +12,8 @@ import {
   type LibraryPage as Page,
 } from "@/lib/library-pages"
 import type { Song } from "@/lib/song"
-import { formatCount, formatTotalDuration } from "@/lib/utils"
+import { formatCount, formatDetails, formatTotalDuration } from "@/lib/utils"
+import { PageFrame } from "./page-frame"
 import type { SongActions } from "./song-menu"
 import { SongRow, type LibraryLayout, type RowPlayback } from "./song-row"
 import { useRowActions, type LibraryActions } from "./use-row-actions"
@@ -70,10 +70,6 @@ function Tracks({ section, layout, currentSongId, playback, onSelect, actions }:
   )
 }
 
-function details(...parts: Array<string | number | undefined>): string {
-  return parts.filter((part) => part !== undefined).join(" · ")
-}
-
 interface HeadProps {
   titleId: string
   headingRef: RefObject<HTMLHeadingElement>
@@ -118,7 +114,7 @@ function AlbumHead({
           {page.artist}
         </button>
         <p className="library-page-meta">
-          {details(section.year, formatCount(section.songs.length, "song"), formatTotalDuration(section.duration))}
+          {formatDetails(section.year, formatCount(section.songs.length, "song"), formatTotalDuration(section.duration))}
         </p>
         <PlayButton onPlay={onPlay} />
       </div>
@@ -143,7 +139,7 @@ function ArtistHead({
           {page.artist}
         </h2>
         <p className="library-page-meta">
-          {details(formatCount(sections.length, "album"), formatCount(songCount, "song"), formatTotalDuration(duration))}
+          {formatDetails(formatCount(sections.length, "album"), formatCount(songCount, "song"), formatTotalDuration(duration))}
         </p>
         <PlayButton onPlay={onPlay} />
       </div>
@@ -171,7 +167,7 @@ function ArtistAlbum({ section, onOpen, ...tracks }: Omit<TracksProps, "section"
               {section.album}
             </button>
           </h3>
-          <p className="library-page-album-meta">{details(section.year, formatCount(section.songs.length, "song"))}</p>
+          <p className="library-page-album-meta">{formatDetails(section.year, formatCount(section.songs.length, "song"))}</p>
         </div>
         <ChevronRight className="library-header-chevron" aria-hidden="true" />
       </div>
@@ -180,10 +176,7 @@ function ArtistAlbum({ section, onOpen, ...tracks }: Omit<TracksProps, "section"
   )
 }
 
-/**
- * An artist's or an album's page, over the library list. It takes focus
- * when it opens, and Escape goes back.
- */
+/** An artist's or an album's page, over the library list. */
 export const LibraryPageView = memo(function LibraryPageView({
   page,
   songs,
@@ -201,61 +194,33 @@ export const LibraryPageView = memo(function LibraryPageView({
   const sections = useMemo(() => pageSections(songs, page), [songs, page])
   const { select, rowActions } = useRowActions({ onSelect, actions, onOpen, goTo: GO_TO_FROM[page.kind] })
 
-  // Pages only open because someone asked for one, so focus follows.
-  useEffect(() => {
-    headingRef.current?.focus({ preventScroll: true })
-  }, [])
-
-  const onKeyDown = (event: KeyboardEvent<HTMLElement>) => {
-    // A menu opened from this page is portalled elsewhere and closes on Escape itself.
-    if (event.key !== "Escape" || !event.currentTarget.contains(event.target as Node)) return
-    event.preventDefault()
-    onBack()
-  }
-
   // The navigation closes a page whose songs are all gone; until it has, there is nothing to draw.
   if (sections.length === 0) return null
   const first = sections[0].songs[0]
   const rows = { layout, currentSongId, playback, onSelect: select, actions: rowActions }
 
   return (
-    <section className="library-page" data-layout={layout} aria-labelledby={titleId} onKeyDown={onKeyDown}>
-      <div className="library-page-bar">
-        <button type="button" className="library-page-back" onClick={onBack}>
-          <ChevronLeft aria-hidden="true" />
-          <span className="library-page-back-label">{backLabel}</span>
-        </button>
-      </div>
-      <ScrollArea className="library-page-scroll">
-        <div className="library-page-body">
-          {page.kind === "album" ? (
-            <>
-              <AlbumHead
-                page={page}
-                section={sections[0]}
-                titleId={titleId}
-                headingRef={headingRef}
-                onPlay={() => select(first)}
-                onOpen={onOpen}
-              />
-              <Tracks section={sections[0]} {...rows} />
-            </>
-          ) : (
-            <>
-              <ArtistHead
-                page={page}
-                sections={sections}
-                titleId={titleId}
-                headingRef={headingRef}
-                onPlay={() => select(first)}
-              />
-              {sections.map((section) => (
-                <ArtistAlbum key={section.key} section={section} onOpen={onOpen} {...rows} />
-              ))}
-            </>
-          )}
-        </div>
-      </ScrollArea>
-    </section>
+    <PageFrame layout={layout} titleId={titleId} headingRef={headingRef} backLabel={backLabel} onBack={onBack}>
+      {page.kind === "album" ? (
+        <>
+          <AlbumHead
+            page={page}
+            section={sections[0]}
+            titleId={titleId}
+            headingRef={headingRef}
+            onPlay={() => select(first)}
+            onOpen={onOpen}
+          />
+          <Tracks section={sections[0]} {...rows} />
+        </>
+      ) : (
+        <>
+          <ArtistHead page={page} sections={sections} titleId={titleId} headingRef={headingRef} onPlay={() => select(first)} />
+          {sections.map((section) => (
+            <ArtistAlbum key={section.key} section={section} onOpen={onOpen} {...rows} />
+          ))}
+        </>
+      )}
+    </PageFrame>
   )
 })

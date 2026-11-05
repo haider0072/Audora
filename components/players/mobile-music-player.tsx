@@ -41,7 +41,7 @@ import type { SyncPlaybackAdapter } from "@/hooks/use-sync-playback"
 import { findTrackByKey, trackLabel, trackSyncKey } from "@/lib/sync/song-match"
 import { releaseMediaUrl } from "@/lib/media-source"
 
-import type { EqualizerBand } from "@/components/refined-equalizer"
+import type { EqualizerBand } from "@/lib/eq-presets"
 import { formatTotalDuration } from "@/lib/utils"
 import { resetPlaybackTime } from "@/lib/playback-time-store"
 
@@ -399,7 +399,7 @@ export default function MobileMusicPlayer() {
         {/* Playlist or Online Search */}
         {sidebarMode === "online" ? (
           <div className="flex-1 overflow-hidden px-4 py-2">
-            <OnlineSearchSidebar dab={tidalSearch} />
+            <OnlineSearchSidebar dab={tidalSearch} layout="phone" />
           </div>
         ) : (
           <LibraryPanel
@@ -440,24 +440,21 @@ export default function MobileMusicPlayer() {
         {/* Two-device playback — its own sheet so the live readout only
             subscribes while it is open. */}
         <Sheet open={showSync} onOpenChange={setShowSync}>
-          <SheetContent side="bottom" className="max-h-[85vh] overflow-y-auto">
+          {/* Its panel explains itself, so the sheet has no separate description. */}
+          <SheetContent side="bottom" aria-describedby={undefined}>
             <SheetHeader>
               <SheetTitle>Two-device playback</SheetTitle>
             </SheetHeader>
-            <div className="pt-4">
-              <SyncPanel sync={sync} />
-            </div>
+            <SyncPanel sync={sync} />
           </SheetContent>
         </Sheet>
 
         <Sheet open={showCloud} onOpenChange={setShowCloud}>
-          <SheetContent side="bottom" className="max-h-[85vh] overflow-y-auto">
+          <SheetContent side="bottom" aria-describedby={undefined}>
             <SheetHeader>
               <SheetTitle>Cloud library</SheetTitle>
             </SheetHeader>
-            <div className="pt-4">
-              <CloudLibraryPanel cloud={cloud} songs={songs} />
-            </div>
+            <CloudLibraryPanel cloud={cloud} songs={songs} />
           </SheetContent>
         </Sheet>
 

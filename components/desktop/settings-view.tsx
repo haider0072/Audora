@@ -2,9 +2,8 @@
 
 import { forwardRef, useId, useState, type ComponentPropsWithoutRef, type ReactNode } from "react"
 
-import { CLOUD_STATUS_LABELS, cloudLed } from "@/components/desktop/desktop-sidebar"
+import { CLOUD_STATUS_LABELS, cloudLed } from "@/components/desktop/cloud-status"
 import { StatusLed } from "@/components/desktop/status-led"
-import { ViewHeader } from "@/components/desktop/view-header"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -64,7 +63,8 @@ function spaceRow(quota: QuotaStatus | undefined): { value: string; detail: stri
 /**
  * Settings, as rows that each say how a thing stands and offer the change: the
  * sound, the cloud library and the second device, what the library stores,
- * and the reset. Styled by `.settings` in app/globals.css.
+ * and the reset. The view's head is the player's. Styled by `.settings` in
+ * app/globals.css.
  */
 export function SettingsView({
   soundPreset,
@@ -118,128 +118,125 @@ export function SettingsView({
 
   return (
     <>
-      <ViewHeader title="Settings" />
-      <div className="desktop-view" data-view="settings">
-        <div className="settings">
-          <SettingsSection title="Sound">
-            <SettingsRow
-              label="Equalizer"
-              detail="Its bands and preamp, and loudness normalization."
-              value={`${soundPreset} · normalization ${normalization ? "on" : "off"}`}
-            >
-              <RowButton aria-haspopup="dialog" onClick={onOpenSound}>
-                Open Sound
-              </RowButton>
-            </SettingsRow>
-          </SettingsSection>
+      <div className="settings">
+        <SettingsSection title="Sound">
+          <SettingsRow
+            label="Equalizer"
+            detail="Its bands and preamp, and loudness normalization."
+            value={`${soundPreset} · normalization ${normalization ? "on" : "off"}`}
+          >
+            <RowButton aria-haspopup="dialog" onClick={onOpenSound}>
+              Open Sound
+            </RowButton>
+          </SettingsRow>
+        </SettingsSection>
 
-          <SettingsSection title="Cloud and devices">
-            <SettingsRow
-              label="Cloud library"
-              detail="Your music, kept in the cloud and played from there."
-              value={
+        <SettingsSection title="Cloud and devices">
+          <SettingsRow
+            label="Cloud library"
+            detail="Your music, kept in the cloud and played from there."
+            value={
+              <>
+                <StatusLed state={cloudLed(cloudStatus)} />
+                {cloudStatus === "ready" ? `${cloudLabel} · ${formatCount(cloudSongCount, "song")}` : cloudLabel}
+              </>
+            }
+          >
+            <RowButton aria-haspopup="dialog" onClick={onOpenCloud}>
+              Open cloud library
+            </RowButton>
+          </SettingsRow>
+          <SettingsRow
+            label="Two-device playback"
+            detail="The same song, in step, on a second device."
+            value={
+              <>
+                <StatusLed state={syncConnected ? "on" : "off"} />
+                {syncConnected ? "On" : "Off"}
+              </>
+            }
+          >
+            <RowButton aria-haspopup="dialog" onClick={onOpenSync}>
+              Open two-device playback
+            </RowButton>
+          </SettingsRow>
+        </SettingsSection>
+
+        <SettingsSection title="Storage">
+          <SettingsRow
+            label="Songs kept here"
+            detail="Audio saved in this browser."
+            value={info ? `${formatCount(info.songs, "song")} · ${formatBytes(info.used - info.albumArtSize)}` : MEASURING}
+          />
+          {/* The store counts songs with a cover, and the bytes of each shared cover once. */}
+          <SettingsRow
+            label="Album art"
+            detail="An album's songs share one cover, stored once."
+            value={info ? `Covers for ${formatCount(info.albumArtCount, "song")} · ${formatBytes(info.albumArtSize)}` : MEASURING}
+          />
+          <SettingsRow
+            label="Video lookups"
+            detail="Videos found for songs, kept so they come back without asking YouTube again."
+            value={formatCount(storage.videoLookups, "song")}
+          >
+            <RowButton onClick={storage.clearVideoLookups} unavailable={storage.videoLookups === 0}>
+              Clear lookups
+            </RowButton>
+          </SettingsRow>
+          <SettingsRow label="Space used" detail={space.detail} value={space.value} />
+          <SettingsRow
+            label="Kept when the disk fills"
+            detail={
+              info?.quota.persisted
+                ? "The browser won't clear the library to free space."
+                : "The browser may clear the library if the disk fills up."
+            }
+            value={
+              info ? (
                 <>
-                  <StatusLed state={cloudLed(cloudStatus)} />
-                  {cloudStatus === "ready" ? `${cloudLabel} · ${formatCount(cloudSongCount, "song")}` : cloudLabel}
+                  <StatusLed state={info.quota.persisted ? "on" : "off"} />
+                  {info.quota.persisted ? "Yes" : "No"}
                 </>
-              }
-            >
-              <RowButton aria-haspopup="dialog" onClick={onOpenCloud}>
-                Open cloud library
-              </RowButton>
-            </SettingsRow>
-            <SettingsRow
-              label="Two-device playback"
-              detail="The same song, in step, on a second device."
-              value={
-                <>
-                  <StatusLed state={syncConnected ? "on" : "off"} />
-                  {syncConnected ? "On" : "Off"}
-                </>
-              }
-            >
-              <RowButton aria-haspopup="dialog" onClick={onOpenSync}>
-                Open two-device playback
-              </RowButton>
-            </SettingsRow>
-          </SettingsSection>
+              ) : (
+                MEASURING
+              )
+            }
+          />
+          <SettingsRow
+            label="Reclaim space"
+            detail="Removes stored files no song uses, left by removed songs or stopped downloads."
+          >
+            <RowButton onClick={() => void findOrphans()} unavailable={busy || nothingStored}>
+              Reclaim space
+            </RowButton>
+          </SettingsRow>
+          <SettingsRow label="Export" detail="The library's songs and their details, as a JSON file.">
+            <RowButton onClick={storage.exportMetadata}>Export library</RowButton>
+          </SettingsRow>
+        </SettingsSection>
 
-          <SettingsSection title="Storage">
-            <SettingsRow
-              label="Songs kept here"
-              detail="Audio saved in this browser."
-              value={info ? `${formatCount(info.songs, "song")} · ${formatBytes(info.used - info.albumArtSize)}` : MEASURING}
-            />
-            {/* The store counts songs with a cover, and the bytes of each shared cover once. */}
-            <SettingsRow
-              label="Album art"
-              detail="An album's songs share one cover, stored once."
-              value={info ? `Covers for ${formatCount(info.albumArtCount, "song")} · ${formatBytes(info.albumArtSize)}` : MEASURING}
-            />
-            <SettingsRow
-              label="Video lookups"
-              detail="Videos found for songs, kept so they come back without asking YouTube again."
-              value={formatCount(storage.videoLookups, "song")}
-            >
-              <RowButton onClick={storage.clearVideoLookups} unavailable={storage.videoLookups === 0}>
-                Clear lookups
-              </RowButton>
-            </SettingsRow>
-            <SettingsRow label="Space used" detail={space.detail} value={space.value} />
-            <SettingsRow
-              label="Kept when the disk fills"
-              detail={
-                info?.quota.persisted
-                  ? "The browser won't clear the library to free space."
-                  : "The browser may clear the library if the disk fills up."
-              }
-              value={
-                info ? (
-                  <>
-                    <StatusLed state={info.quota.persisted ? "on" : "off"} />
-                    {info.quota.persisted ? "Yes" : "No"}
-                  </>
-                ) : (
-                  MEASURING
-                )
-              }
-            />
-            <SettingsRow
-              label="Reclaim space"
-              detail="Removes stored files no song uses, left by removed songs or stopped downloads."
-            >
-              <RowButton onClick={() => void findOrphans()} unavailable={busy || nothingStored}>
-                Reclaim space
-              </RowButton>
-            </SettingsRow>
-            <SettingsRow label="Export" detail="The library's songs and their details, as a JSON file.">
-              <RowButton onClick={storage.exportMetadata}>Export library</RowButton>
-            </SettingsRow>
-          </SettingsSection>
-
-          <SettingsSection title="Library">
-            <SettingsRow
-              label="Reset library"
-              detail="Removes every song from this browser, with its audio and album art. The cloud library and your sound settings stay."
-            >
-              <AlertDialog>
-                <AlertDialogTrigger asChild>
-                  <RowButton unavailable={busy || nothingStored}>Reset library…</RowButton>
-                </AlertDialogTrigger>
-                <AlertDialogContent>
-                  <AlertDialogHeader>
-                    <AlertDialogTitle>Reset the library?</AlertDialogTitle>
-                    <AlertDialogDescription>{resetWarning}</AlertDialogDescription>
-                  </AlertDialogHeader>
-                  <AlertDialogFooter>
-                    <AlertDialogCancel>Cancel</AlertDialogCancel>
-                    <AlertDialogAction onClick={() => void reset()}>Reset library</AlertDialogAction>
-                  </AlertDialogFooter>
-                </AlertDialogContent>
-              </AlertDialog>
-            </SettingsRow>
-          </SettingsSection>
-        </div>
+        <SettingsSection title="Library">
+          <SettingsRow
+            label="Reset library"
+            detail="Removes every song from this browser, with its audio and album art. The cloud library and your sound settings stay."
+          >
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <RowButton unavailable={busy || nothingStored}>Reset library…</RowButton>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Reset the library?</AlertDialogTitle>
+                  <AlertDialogDescription>{resetWarning}</AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction onClick={() => void reset()}>Reset library</AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          </SettingsRow>
+        </SettingsSection>
       </div>
 
       <AlertDialog open={orphans > 0} onOpenChange={(open) => !open && setOrphans(0)}>

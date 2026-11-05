@@ -4,12 +4,13 @@ import { StatusMessage, type StatusAction } from "@/components/status-message"
 import { useOnlineStatus } from "@/hooks/use-online-status"
 import type { LibraryLayout } from "./song-row"
 
-/** A search that matched nothing. */
-export function NoMatches({ query }: { query: string }) {
+/** A search that matched nothing. `action` is the player's way to look further, where it has one. */
+export function NoMatches({ query, action }: { query: string; action?: StatusAction }) {
   return (
     <StatusMessage
       title={`Nothing matches “${query.trim()}”`}
       detail="Search looks through titles, artists, albums and genres."
+      action={action}
     />
   )
 }

@@ -1,6 +1,6 @@
 "use client"
 
-import { memo, useState } from "react"
+import { memo, useState, type ReactNode } from "react"
 import { MoreHorizontal } from "lucide-react"
 
 import { AlbumArtDisplay } from "@/components/album-art-display"
@@ -22,7 +22,7 @@ import {
 import { useLongPress } from "@/hooks/use-long-press"
 import { artistOf } from "@/lib/library-groups"
 import { hoverSong, leaveSong, warmSong } from "@/lib/song-warmup"
-import { formatTime } from "@/lib/utils"
+import { cn, formatTime } from "@/lib/utils"
 import { SongMenuItems, type SongActions } from "./song-menu"
 
 /** Where the current song is: still loading, playing, or paused. Other rows have none. */
@@ -35,6 +35,9 @@ export function rowPlayback(loading: boolean, playing: boolean): RowPlayback {
 }
 
 export type LibraryLayout = "desktop" | "phone"
+
+/** A song row's height in pixels, in a list or the queue: the desktop's cover is larger. */
+export const SONG_ROW_HEIGHT: Record<LibraryLayout, number> = { desktop: 64, phone: 56 }
 
 const PLAYBACK_LABELS: Record<RowPlayback, string> = {
   loading: "Loading",
@@ -60,6 +63,26 @@ interface SongRowProps {
 function creditLine(song: Song): string {
   const artist = song.artists?.join(", ") || artistOf(song)
   return song.album ? `${artist} · ${song.album}` : artist
+}
+
+/**
+ * What leads a row: its number, or a glyph in its place, which gives way to
+ * a turning arc while the row's song loads and three bars while it plays.
+ */
+export function RowMark({ className, children }: { className?: string; children: ReactNode }) {
+  return (
+    <span className={cn("library-row-index", className)} aria-hidden="true">
+      <span className="library-row-number">{children}</span>
+      <svg className="library-row-arc" viewBox="0 0 20 20">
+        <circle cx="10" cy="10" r="8" />
+      </svg>
+      <span className="library-row-bars">
+        <i />
+        <i />
+        <i />
+      </span>
+    </span>
+  )
 }
 
 /**
@@ -102,17 +125,7 @@ export const SongRow = memo(function SongRow({
         onPointerLeave={leaveSong}
         onPointerDown={() => warmSong(song)}
       >
-        <span className="library-row-index" aria-hidden="true">
-          <span className="library-row-number">{number}</span>
-          <svg className="library-row-arc" viewBox="0 0 20 20">
-            <circle cx="10" cy="10" r="8" />
-          </svg>
-          <span className="library-row-bars">
-            <i />
-            <i />
-            <i />
-          </span>
-        </span>
+        <RowMark>{number}</RowMark>
         {art && (
           <AlbumArtDisplay
             songId={song.id}
@@ -120,7 +133,7 @@ export const SongRow = memo(function SongRow({
             thumbnail={song.albumArtThumb}
             title={`${song.title} album art`}
             size="row"
-            rounded="rounded-md"
+            rounded={layout === "desktop" ? "rounded-lg" : "rounded-md"}
             className="library-row-art"
           />
         )}

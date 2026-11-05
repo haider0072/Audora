@@ -1,20 +1,20 @@
 import { createRef } from "react"
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 
-import { PlayerBar, type PlayerBarProps } from "@/components/desktop/player-bar"
+import { NowStage, type NowStageProps } from "@/components/desktop/now-stage"
 import { albumPage, artistPage } from "@/lib/library-pages"
 import type { Song } from "@/lib/song"
 import { stubLibraryDom } from "@/testing/library-dom"
 
 stubLibraryDom()
 
-// The cover draws from the art cache; the bar around it is what is under test.
+// The cover draws from the art cache; the stage around it is what is under test.
 jest.mock("@/components/album-art-display", () => ({ AlbumArtDisplay: () => null }))
 
 const SONG = { id: "a", url: "blob:a", title: "Myth", artist: "Beach House", album: "Bloom", duration: 258 } as Song
 
-function renderBar(props: Partial<PlayerBarProps> = {}) {
-  const all: PlayerBarProps = {
+function renderStage(props: Partial<NowStageProps> = {}) {
+  const all: NowStageProps = {
     song: SONG,
     isPlaying: false,
     isLoading: false,
@@ -30,19 +30,12 @@ function renderBar(props: Partial<PlayerBarProps> = {}) {
     onShowPage: jest.fn(),
     coverRef: createRef<HTMLButtonElement>(),
     onOpenFullscreen: jest.fn(),
-    nowOpen: false,
-    onToggleNow: jest.fn(),
-    nowToggleRef: createRef<HTMLButtonElement>(),
-    volume: [80],
-    isMuted: false,
-    onVolumeChange: jest.fn(),
-    onToggleMute: jest.fn(),
     onOpenSound: jest.fn(),
     onOpenSync: jest.fn(),
     syncConnected: false,
     ...props,
   }
-  return { ...render(<PlayerBar {...all} />), props: all }
+  return { ...render(<NowStage {...all} />), props: all }
 }
 
 /** Opens the More menu the way a mouse does. */
@@ -51,10 +44,10 @@ function openMore() {
   return screen.getByRole("menu")
 }
 
-describe("PlayerBar", () => {
+describe("NowStage", () => {
   it("shows the song and goes to its artist or album", () => {
-    const { props } = renderBar()
-    expect(screen.getByText("Myth")).toBeInTheDocument()
+    const { props } = renderStage()
+    expect(screen.getByRole("heading", { level: 2, name: "Myth" })).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole("button", { name: "Beach House" }))
     expect(props.onShowPage).toHaveBeenLastCalledWith(artistPage(SONG))
@@ -62,52 +55,61 @@ describe("PlayerBar", () => {
     expect(props.onShowPage).toHaveBeenLastCalledWith(albumPage(SONG))
   })
 
-  it("offers nothing to play or open before a song is picked", () => {
-    renderBar({ song: null, canSkip: false })
+  it("keeps the artist and the album apart, so each can shorten on its own", () => {
+    const { container } = renderStage()
+    const credits = container.querySelector(".stage-credits .roll > span")
+    const [artist, separator, album] = Array.from(credits?.children ?? [])
+    expect(artist).toHaveTextContent("Beach House")
+    expect(separator).toHaveAttribute("aria-hidden", "true")
+    expect(album).toHaveTextContent("Bloom")
+  })
+
+  it("shows the artist alone when the song has no album", () => {
+    renderStage({ song: { ...SONG, album: "" } })
+    expect(screen.getByRole("button", { name: "Beach House" })).toBeInTheDocument()
+    expect(screen.queryByText("—")).not.toBeInTheDocument()
+  })
+
+  it("says nothing is playing, and offers nothing to play or open, before a song is picked", () => {
+    renderStage({ song: null, canSkip: false })
+    expect(screen.getByText("Nothing playing")).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Play" })).toBeDisabled()
     expect(screen.getByRole("button", { name: "Previous track" })).toBeDisabled()
     expect(screen.getByRole("button", { name: "Next track" })).toBeDisabled()
-    expect(screen.getByRole("button", { name: "Full screen" })).toBeDisabled()
     expect(screen.queryByRole("button", { name: "Beach House" })).not.toBeInTheDocument()
+
+    const fullScreen = within(openMore()).getByRole("menuitem", { name: "Full screen" })
+    expect(fullScreen).toHaveAttribute("data-disabled")
   })
 
-  it("opens full screen from its cover by pointer, and leaves the keyboard one Full screen button", () => {
-    const { container, props } = renderBar()
-    const cover = container.querySelector<HTMLButtonElement>(".player-bar-cover")
+  it("opens full screen from its cover by pointer, and from More by keyboard", async () => {
+    const { container, props } = renderStage()
+    const cover = container.querySelector<HTMLButtonElement>(".stage-cover")
     expect(cover).toHaveAttribute("aria-hidden", "true")
     expect(cover).toHaveAttribute("tabindex", "-1")
     expect(props.coverRef.current).toBe(cover)
-    expect(screen.getAllByRole("button", { name: "Full screen" })).toHaveLength(1)
 
     fireEvent.click(cover!)
     expect(props.onOpenFullscreen).toHaveBeenCalledTimes(1)
+
+    fireEvent.click(within(openMore()).getByRole("menuitem", { name: "Full screen" }))
+    await waitFor(() => expect(props.onOpenFullscreen).toHaveBeenCalledTimes(2))
   })
 
-  it("reads a saved volume of nothing as muted", () => {
-    const { rerender, props } = renderBar({ volume: [0], isMuted: false })
-    fireEvent.click(screen.getByRole("button", { name: "Unmute" }))
-    expect(props.onToggleMute).toHaveBeenCalledTimes(1)
-
-    rerender(<PlayerBar {...props} volume={[80]} />)
-    expect(screen.getByRole("button", { name: "Mute" })).toBeInTheDocument()
+  it("keeps the cover in sight, with no views or volume of its own", () => {
+    renderStage()
+    expect(screen.queryByRole("group", { name: "Show in place of the cover" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("slider", { name: "Volume" })).not.toBeInTheDocument()
+    const names = screen.getAllByRole("button").map((button) => button.getAttribute("aria-label") ?? button.textContent)
+    expect(names).toEqual(["Beach House", "Bloom", "Shuffle", "Previous track", "Play", "Next track", "More"])
   })
 
-  it("toggles the Now panel, saying whether it is open", () => {
-    const { props } = renderBar({ nowOpen: true })
-    const toggle = screen.getByRole("button", { name: "Now playing" })
-    expect(toggle).toHaveAttribute("aria-pressed", "true")
-    expect(props.nowToggleRef.current).toBe(toggle)
-
-    fireEvent.click(toggle)
-    expect(props.onToggleNow).toHaveBeenCalledTimes(1)
-  })
-
-  it("opens what its menu asks for once the menu has closed, with focus back on its button", async () => {
+  it("opens what its menu asks for once the menu has closed, with focus back on More", async () => {
     let focusedOnOpen: Element | null = null
     const onOpenSound = jest.fn(() => {
       focusedOnOpen = document.activeElement
     })
-    const { props } = renderBar({ onOpenSound, syncConnected: true })
+    const { props } = renderStage({ onOpenSound, syncConnected: true })
 
     const menu = openMore()
     expect(within(menu).getByRole("menuitem", { name: "Two-device playback: on" })).toBeInTheDocument()

@@ -5,7 +5,8 @@
  * other colour on screen belongs to the song that is playing. This module
  * turns a cover's pixels into that colour: the cover's strongest, clearly
  * different hues, and from them an accent that reads as a mark on the surface
- * it sits on, whatever the hue.
+ * it sits on, whatever the hue, a stronger one for words, and the deep lights
+ * of the desktop's aura, which text reads over.
  *
  * Pure: it works on pixel data and never touches the DOM, so the colour rules
  * can be tested on their own. Reading pixels off an image lives in
@@ -34,6 +35,49 @@ const SURFACE_RGB: Record<Surface, Rgb> = {
 
 /** WCAG's minimum for non-text graphics, which is what these marks are. */
 const MIN_CONTRAST = 3
+
+/**
+ * The dimmest text the desktop sets over its aura: `--muted-foreground` inside
+ * `.desktop-frame` in app/globals.css. An aura that holds this text holds all
+ * the brighter text above it too.
+ */
+const AURA_TEXT_RGB: Rgb = [196, 193, 186]
+
+/** WCAG's minimum for body text, which is what sits over the aura. */
+const MIN_TEXT_CONTRAST = 4.5
+
+/** Each surface's text colour, `--foreground`, which a hover lights a row with. */
+const FOREGROUND_RGB: Record<Surface, Rgb> = {
+  ink: [241, 239, 234],
+  paper: [23, 22, 20],
+}
+
+/**
+ * What a row lays over what is under it (`.library-row::before` and `::after`
+ * in app/globals.css): a hover's light of the text colour, and above it the
+ * current song's tint of the accent.
+ */
+const ROW_HOVER = 0.06
+const ROW_TINT = 0.17
+
+/**
+ * The page under the desktop's aura, `--ink-0`, and the least of it that the
+ * scrim lays back over the aura (`.desktop-frame::before`, at its thinnest).
+ * A blend of colours is never brighter than the brightest colour in it, so
+ * text anywhere over the aura sits on nothing brighter than one light at full
+ * strength under the scrim at its thinnest.
+ */
+const PAGE_RGB: Rgb = [11, 11, 10]
+const AURA_SCRIM_MIN = 0.12
+
+/** The aura keeps this much colour at least, so a soft cover still glows rather than greys, and no more than this. */
+const AURA_SATURATION = { min: 0.45, max: 0.85 }
+
+/** The aura's lightest light, before the contrast check takes it down to where its hue lets text read. */
+const AURA_MAX_LIGHTNESS = 0.56
+
+/** Each of the aura's three lights sits a little deeper than the one before, for depth whatever the cover. */
+const AURA_DEPTH = [1, 0.86, 0.74] as const
 
 /** Hue buckets, 20° each. */
 const HUE_BUCKETS = 18
@@ -105,6 +149,27 @@ function contrastRatio(a: Rgb, b: Rgb): number {
   const la = relativeLuminance(a)
   const lb = relativeLuminance(b)
   return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05)
+}
+
+/** `top` laid over `base` at `alpha`, the way the browser blends them: into 8-bit channels. */
+function over([r, g, b]: Rgb, alpha: number, [baseR, baseG, baseB]: Rgb): Rgb {
+  const blend = (top: number, base: number) => Math.round(top * alpha + base * (1 - alpha))
+  return [blend(r, baseR), blend(g, baseG), blend(b, baseB)]
+}
+
+/** Everything a row can lay over a ground: nothing, a hover's light, the current song's tint, and both. */
+function rowStates(ground: Rgb, surface: Surface, tint: Rgb): Rgb[] {
+  const lit = over(FOREGROUND_RGB[surface], ROW_HOVER, ground)
+  return [ground, lit, over(tint, ROW_TINT, ground), over(tint, ROW_TINT, lit)]
+}
+
+/** What text over one of the aura's lights can sit on there: the light under the scrim, bare or under a row. */
+function auraGrounds(light: Rgb, tint: Rgb): Rgb[] {
+  return rowStates(over(PAGE_RGB, AURA_SCRIM_MIN, light), "ink", tint)
+}
+
+function readsOver(text: Rgb, grounds: readonly Rgb[]): boolean {
+  return grounds.every((ground) => contrastRatio(text, ground) >= MIN_TEXT_CONTRAST)
 }
 
 /** How much a colour stands out: saturated, and near the middle of the lightness range. */
@@ -207,14 +272,79 @@ function toCss([h, s, l]: Hsl): string {
   return `hsl(${Math.round(h)} ${Math.round(s * 100)}% ${Math.round(l * 100)}%)`
 }
 
-/** The song's accent on a surface: its most vivid hue, made to read there. */
-export function accentColor(palette: SongPalette, surface: Surface): string {
+/** The song's accent on a surface, as it will be written: its most vivid hue, made to read there. */
+function accentHsl(palette: SongPalette, surface: Surface): Hsl {
   const best = palette.map(rgbToHsl).reduce((a, b) => (vividness(b) > vividness(a) ? b : a))
-  return toCss(readableOn(best, surface, ACCENT_TONE[surface]))
+  return readableOn(best, surface, ACCENT_TONE[surface])
+}
+
+/** The song's accent on a surface, for marks: its most vivid hue, made to read there. */
+export function accentColor(palette: SongPalette, surface: Surface): string {
+  return toCss(accentHsl(palette, surface))
+}
+
+/**
+ * The song's accent for words on a surface. Words need 4.5:1 where marks need
+ * 3:1, and they sit on more than the bare surface: a row lit by a hover or
+ * tinted as the current song's, and on ink the desktop's aura. The accent
+ * keeps its hue and saturation and steps away from the surface until it reads
+ * over all of it, so an accent that already reads stays as it is.
+ */
+export function accentTextColor(palette: SongPalette, surface: Surface): string {
+  const [hue, saturation, markLightness] = accentHsl(palette, surface)
+  const tint = hslToRgb([hue, saturation, markLightness])
+  const grounds = rowStates(SURFACE_RGB[surface], surface, tint)
+  if (surface === "ink") {
+    for (const light of auraLights(palette)) grounds.push(...auraGrounds(hslToRgb(light), tint))
+  }
+  const step = surface === "ink" ? 0.02 : -0.02
+  let lightness = markLightness
+  while (!readsOver(hslToRgb([hue, saturation, lightness]), grounds) && lightness > 0.04 && lightness < 0.96) {
+    lightness = toPercent(lightness + step)
+  }
+  return toCss([hue, saturation, lightness])
 }
 
 /** The wordmark ring's three lights for a song, in the palette's order. */
 export function ringColors(palette: SongPalette, surface: Surface): readonly [string, string, string] {
   const [a, b, c] = palette.map((rgb) => toCss(readableOn(rgbToHsl(rgb), surface, RING_TONE[surface])))
+  return [a, b, c]
+}
+
+/**
+ * The brightest a light of this hue and saturation can be with text still
+ * reading over it at 4.5:1, bare or under a row tinted `tint`: the lightness
+ * steps down from the top until it does. Hues differ a lot in luminance, so
+ * each finds its own place, and the check runs on the colour exactly as it
+ * will be written.
+ */
+function auraLight(hue: number, saturation: number, tint: Rgb): number {
+  let lightness = AURA_MAX_LIGHTNESS
+  while (!readsOver(AURA_TEXT_RGB, auraGrounds(hslToRgb([hue, saturation, lightness]), tint)) && lightness > 0.04) {
+    lightness = toPercent(lightness - 0.01)
+  }
+  return lightness
+}
+
+/** The aura's three lights for a song, as they will be written. */
+function auraLights(palette: SongPalette): readonly [Hsl, Hsl, Hsl] {
+  const tint = hslToRgb(accentHsl(palette, "ink"))
+  const [a, b, c] = palette.map((rgb, index): Hsl => {
+    const [h, s] = rgbToHsl(rgb)
+    const hue = Math.round(h)
+    const saturation = toPercent(clamp(s, AURA_SATURATION.min, AURA_SATURATION.max))
+    return [hue, saturation, toPercent(auraLight(hue, saturation, tint) * AURA_DEPTH[index])]
+  })
+  return [a, b, c]
+}
+
+/**
+ * The desktop's aura for a song, on ink: the cover's three hues as deep,
+ * saturated lights, in the palette's order, each as bright as the text over
+ * it allows and a little deeper than the last. A one-colour cover glows in
+ * that one colour.
+ */
+export function auraColors(palette: SongPalette): readonly [string, string, string] {
+  const [a, b, c] = auraLights(palette).map(toCss)
   return [a, b, c]
 }
