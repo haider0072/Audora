@@ -1,6 +1,6 @@
 import { useState, useCallback } from "react"
 import { rampToValue } from "@/lib/audio-params"
-import type { EqualizerBand } from "@/components/refined-equalizer"
+import type { EqualizerBand } from "@/lib/eq-presets"
 
 export interface UseEqualizerManagerOptions {
   equalizerBands: EqualizerBand[]

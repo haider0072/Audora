@@ -3,6 +3,7 @@
 import { useSyncExternalStore } from "react"
 import { Cloud } from "lucide-react"
 
+import { BusyArc } from "@/components/busy-arc"
 import { CLOUD_STATUS_LABELS, cloudLed } from "@/components/desktop/cloud-status"
 import { StatusLed } from "@/components/desktop/status-led"
 import { ProgressRing } from "@/components/player/progress-ring"
@@ -46,9 +47,7 @@ export function DownloadsButton({ count, onOpen }: { count: number; onOpen: () =
   if (count === 0) return null
   return (
     <button type="button" className="header-button" title={`${formatCount(count, "song")} downloading`} onClick={onOpen}>
-      <svg className="busy-arc" viewBox="0 0 20 20" aria-hidden="true">
-        <circle cx="10" cy="10" r="7" />
-      </svg>
+      <BusyArc />
       <span className="header-button-label">Downloading</span>
       <span className="type-data">{count}</span>
     </button>

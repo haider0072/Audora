@@ -24,7 +24,7 @@ import { LibraryPanel } from "@/components/library/library-panel"
 import { rowPlayback } from "@/components/library/song-row"
 import { StackLayer } from "@/components/stack-layer"
 import { useNowPlayer } from "@/components/now/use-now-player"
-import { RefinedEqualizer, type EqualizerBand } from "@/components/refined-equalizer"
+import { SoundPanel } from "@/components/sound/sound-panel"
 import { useBodyClass } from "@/hooks/use-body-class"
 import { useDesktopSearch, type SearchTab } from "@/hooks/use-desktop-search"
 import { useSearchShortcut } from "@/hooks/use-search-shortcut"
@@ -45,7 +45,7 @@ import { useMediaControls } from "@/hooks/use-media-controls"
 import { useTidalSearch } from "@/hooks/use-tidal-search"
 import { OnlineSearchSidebar } from "@/components/dab/online-search-sidebar"
 import { AlbumArtCache } from "@/lib/album-art-cache"
-import { getAllPresets, type EqPreset } from "@/lib/eq-presets"
+import { getAllPresets, type EqPreset, type EqualizerBand } from "@/lib/eq-presets"
 import { matchesQuery } from "@/lib/library-groups"
 import type { LibraryPage } from "@/lib/library-pages"
 import { resetPlaybackTime } from "@/lib/playback-time-store"
@@ -639,17 +639,14 @@ export default function EnhancedMusicPlayer() {
           </div>
         </div>
       </main>
+      {/* The sheet and the dialogs are portalled out of the player, so each carries the song's colours itself. */}
       <Sheet open={showEqualizer} onOpenChange={setShowEqualizer}>
-        {/* Wide enough for the ten bands side by side. */}
-        <SheetContent
-          className="w-[min(600px,calc(100vw-48px))] overflow-y-auto sm:max-w-none"
-          onCloseAutoFocus={returnFocus.onCloseAutoFocus}
-        >
+        <SheetContent className="song-scope" style={songColors} onCloseAutoFocus={returnFocus.onCloseAutoFocus}>
           <SheetHeader>
             <SheetTitle>Sound</SheetTitle>
-            <SheetDescription>The equalizer and its preamp, and loudness normalization.</SheetDescription>
+            <SheetDescription>The equalizer, its preamp, and loudness normalization.</SheetDescription>
           </SheetHeader>
-          <RefinedEqualizer
+          <SoundPanel
             bands={equalizerBands}
             onBandChange={handleBandChange}
             onReset={handleEqReset}
@@ -667,7 +664,12 @@ export default function EnhancedMusicPlayer() {
       </Sheet>
       <Dialog open={showSync} onOpenChange={setShowSync}>
         {/* Its panel explains itself, so the dialog has no separate description. */}
-        <DialogContent aria-describedby={undefined} onCloseAutoFocus={returnFocus.onCloseAutoFocus}>
+        <DialogContent
+          className="song-scope"
+          style={songColors}
+          aria-describedby={undefined}
+          onCloseAutoFocus={returnFocus.onCloseAutoFocus}
+        >
           <DialogHeader>
             <DialogTitle>Two-device playback</DialogTitle>
           </DialogHeader>
@@ -676,7 +678,12 @@ export default function EnhancedMusicPlayer() {
       </Dialog>
       <Dialog open={showCloud} onOpenChange={setShowCloud}>
         {/* Its panel explains itself, so the dialog has no separate description. */}
-        <DialogContent aria-describedby={undefined} onCloseAutoFocus={returnFocus.onCloseAutoFocus}>
+        <DialogContent
+          className="song-scope"
+          style={songColors}
+          aria-describedby={undefined}
+          onCloseAutoFocus={returnFocus.onCloseAutoFocus}
+        >
           <DialogHeader>
             <DialogTitle>Cloud library</DialogTitle>
           </DialogHeader>

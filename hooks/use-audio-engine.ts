@@ -1,5 +1,5 @@
 import { useRef, useState, useCallback, useEffect } from "react"
-import type { EqualizerBand } from "@/components/refined-equalizer"
+import type { EqualizerBand } from "@/lib/eq-presets"
 import { PEAKING_Q } from "@/hooks/use-equalizer-manager"
 import { cancelRamps, dbToGain, rampToValue, volumeToGain } from "@/lib/audio-params"
 import { setPlaybackTime } from "@/lib/playback-time-store"

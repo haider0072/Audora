@@ -2,6 +2,7 @@
 
 import { memo, type CSSProperties } from "react"
 
+import { BusyArc } from "@/components/busy-arc"
 import { isDownloadActive, type ActiveDownload, type DownloadState } from "@/lib/tidal-types"
 import { formatCount } from "@/lib/utils"
 
@@ -36,9 +37,7 @@ export const DownloadQueueBar = memo(function DownloadQueueBar({ downloads }: { 
   return (
     <div className="online-strip" style={{ "--progress": percent / 100 } as CSSProperties}>
       <span className="online-strip-line" aria-hidden="true" />
-      <svg className="busy-arc" viewBox="0 0 20 20" aria-hidden="true">
-        <circle cx="10" cy="10" r="7" />
-      </svg>
+      <BusyArc />
       <p className="online-strip-text">
         {VERBS[current.status]} <span className="online-strip-title">{current.trackTitle}</span>
       </p>

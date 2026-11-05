@@ -1,14 +1,11 @@
 "use client"
 
-import { useState } from "react"
-import { AlertTriangle, Link2, Link2Off, MonitorSpeaker, Radio } from "lucide-react"
+import { useId, useState } from "react"
+import { AlertTriangle } from "lucide-react"
 
-import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Separator } from "@/components/ui/separator"
-import { Slider } from "@/components/ui/slider"
+import { BusyArc } from "@/components/busy-arc"
+import { StatusLed, type LedState } from "@/components/desktop/status-led"
+import { CenterFader } from "@/components/sound/center-fader"
 import type { UseDeviceSyncReturn } from "@/hooks/use-device-sync"
 import { useNullOffsetMs } from "@/hooks/use-null-offset"
 import { useSyncStats } from "@/hooks/use-sync-stats"
@@ -16,7 +13,8 @@ import { NULL_OFFSET_LIMIT_MS, setNullOffsetMs } from "@/lib/sync/null-offset"
 import type { SyncStats } from "@/lib/sync/sync-stats-store"
 
 /**
- * Controls for playing the same track on two devices at once.
+ * Controls for playing the same track on two devices at once. Styled by the
+ * surfaces' sections in app/globals.css.
  *
  * The live readout is not decoration. Two speakers in one room are the hardest
  * case this feature has, and the only way to null the last few milliseconds is
@@ -27,21 +25,29 @@ interface SyncPanelProps {
   sync: UseDeviceSyncReturn
 }
 
+/** Milliseconds signed the way the rest of the app signs a value: +12, −12, 0. */
+function signedMs(ms: number): string {
+  if (ms > 0) return `+${ms} ms`
+  if (ms < 0) return `−${Math.abs(ms)} ms`
+  return "0 ms"
+}
+
 export function SyncPanel({ sync }: SyncPanelProps) {
+  const headingId = useId()
   const [codeInput, setCodeInput] = useState("")
   const [hostedCode, setHostedCode] = useState<string | null>(null)
 
   const isIdle = sync.status === "idle" || sync.status === "closed"
+  const codeComplete = /^\d{6}$/.test(codeInput)
 
   const handleHost = () => {
     setHostedCode(sync.startHosting())
   }
 
   const handleJoin = () => {
-    const code = codeInput.trim()
-    if (!/^\d{6}$/.test(code)) return
+    if (!codeComplete) return
     setHostedCode(null)
-    sync.join(code)
+    sync.join(codeInput)
   }
 
   const handleLeave = () => {
@@ -51,115 +57,131 @@ export function SyncPanel({ sync }: SyncPanelProps) {
   }
 
   return (
-    <div className="space-y-4">
-      <header className="flex items-center gap-2">
-        <MonitorSpeaker className="h-4 w-4 text-muted-foreground" />
-        <h3 className="text-sm font-medium">Play on two devices</h3>
-        <StatusBadge sync={sync} />
-      </header>
-
-      {isIdle ? (
-        <div className="space-y-3">
-          <p className="text-xs text-muted-foreground">
-            Both devices need to be on the same network, and both need the track in
-            their own library. Only playback commands are sent — never audio.
-          </p>
-          <Button onClick={handleHost} className="w-full" size="sm">
-            <Radio className="mr-2 h-4 w-4" />
-            Host a session
-          </Button>
-          <div className="flex gap-2">
-            <Input
-              value={codeInput}
-              onChange={(event) => setCodeInput(event.target.value.replace(/\D/g, "").slice(0, 6))}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") handleJoin()
-              }}
-              placeholder="6-digit code"
-              inputMode="numeric"
-              aria-label="Session code from the other device"
-              className="font-mono"
-            />
-            <Button onClick={handleJoin} variant="secondary" size="sm" disabled={codeInput.length !== 6}>
-              Join
-            </Button>
-          </div>
+    <div className="surface-body">
+      <section className="surface-section" aria-labelledby={headingId}>
+        <div className="surface-row">
+          <h3 id={headingId} className="surface-heading">
+            Session
+          </h3>
+          <SessionStatus sync={sync} />
         </div>
-      ) : (
-        <div className="space-y-4">
-          {hostedCode && !sync.isConnected ? (
-            <div className="rounded-md border border-dashed p-3 text-center">
-              <p className="text-xs text-muted-foreground">Enter this on the other device</p>
-              <p className="mt-1 font-mono text-2xl tracking-[0.3em]">{hostedCode}</p>
+
+        {isIdle ? (
+          <>
+            <p className="surface-hint">
+              Both devices need to be on the same network, and both need the track in their own library. Only
+              playback commands are sent — never audio.
+            </p>
+            <div className="surface-actions">
+              <button type="button" className="solid-button" onClick={handleHost}>
+                Host a session
+              </button>
             </div>
-          ) : null}
+            <div className="sync-join">
+              <div className="soft-field soft-field-compact">
+                <input
+                  value={codeInput}
+                  onChange={(event) => setCodeInput(event.target.value.replace(/\D/g, "").slice(0, 6))}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") handleJoin()
+                  }}
+                  placeholder="6-digit code"
+                  inputMode="numeric"
+                  aria-label="Session code from the other device"
+                />
+              </div>
+              <button
+                type="button"
+                className="text-button"
+                aria-disabled={!codeComplete || undefined}
+                onClick={handleJoin}
+              >
+                Join
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            {hostedCode && !sync.isConnected ? (
+              <div className="sync-code">
+                <p className="surface-hint">Enter this on the other device</p>
+                <p className="sync-code-digits">{hostedCode}</p>
+              </div>
+            ) : null}
 
-          {sync.detail ? (
-            <p className="flex items-start gap-2 text-xs text-muted-foreground">
-              <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-              <span>{sync.detail}</span>
-            </p>
-          ) : null}
+            {sync.detail ? (
+              <p className="surface-alert">
+                <AlertTriangle aria-hidden="true" />
+                <span>{sync.detail}</span>
+              </p>
+            ) : null}
 
-          {sync.missingTrackLabel ? (
-            <p className="flex items-start gap-2 text-xs text-amber-600 dark:text-amber-500">
-              <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-              <span>
-                Not in this library: <strong className="font-medium">{sync.missingTrackLabel}</strong>
-              </span>
-            </p>
-          ) : null}
+            {sync.missingTrackLabel ? (
+              <p className="surface-alert">
+                <AlertTriangle aria-hidden="true" />
+                <span>
+                  Not in this library: <strong className="font-semibold">{sync.missingTrackLabel}</strong>
+                </span>
+              </p>
+            ) : null}
+          </>
+        )}
+      </section>
 
-          {sync.isConnected ? (
-            <>
-              <Separator />
-              <ConnectionReadout sync={sync} />
-              <NullOffsetControl />
-              {sync.role === "host" ? (
-                <Button onClick={sync.handOver} variant="outline" size="sm" className="w-full">
-                  Let the other device take over
-                </Button>
-              ) : null}
-            </>
-          ) : null}
+      {sync.isConnected ? (
+        <>
+          <div className="surface-section">
+            <ConnectionReadout sync={sync} />
+          </div>
+          <NullOffsetControl />
+        </>
+      ) : null}
 
-          <Button onClick={handleLeave} variant="ghost" size="sm" className="w-full">
-            <Link2Off className="mr-2 h-4 w-4" />
-            End session
-          </Button>
+      {isIdle ? null : (
+        <div className="surface-section">
+          <div className="surface-actions">
+            {sync.isConnected && sync.role === "host" ? (
+              <button type="button" className="text-button" onClick={sync.handOver}>
+                Let the other device take over
+              </button>
+            ) : null}
+            <button type="button" className="text-button" onClick={handleLeave}>
+              End session
+            </button>
+          </div>
         </div>
       )}
     </div>
   )
 }
 
-function StatusBadge({ sync }: SyncPanelProps) {
-  if (sync.isConnected) {
-    return (
-      <Badge variant="secondary" className="ml-auto gap-1">
-        <Link2 className="h-3 w-3" />
-        {sync.role === "host" ? "Hosting" : "Following"}
-      </Badge>
-    )
-  }
-
-  if (sync.status === "failed") {
-    return (
-      <Badge variant="destructive" className="ml-auto">
-        Failed
-      </Badge>
-    )
-  }
-
+/** How the session stands, as an LED and a word; a turning arc while the devices pair. */
+function SessionStatus({ sync }: SyncPanelProps) {
   if (sync.status === "signaling" || sync.status === "connecting") {
     return (
-      <Badge variant="outline" className="ml-auto">
+      <span className="surface-meta type-data">
+        <BusyArc />
         Pairing…
-      </Badge>
+      </span>
     )
   }
 
-  return null
+  let led: LedState = "off"
+  let label = "Off"
+  if (sync.isConnected) {
+    led = "on"
+    label = sync.role === "host" ? "Hosting" : "Following"
+  } else if (sync.status === "failed") {
+    led = "error"
+    label = "Failed"
+  }
+
+  return (
+    <span className="surface-meta type-data">
+      <StatusLed state={led} />
+      {label}
+    </span>
+  )
 }
 
 /**
@@ -171,12 +193,9 @@ function ConnectionReadout({ sync }: SyncPanelProps) {
   const stats = useSyncStats()
 
   return (
-    <dl className="grid grid-cols-3 gap-2 text-center">
+    <dl className="sync-readout">
       <Stat label="Peer" value={sync.peerName ?? "—"} />
-      <Stat
-        label="Round trip"
-        value={stats.rttMs > 0 ? `${stats.rttMs.toFixed(1)} ms` : "—"}
-      />
+      <Stat label="Round trip" value={stats.rttMs > 0 ? `${stats.rttMs.toFixed(1)} ms` : "—"} />
       <Stat label="Drift" value={formatDrift(sync.role, stats)} />
     </dl>
   )
@@ -184,9 +203,9 @@ function ConnectionReadout({ sync }: SyncPanelProps) {
 
 function Stat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-md bg-muted/50 px-2 py-1.5">
-      <dt className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</dt>
-      <dd className="font-mono text-xs">{value}</dd>
+    <div>
+      <dt>{label}</dt>
+      <dd className="type-data">{value}</dd>
     </div>
   )
 }
@@ -199,41 +218,41 @@ function formatDrift(role: UseDeviceSyncReturn["role"], stats: SyncStats): strin
   if (role === "host") return "on peer"
   if (!stats.clockLocked) return "settling"
   if (stats.driftMs === null) return "—"
-  const rounded = Math.round(stats.driftMs)
-  return `${rounded > 0 ? "+" : ""}${rounded} ms`
+  return signedMs(Math.round(stats.driftMs))
 }
 
 /**
- * Owns its own subscription to the trim so dragging the slider re-renders
+ * Owns its own subscription to the trim so dragging the fader re-renders
  * this control rather than the player around it.
  */
 function NullOffsetControl() {
+  const headingId = useId()
   const nullOffsetMs = useNullOffsetMs()
+  const shown = signedMs(nullOffsetMs)
 
   return (
-    <div className="space-y-2">
-      <div className="flex items-center justify-between">
-        <Label htmlFor="sync-null-offset" className="text-xs">
+    <section className="surface-section" aria-labelledby={headingId}>
+      <div className="surface-row">
+        <h3 id={headingId} className="surface-heading">
           Fine tune
-        </Label>
-        <span className="font-mono text-xs text-muted-foreground">
-          {nullOffsetMs > 0 ? "+" : ""}
-          {nullOffsetMs} ms
+        </h3>
+        <span className="surface-meta type-data" aria-hidden="true">
+          {shown}
         </span>
       </div>
-      <Slider
-        id="sync-null-offset"
-        value={[nullOffsetMs]}
-        onValueChange={([value]) => setNullOffsetMs(value)}
-        min={-NULL_OFFSET_LIMIT_MS}
-        max={NULL_OFFSET_LIMIT_MS}
+      <CenterFader
+        orientation="horizontal"
+        value={nullOffsetMs}
+        limit={NULL_OFFSET_LIMIT_MS}
         step={1}
-        aria-label="Fine tune this device against the other one, in milliseconds"
+        onChange={setNullOffsetMs}
+        label="Fine tune this device against the other one, in milliseconds"
+        valueText={shown}
       />
-      <p className="text-[11px] text-muted-foreground">
-        Nudge this device earlier or later until the two sound like one source.
-        Headphones or a Bluetooth speaker on either side will need it.
+      <p className="surface-hint">
+        Nudge this device earlier or later until the two sound like one source. Headphones or a Bluetooth speaker
+        on either side will need it.
       </p>
-    </div>
+    </section>
   )
 }

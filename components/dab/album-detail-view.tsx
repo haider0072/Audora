@@ -3,6 +3,7 @@
 import { memo, useId, useRef } from "react"
 import { ArrowDownToLine, Check } from "lucide-react"
 
+import { BusyArc } from "@/components/busy-arc"
 import { PageFrame } from "@/components/library/page-frame"
 import type { LibraryLayout } from "@/components/library/song-row"
 import type { DownloadState, TidalAlbum } from "@/lib/tidal-types"
@@ -75,11 +76,7 @@ export const AlbumDetailView = memo(function AlbumDetailView({
               onClick={() => actions.openArtist(album.artistId)}
             >
               {album.artist}
-              {openingArtist && (
-                <svg className="busy-arc" viewBox="0 0 20 20" aria-hidden="true">
-                  <circle cx="10" cy="10" r="7" />
-                </svg>
-              )}
+              {openingArtist && <BusyArc />}
               {artistNote && <span className="online-page-note"> · {artistNote}</span>}
             </button>
           ) : (

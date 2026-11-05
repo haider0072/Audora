@@ -1,17 +1,30 @@
-import { BUILT_IN_PRESETS, EQ_BAND_COUNT, getAllPresets, isValidPreset } from '@/lib/eq-presets'
+import {
+  BUILT_IN_PRESETS,
+  clampGain,
+  EQ_BAND_COUNT,
+  EQ_GAIN_LIMIT,
+  getAllPresets,
+  isValidPreset,
+} from '@/lib/eq-presets'
 
 describe('eq-presets', () => {
   it('every built-in preset has 10 band gains within the ±12 dB slider range', () => {
     BUILT_IN_PRESETS.forEach((preset) => {
       expect(preset.gains).toHaveLength(EQ_BAND_COUNT)
       preset.gains.forEach((gain) => {
-        expect(gain).toBeGreaterThanOrEqual(-12)
-        expect(gain).toBeLessThanOrEqual(12)
+        expect(gain).toBeGreaterThanOrEqual(-EQ_GAIN_LIMIT)
+        expect(gain).toBeLessThanOrEqual(EQ_GAIN_LIMIT)
       })
-      expect(preset.preamp).toBeGreaterThanOrEqual(-12)
-      expect(preset.preamp).toBeLessThanOrEqual(12)
+      expect(preset.preamp).toBeGreaterThanOrEqual(-EQ_GAIN_LIMIT)
+      expect(preset.preamp).toBeLessThanOrEqual(EQ_GAIN_LIMIT)
       expect(preset.builtIn).toBe(true)
     })
+  })
+
+  it('clampGain holds a gain within ±12 dB and leaves one inside alone', () => {
+    expect(clampGain(15)).toBe(12)
+    expect(clampGain(-15)).toBe(-12)
+    expect(clampGain(-3.5)).toBe(-3.5)
   })
 
   it('built-in preset ids are unique', () => {

@@ -16,13 +16,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Settings, RotateCcw, Volume2, VolumeX, ChevronDown, Save, Trash2, Check } from "lucide-react"
-import type { EqPreset } from "@/lib/eq-presets"
-
-interface EqualizerBand {
-  frequency: number
-  gain: number
-  label: string
-}
+import { clampGain, EQ_GAIN_LIMIT, type EqPreset, type EqualizerBand } from "@/lib/eq-presets"
 
 interface MobileEqualizerSheetProps {
   isOpen: boolean
@@ -83,7 +77,7 @@ export function MobileEqualizerSheet({
     if (raw == null || raw.trim() === "") return
     const value = Number.parseFloat(raw)
     if (Number.isNaN(value)) return
-    onBandChange(index, Math.max(-12, Math.min(12, value)))
+    onBandChange(index, clampGain(value))
   }
 
   const savePreset = () => {
@@ -208,8 +202,8 @@ export function MobileEqualizerSheet({
                     <Slider
                       orientation="vertical"
                       value={[band.gain]}
-                      min={-12}
-                      max={12}
+                      min={-EQ_GAIN_LIMIT}
+                      max={EQ_GAIN_LIMIT}
                       step={0.1}
                       onValueChange={(value) => onBandChange(index, value[0])}
                       className="h-full"
@@ -251,8 +245,8 @@ export function MobileEqualizerSheet({
               <Label className="text-xs font-medium w-16 flex-shrink-0">Preamp</Label>
               <Slider
                 value={[preampDb]}
-                min={-12}
-                max={12}
+                min={-EQ_GAIN_LIMIT}
+                max={EQ_GAIN_LIMIT}
                 step={0.5}
                 onValueChange={(value) => onPreampChange(value[0])}
                 className="flex-1"

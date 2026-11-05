@@ -116,6 +116,9 @@
     --input: 40 12% 80.4%;
     --ring: 40 7% 8.4%;
     --radius: 0.75rem;
+
+    /* How deep a surface's shadow falls: soft on paper, deep on ink. */
+    --shadow-strength: 0.22;
   }
 
   /* Night, the main theme: warm graphite, never blue-black. */
@@ -142,6 +145,7 @@
     --quality-hires: 40 71% 69%;
     --quality-lossless: 40 11% 83%;
     --quality-lossy: 42 5% 52%;
+    --shadow-strength: 0.8;
   }
 }
 
@@ -1069,9 +1073,10 @@
   .led-choice:is([aria-pressed="true"], [aria-checked="true"]) {
     color: hsl(var(--foreground));
   }
+  /* Outside a player's colours, as in a phone's sheet, it lights in the text colour. */
   .led-choice:is([aria-pressed="true"], [aria-checked="true"])::before {
-    background: var(--song-accent);
-    box-shadow: 0 0 8px color-mix(in srgb, var(--song-accent) 70%, transparent);
+    background: var(--song-accent, hsl(var(--foreground)));
+    box-shadow: 0 0 8px color-mix(in srgb, var(--song-accent, hsl(var(--foreground))) 70%, transparent);
   }
   .led-choice:focus-visible {
     outline: 2px solid hsl(var(--ring));
@@ -2574,6 +2579,10 @@
   /* A quiet button that says what it does: a message's way forward, or the
      change a setting offers. */
   .text-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
     height: 32px;
     padding: 0 14px;
     border-radius: calc(var(--radius) - 2px);
@@ -3302,6 +3311,762 @@
       transition-duration: var(--motion-attack);
     }
   }
+
+  /* The one solid button: the change a dialog asks about, or a form's way
+     forward. It turns the surface over, paper on ink. */
+  .solid-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    height: 32px;
+    padding: 0 14px;
+    border-radius: calc(var(--radius) - 2px);
+    background: hsl(var(--foreground));
+    color: hsl(var(--background));
+    font-size: 0.8125rem; /* 13px */
+    font-weight: 600;
+    white-space: nowrap;
+    transition:
+      background-color var(--motion-release) var(--ease-release),
+      transform var(--motion-pluck) var(--ease-pluck);
+  }
+  :is(.text-button, .solid-button) > svg {
+    flex: none;
+    width: 16px;
+    height: 16px;
+  }
+  .solid-button:active:not([aria-disabled="true"]) {
+    transform: scale(0.97);
+    transition: transform var(--motion-attack) var(--ease-attack);
+  }
+  .solid-button:focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 2px;
+  }
+  .solid-button[aria-disabled="true"] {
+    opacity: 0.4;
+    cursor: default;
+  }
+  @media (hover: hover) {
+    .solid-button:hover:not([aria-disabled="true"]) {
+      background: hsl(var(--foreground) / 0.86);
+      transition-duration: var(--motion-attack);
+    }
+  }
+  /* A soft field a size down, beside a button in a surface. */
+  .soft-field-compact {
+    height: 38px;
+    padding: 0 12px;
+    border-radius: 10px;
+  }
+  .soft-field-compact input {
+    font-size: 0.875rem; /* 14px */
+  }
+
+  /* Surfaces (components/ui: dialog, alert-dialog, sheet, dropdown-menu,
+     context-menu, toast): what opens over the player, in one material. The
+     popover's ink with a hairline edge and a deep, soft shadow, so a dialog,
+     a sheet, a menu and a notice all read as Audora's own. Placement goes
+     in :where() so a caller's utilities can still move or size one. */
+  .surface {
+    background: hsl(var(--popover));
+    color: hsl(var(--popover-foreground));
+    box-shadow:
+      0 0 0 1px hsl(var(--foreground) / 0.12),
+      0 30px 80px -24px hsl(var(--ink-0) / var(--shadow-strength));
+  }
+  /* What is behind a dialog or a sheet, dimmed. No blur: it would be drawn
+     again under the moving aura for as long as the dialog stayed open. */
+  .surface-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+    background: hsl(var(--ink-0) / 0.6);
+  }
+  .surface-overlay[data-state="open"] {
+    animation: fade-in var(--motion-decay) var(--ease-decay);
+  }
+  .surface-overlay[data-state="closed"] {
+    animation: fade-out var(--motion-decay) var(--ease-release) forwards;
+  }
+  .surface-head {
+    display: grid;
+    gap: 6px;
+    /* Clear of the close button. */
+    padding-right: 48px;
+  }
+  .surface-title {
+    @apply font-display;
+    font-size: 1.375rem; /* 22px */
+    font-weight: 600;
+    line-height: 1.15;
+    letter-spacing: -0.02em;
+  }
+  .surface-description {
+    font-size: 0.875rem; /* 14px */
+    line-height: 1.45;
+    color: hsl(var(--muted-foreground));
+  }
+  .surface-foot {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 8px;
+  }
+  /* A dialog's answers, a size up from a row's. */
+  .surface-foot > :is(.text-button, .solid-button) {
+    height: 38px;
+    padding: 0 16px;
+    font-size: 0.875rem; /* 14px */
+  }
+  .surface-close {
+    position: absolute;
+    top: 18px;
+    right: 18px;
+    display: grid;
+    place-items: center;
+    width: 38px;
+    height: 38px;
+    border-radius: 9999px;
+    color: hsl(var(--muted-foreground));
+    transition:
+      color var(--motion-release) var(--ease-release),
+      background-color var(--motion-release) var(--ease-release);
+  }
+  .surface-close > svg {
+    width: 18px;
+    height: 18px;
+  }
+  .surface-close:focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: -2px;
+  }
+  @media (hover: hover) {
+    .surface-close:hover {
+      color: hsl(var(--foreground));
+      background-color: hsl(var(--foreground) / 0.08);
+      transition-duration: var(--motion-attack);
+    }
+  }
+
+  /* A dialog: at the window's centre, as tall as what it holds, scrolling
+     only when that is more than the window. */
+  .panel {
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+    display: grid;
+    align-content: start;
+    gap: 20px;
+    width: min(480px, calc(100vw - 32px));
+    height: fit-content;
+    max-height: calc(100dvh - 48px);
+    margin: auto;
+    padding: 24px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    border-radius: 16px;
+  }
+  .panel[data-state="open"] {
+    animation: panel-in var(--motion-decay) var(--ease-decay);
+  }
+  .panel[data-state="closed"] {
+    animation: panel-out var(--motion-decay) var(--ease-release) forwards;
+  }
+  /* A question before a change: narrower, and with no close button, since
+     its answers are the ways out. */
+  .panel-question {
+    width: min(420px, calc(100vw - 32px));
+  }
+  .panel-question .surface-head {
+    padding-right: 0;
+  }
+
+  /* A sheet: a panel come in from an edge, floating just off it for the
+     window's height; on a phone, one risen from the foot. */
+  .sheet {
+    position: fixed;
+    z-index: 50;
+    display: flex;
+    flex-direction: column;
+    gap: 22px;
+    padding: 26px 28px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--foreground) / 0.2) transparent;
+  }
+  .sheet:where([data-side="right"], [data-side="left"]) {
+    top: 12px;
+    bottom: 12px;
+    width: min(520px, calc(100vw - 24px));
+    border-radius: 20px;
+  }
+  .sheet:where([data-side="right"]) {
+    --sheet-from: translateX(32px);
+    right: 12px;
+  }
+  .sheet:where([data-side="left"]) {
+    --sheet-from: translateX(-32px);
+    left: 12px;
+  }
+  .sheet:where([data-side="bottom"], [data-side="top"]) {
+    left: 0;
+    right: 0;
+    max-height: 90dvh;
+    padding: 22px 20px;
+  }
+  .sheet:where([data-side="bottom"]) {
+    --sheet-from: translateY(100%);
+    bottom: 0;
+    padding-bottom: calc(22px + env(safe-area-inset-bottom));
+    border-radius: 20px 20px 0 0;
+  }
+  .sheet:where([data-side="top"]) {
+    --sheet-from: translateY(-100%);
+    top: 0;
+    padding-top: calc(22px + env(safe-area-inset-top));
+    border-radius: 0 0 20px 20px;
+  }
+  .sheet[data-state="open"] {
+    animation: sheet-in var(--motion-release) var(--ease-decay);
+  }
+  .sheet[data-state="closed"] {
+    animation: sheet-out var(--motion-decay) var(--ease-release) forwards;
+  }
+  :where(.sheet) .surface-title {
+    font-size: 1.75rem; /* 28px */
+    letter-spacing: -0.025em;
+  }
+  :where(.sheet) .surface-description {
+    font-size: 0.8125rem; /* 13px */
+  }
+  :where(.sheet) > .surface-close {
+    top: 22px;
+    right: 22px;
+  }
+
+  /* What a sheet or a dialog holds: sections set off by a hairline, each
+     with a heading, a hint, and how it stands as data. */
+  .surface-body {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: 20px;
+  }
+  .surface-section {
+    display: grid;
+    gap: 12px;
+    padding-top: 18px;
+    border-top: 1px solid hsl(var(--foreground) / 0.1);
+  }
+  .surface-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    min-height: 32px;
+  }
+  .surface-heading {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+    font-size: 0.9375rem; /* 15px */
+    font-weight: 600;
+  }
+  .surface-hint {
+    max-width: 62ch;
+    font-size: 0.8125rem; /* 13px */
+    line-height: 1.5;
+    color: hsl(var(--muted-foreground));
+  }
+  .surface-meta {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: 8px;
+    color: hsl(var(--muted-foreground));
+    white-space: nowrap;
+  }
+  .surface-meta > .busy-arc {
+    width: 14px;
+    height: 14px;
+  }
+  /* Something wrong, or missing: in words, beside an icon. */
+  .surface-alert {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    font-size: 0.8125rem; /* 13px */
+    line-height: 1.5;
+  }
+  .surface-alert > svg {
+    flex: none;
+    width: 16px;
+    height: 16px;
+    margin-top: 1.5px;
+  }
+  .surface-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+  }
+  .surface-field {
+    display: grid;
+    gap: 8px;
+  }
+  .surface-label {
+    font-size: 0.8125rem; /* 13px */
+    font-weight: 600;
+    color: hsl(var(--muted-foreground));
+  }
+  /* The last word, at a sheet's foot. */
+  .surface-status {
+    margin-top: auto;
+    color: hsl(var(--muted-foreground));
+  }
+
+  /* A menu: a short list in the same material, an item lit as the pointer
+     or the arrow keys come to it. */
+  .menu {
+    z-index: 50;
+    min-width: 13rem;
+    max-height: var(--radix-dropdown-menu-content-available-height, var(--radix-context-menu-content-available-height));
+    padding: 6px;
+    overflow-x: hidden;
+    overflow-y: auto;
+    border-radius: 12px;
+    transform-origin: var(
+      --radix-dropdown-menu-content-transform-origin,
+      var(--radix-context-menu-content-transform-origin)
+    );
+  }
+  .menu[data-state="open"] {
+    animation: menu-in var(--motion-decay) var(--ease-decay);
+  }
+  .menu[data-state="closed"] {
+    animation: fade-out var(--motion-attack) linear forwards;
+  }
+  .menu-item {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-height: 36px;
+    padding: 0 10px;
+    border-radius: 8px;
+    font-size: 0.875rem; /* 14px */
+    cursor: default;
+    user-select: none;
+    outline: none;
+    transition: background-color var(--motion-release) var(--ease-release);
+  }
+  .menu-item svg {
+    flex: none;
+    width: 16px;
+    height: 16px;
+    color: hsl(var(--muted-foreground));
+    pointer-events: none;
+  }
+  .menu-item[data-highlighted] {
+    background-color: hsl(var(--foreground) / 0.08);
+    transition-duration: var(--motion-attack);
+  }
+  .menu-item[data-highlighted] svg {
+    color: currentColor;
+  }
+  .menu-item[data-disabled] {
+    opacity: 0.4;
+    pointer-events: none;
+  }
+  /* What can't be taken back, such as removing a song, in the brand's red. */
+  .menu-item-danger,
+  .menu-item-danger svg {
+    color: hsl(var(--destructive));
+  }
+  .menu-separator {
+    height: 1px;
+    margin: 6px -6px;
+    background: hsl(var(--foreground) / 0.08);
+  }
+  .menu-label {
+    padding: 8px 10px 4px;
+    font-size: 0.6875rem; /* 11px */
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: hsl(var(--muted-foreground));
+  }
+
+  /* Notices (components/ui/toast.tsx): a line on what happened, at the
+     window's foot on the right, or its top on a phone. Something that went
+     wrong says so in words beside an icon, never in a red block. */
+  .notice-viewport {
+    --notice-from: 8px;
+    position: fixed;
+    right: 20px;
+    bottom: 20px;
+    z-index: 100;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    width: min(400px, calc(100vw - 32px));
+    max-height: 100dvh;
+    outline: none;
+  }
+  @media (max-width: 639px) {
+    .notice-viewport {
+      --notice-from: -8px;
+      top: calc(16px + env(safe-area-inset-top));
+      right: 16px;
+      bottom: auto;
+    }
+  }
+  .notice {
+    position: relative;
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 14px 52px 14px 16px;
+    border-radius: 14px;
+  }
+  .notice[data-state="open"] {
+    animation: notice-in var(--motion-decay) var(--ease-decay);
+  }
+  .notice[data-state="closed"] {
+    animation: fade-out var(--motion-attack) linear forwards;
+  }
+  .notice[data-swipe="move"] {
+    transform: translateX(var(--radix-toast-swipe-move-x));
+  }
+  .notice[data-swipe="cancel"] {
+    transform: translateX(0);
+    transition: transform var(--motion-decay) var(--ease-decay);
+  }
+  .notice[data-swipe="end"] {
+    animation: notice-swipe-out var(--motion-attack) var(--ease-release) forwards;
+  }
+  .notice-icon {
+    flex: none;
+    width: 18px;
+    height: 18px;
+    margin-top: 1px;
+  }
+  .notice-text {
+    display: grid;
+    flex: 1;
+    gap: 2px;
+    min-width: 0;
+  }
+  .notice-title {
+    font-size: 0.875rem; /* 14px */
+    font-weight: 600;
+  }
+  .notice-description {
+    font-size: 0.8125rem; /* 13px */
+    color: hsl(var(--muted-foreground));
+    overflow-wrap: anywhere;
+  }
+  /* Its way forward, level with the words. */
+  .notice > .text-button {
+    flex: none;
+    margin: -5px 0;
+  }
+  .notice > .surface-close {
+    top: 8px;
+    right: 8px;
+    width: 32px;
+    height: 32px;
+  }
+  .notice > .surface-close > svg {
+    width: 16px;
+    height: 16px;
+  }
+
+  /* A bipolar fader (components/sound/center-fader.tsx): a hairline track
+     marked at 0, its centre, with the fill in the song's colour growing from
+     there to the knob. */
+  .center-fader {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    touch-action: none;
+    user-select: none;
+  }
+  .center-fader[data-orientation="vertical"] {
+    flex-direction: column;
+    width: 28px;
+  }
+  .center-fader[data-orientation="horizontal"] {
+    height: 28px;
+  }
+  .center-fader-track {
+    position: relative;
+    flex: 1;
+    border-radius: 9999px;
+    background: hsl(var(--foreground) / 0.14);
+  }
+  .center-fader-track[data-orientation="vertical"] {
+    width: 2px;
+  }
+  .center-fader-track[data-orientation="horizontal"] {
+    height: 2px;
+  }
+  .center-fader-track::before {
+    content: "";
+    position: absolute;
+    background: hsl(var(--foreground) / 0.32);
+  }
+  .center-fader-track[data-orientation="vertical"]::before {
+    top: calc(50% - 0.5px);
+    left: -5px;
+    right: -5px;
+    height: 1px;
+  }
+  .center-fader-track[data-orientation="horizontal"]::before {
+    left: calc(50% - 0.5px);
+    top: -5px;
+    bottom: -5px;
+    width: 1px;
+  }
+  .center-fader-fill {
+    position: absolute;
+    border-radius: inherit;
+    background: var(--song-accent, hsl(var(--foreground)));
+  }
+  .center-fader-track[data-orientation="vertical"] > .center-fader-fill {
+    left: 0;
+    right: 0;
+  }
+  .center-fader-track[data-orientation="horizontal"] > .center-fader-fill {
+    top: 0;
+    bottom: 0;
+  }
+  .center-fader-knob {
+    display: block;
+    width: 14px;
+    height: 14px;
+    border-radius: 9999px;
+    background: hsl(var(--foreground));
+    box-shadow: 0 2px 8px hsl(var(--ink-0) / 0.6);
+    transition: transform var(--motion-pluck) var(--ease-pluck);
+  }
+  .center-fader-knob:focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 3px;
+  }
+  .center-fader:active .center-fader-knob {
+    transform: scale(1.2);
+    transition: transform var(--motion-attack) var(--ease-attack);
+  }
+
+  /* A meter (components/ui/progress.tsx): a hairline filling in the song's
+     colour. */
+  .meter {
+    position: relative;
+    height: 2px;
+    overflow: hidden;
+    border-radius: 9999px;
+    background: hsl(var(--foreground) / 0.14);
+  }
+  .meter-fill {
+    height: 100%;
+    background: var(--song-accent, hsl(var(--foreground)));
+    transform-origin: left;
+    transition: transform var(--motion-release) var(--ease-release);
+  }
+
+  /* The Sound sheet (components/sound/sound-panel.tsx): the presets as LED
+     words, ten faders around a line at 0 dB with each value over its fader,
+     and the preamp. */
+  .sound-presets {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 2px;
+    /* The LEDs line up with the words around them. */
+    margin-inline: -10px;
+  }
+  .sound-presets .led-choice {
+    height: 32px;
+    padding: 0 10px;
+    border-radius: 9px;
+    font-size: 0.84375rem; /* 13.5px */
+  }
+  .sound-reset {
+    margin-left: auto;
+  }
+  .sound-save {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .sound-save > .soft-field {
+    flex: 1;
+  }
+  .sound-save > :is(.text-button, .solid-button) {
+    height: 38px;
+  }
+  .sound-bank {
+    --band-value: 26px;
+    --band-gap: 6px;
+    --band-fader: 140px;
+    position: relative;
+    display: grid;
+    grid-template-columns: repeat(10, minmax(0, 1fr));
+    margin-top: 6px;
+  }
+  /* 0 dB, through every fader's centre: under the values, half a fader down. */
+  .sound-bank::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: calc(var(--band-value) + var(--band-gap) + var(--band-fader) / 2);
+    height: 1px;
+    background: hsl(var(--foreground) / 0.1);
+    pointer-events: none;
+  }
+  .sound-band {
+    display: grid;
+    justify-items: center;
+    gap: var(--band-gap);
+    min-width: 0;
+  }
+  .sound-band-value {
+    width: 100%;
+    height: var(--band-value);
+    border-radius: 6px;
+    background: transparent;
+    color: hsl(var(--foreground));
+    text-align: center;
+    outline: none;
+    transition:
+      background-color var(--motion-release) var(--ease-release),
+      color var(--motion-release) var(--ease-release);
+  }
+  .sound-band-value[data-flat] {
+    color: hsl(var(--muted-foreground));
+  }
+  .sound-band-value:focus {
+    background: hsl(var(--foreground) / 0.1);
+    color: hsl(var(--foreground));
+    box-shadow: inset 0 0 0 1px hsl(var(--foreground) / 0.26);
+    transition-duration: var(--motion-attack);
+  }
+  @media (hover: hover) {
+    .sound-band-value:hover:not(:focus) {
+      background: hsl(var(--foreground) / 0.06);
+      transition-duration: var(--motion-attack);
+    }
+  }
+  .sound-band-fader {
+    height: var(--band-fader);
+  }
+  .sound-band-label {
+    color: hsl(var(--muted-foreground));
+  }
+  .sound-preamp {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 16px;
+    margin-top: 6px;
+  }
+  .sound-preamp-value {
+    min-width: 7ch;
+    text-align: right;
+  }
+
+  /* The cloud library and two-device playback, in their dialogs
+     (components/cloud-library-panel, cloud-upload-section, sync-panel). */
+  .upload-status {
+    display: grid;
+    gap: 10px;
+  }
+  .upload-status-title {
+    font-size: 0.875rem; /* 14px */
+    font-weight: 600;
+  }
+  .upload-status-detail {
+    color: hsl(var(--muted-foreground));
+  }
+  .upload-files {
+    display: grid;
+    gap: 4px;
+    color: hsl(var(--muted-foreground));
+  }
+  .upload-files > li {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .upload-files > li > :first-child {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .upload-files > li > :last-child {
+    flex: none;
+    color: hsl(var(--foreground));
+  }
+  .upload-status-actions {
+    justify-content: flex-end;
+  }
+  .sync-join {
+    display: flex;
+    gap: 8px;
+  }
+  .sync-join > .soft-field {
+    flex: 1;
+  }
+  /* The code's digits spaced the way the other device shows them; the prompt
+     before them reads as words. */
+  .sync-join input:not(:placeholder-shown) {
+    @apply font-mono;
+    letter-spacing: 0.2em;
+  }
+  .sync-join > .text-button {
+    height: 38px;
+  }
+  .sync-code {
+    display: grid;
+    justify-items: center;
+    gap: 6px;
+    padding: 16px;
+    border-radius: 12px;
+    background: hsl(var(--foreground) / 0.06);
+  }
+  .sync-code-digits {
+    @apply font-mono;
+    font-size: 1.75rem; /* 28px */
+    letter-spacing: 0.3em;
+    /* The spacing trails the last digit too; this keeps the code centred. */
+    margin-right: -0.3em;
+  }
+  .sync-readout {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+  }
+  .sync-readout dt {
+    font-size: 0.6875rem; /* 11px */
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: hsl(var(--muted-foreground));
+  }
+  .sync-readout dd {
+    margin-top: 4px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
 }
 
 @keyframes library-bar {
@@ -3386,7 +4151,74 @@
   }
 }
 
+/* Surfaces come in on the decay and go out on the release, a little way from
+   where they rest. */
+@keyframes panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+}
+
+@keyframes panel-out {
+  to {
+    opacity: 0;
+    transform: translateY(4px) scale(0.98);
+  }
+}
+
+/* --sheet-from is the edge a sheet comes from (.sheet). */
+@keyframes sheet-in {
+  from {
+    opacity: 0;
+    transform: var(--sheet-from);
+  }
+}
+
+@keyframes sheet-out {
+  to {
+    opacity: 0;
+    transform: var(--sheet-from);
+  }
+}
+
+@keyframes menu-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+}
+
+/* --notice-from is up on a phone, where notices sit at the top. */
+@keyframes notice-in {
+  from {
+    opacity: 0;
+    transform: translateY(var(--notice-from, 8px));
+  }
+}
+
+@keyframes notice-swipe-out {
+  from {
+    transform: translateX(var(--radix-toast-swipe-end-x));
+  }
+  to {
+    opacity: 0;
+    transform: translateX(calc(100% + 24px));
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
+  /* Surfaces still fade in and out; they no longer move. */
+  :is(.panel, .sheet, .menu, .notice)[data-state="open"] {
+    animation-name: fade-in;
+  }
+  :is(.panel, .sheet)[data-state="closed"] {
+    animation-name: fade-out;
+  }
+  .solid-button:active,
+  .center-fader:active .center-fader-knob {
+    transform: none;
+  }
   .song-scope[data-playing] .wordmark-ring,
   .song-aura {
     animation: none;

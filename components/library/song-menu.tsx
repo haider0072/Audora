@@ -74,7 +74,7 @@ export function SongMenuItems({ song, actions, Item, Separator }: SongMenuItemsP
       {remove && !isCloudOnlySong(song) && (
         <>
           <Separator />
-          <Item onSelect={() => remove(song)} className="text-destructive focus:text-destructive">
+          <Item onSelect={() => remove(song)} className="menu-item-danger">
             <Trash2 />
             Remove
           </Item>

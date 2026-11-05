@@ -22,7 +22,6 @@ import {
   List,
   MoreVertical,
   RotateCcw,
-  AlertTriangle,
   Library,
   Globe,
 } from "lucide-react"
@@ -145,33 +144,22 @@ export function MobilePlaylistControls({
                 {songCount > 0 && (
                   <AlertDialog>
                     <AlertDialogTrigger asChild>
-                      <DropdownMenuItem
-                        onSelect={(e) => e.preventDefault()}
-                        className="text-destructive focus:text-destructive gap-2"
-                      >
-                        <RotateCcw className="w-4 h-4" />
+                      <DropdownMenuItem onSelect={(e) => e.preventDefault()} className="menu-item-danger">
+                        <RotateCcw />
                         Reset Playlist
                       </DropdownMenuItem>
                     </AlertDialogTrigger>
-                    <AlertDialogContent className="mx-4 max-w-sm">
+                    <AlertDialogContent>
                       <AlertDialogHeader>
-                        <AlertDialogTitle className="flex items-center gap-2">
-                          <AlertTriangle className="w-4 h-4 text-destructive" />
-                          Reset Playlist
-                        </AlertDialogTitle>
-                        <AlertDialogDescription className="text-sm">
+                        <AlertDialogTitle>Reset Playlist</AlertDialogTitle>
+                        <AlertDialogDescription>
                           This will remove all {songCount} song{songCount !== 1 ? "s" : ""} from your playlist. This
                           action cannot be undone.
                         </AlertDialogDescription>
                       </AlertDialogHeader>
-                      <AlertDialogFooter className="flex-col gap-2 sm:flex-row">
-                        <AlertDialogCancel className="w-full">Cancel</AlertDialogCancel>
-                        <AlertDialogAction
-                          onClick={onPlaylistReset}
-                          className="w-full bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                        >
-                          Reset
-                        </AlertDialogAction>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                        <AlertDialogAction onClick={onPlaylistReset}>Reset</AlertDialogAction>
                       </AlertDialogFooter>
                     </AlertDialogContent>
                   </AlertDialog>

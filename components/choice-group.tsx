@@ -13,7 +13,8 @@ interface ChoiceGroupProps<T extends string> {
   /** What is being chosen, for a screen reader. */
   label: string
   choices: readonly Choice<T>[]
-  value: T
+  /** The chosen one; none, such as an equalizer moved off its preset, leaves the first as Tab's stop. */
+  value: T | undefined
   onChange: (value: T) => void
   className?: string
   /** Each choice's class; the chosen one has `aria-checked="true"`. */
@@ -39,10 +40,12 @@ export function ChoiceGroup<T extends string>({
   onPick,
 }: ChoiceGroupProps<T>) {
   const refs = useRef<Array<HTMLButtonElement | null>>([])
+  const chosen = choices.findIndex((choice) => choice.value === value)
+  // The one Tab stops on: the chosen one, or the first while none is.
+  const stop = Math.max(chosen, 0)
 
   const onKeyDown = (event: KeyboardEvent) => {
-    const index = choices.findIndex((choice) => choice.value === value)
-    const move = rovingMove(event.key, index, choices.length, "radios")
+    const move = rovingMove(event.key, stop, choices.length, "radios")
     if (move === null) return
     event.preventDefault()
     refs.current[move]?.focus()
@@ -52,7 +55,7 @@ export function ChoiceGroup<T extends string>({
   return (
     <div role="radiogroup" aria-label={label} className={className} onKeyDown={onKeyDown}>
       {choices.map((choice, index) => {
-        const checked = choice.value === value
+        const checked = index === chosen
         return (
           <button
             key={choice.value}
@@ -63,7 +66,7 @@ export function ChoiceGroup<T extends string>({
             type="button"
             role="radio"
             aria-checked={checked}
-            tabIndex={checked ? 0 : -1}
+            tabIndex={index === stop ? 0 : -1}
             className={choiceClassName}
             onClick={() => {
               onChange(choice.value)

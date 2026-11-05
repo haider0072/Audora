@@ -3,6 +3,7 @@
 import { useState, type ChangeEvent, type RefObject } from "react"
 import { Folder, FolderSync, Music, Plus } from "lucide-react"
 
+import { BusyArc } from "@/components/busy-arc"
 import { TransportButton } from "@/components/player/transport-button"
 import {
   DropdownMenu,
@@ -57,9 +58,7 @@ export function AddMusicMenu({
             data-busy={busy || undefined}
           >
             <Plus className="h-5 w-5" />
-            <svg className="busy-arc header-icon-arc" viewBox="0 0 20 20" aria-hidden="true">
-              <circle cx="10" cy="10" r="9" />
-            </svg>
+            <BusyArc className="header-icon-arc" radius={9} />
           </TransportButton>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">

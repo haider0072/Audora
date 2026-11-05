@@ -7,6 +7,21 @@
  * so boost-heavy presets don't clip).
  */
 
+/** One band of the equalizer: its centre frequency in Hz, its gain in dB, and its name. */
+export interface EqualizerBand {
+  frequency: number
+  gain: number
+  label: string
+}
+
+/** The furthest a band, or the preamp, moves either way, in dB. */
+export const EQ_GAIN_LIMIT = 12
+
+/** A gain held within the equalizer's reach, ±EQ_GAIN_LIMIT dB. */
+export function clampGain(db: number): number {
+  return Math.max(-EQ_GAIN_LIMIT, Math.min(EQ_GAIN_LIMIT, db))
+}
+
 export interface EqPreset {
   id: string
   name: string

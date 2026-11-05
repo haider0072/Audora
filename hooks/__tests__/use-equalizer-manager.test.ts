@@ -1,7 +1,7 @@
 import { renderHook, act } from '@testing-library/react'
 import { useState } from 'react'
 import { useEqualizerManager, DEFAULT_EQUALIZER_BANDS, PEAKING_Q } from '../use-equalizer-manager'
-import type { EqualizerBand } from '@/components/refined-equalizer'
+import type { EqualizerBand } from '@/lib/eq-presets'
 
 describe('useEqualizerManager', () => {
   // Mock filter nodes. Gain writes go through lib/audio-params rampToValue:

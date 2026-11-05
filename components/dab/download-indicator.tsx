@@ -3,6 +3,7 @@
 import { memo } from "react"
 import { ArrowDownToLine, Check, Clock, RotateCw, X } from "lucide-react"
 
+import { BusyArc } from "@/components/busy-arc"
 import { ProgressRing } from "@/components/player/progress-ring"
 import { TransportButton } from "@/components/player/transport-button"
 import type { DownloadState } from "@/lib/tidal-types"
@@ -61,9 +62,7 @@ export const DownloadIndicator = memo(function DownloadIndicator({
     case "processing":
       return (
         <span className="online-download" data-state="processing" title="Finishing the download">
-          <svg className="busy-arc" viewBox="0 0 20 20" aria-hidden="true">
-            <circle cx="10" cy="10" r="7" />
-          </svg>
+          <BusyArc />
           <span className="sr-only">Finishing the download</span>
         </span>
       )
