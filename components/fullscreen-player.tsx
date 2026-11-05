@@ -3,45 +3,16 @@
 import { Button } from "@/components/ui/button"
 import { Slider } from "@/components/ui/slider"
 import {
-  Play, Pause, SkipBack, SkipForward,
   Volume2, VolumeX, Settings, Mic, Youtube, Sparkles,
   Shuffle, Minimize2, ListMusic, X, User,
 } from "lucide-react"
 import { AlbumArtDisplay } from "./album-art-display"
 import { AlbumArtBackground } from "./album-art-background"
 import { EnhancedPlaylist, type Song } from "./enhanced-playlist"
-import { formatTime } from "@/lib/utils"
-import { usePlaybackTime } from "@/hooks/use-playback-time"
+import { PlayButton } from "./player/play-button"
+import { SeekBar } from "./player/seek-bar"
+import { SkipIcon, TransportButton } from "./player/transport-button"
 import { useState, useEffect, useLayoutEffect, useCallback, useRef } from "react"
-
-/**
- * Seek row, split out so that subscribing to the playback position re-renders
- * this strip alone rather than the entire fullscreen player around it.
- */
-function FullscreenSeekBar({
-  duration,
-  onSeek,
-}: {
-  duration: number
-  onSeek: (value: number[]) => void
-}) {
-  const currentTime = usePlaybackTime()
-
-  return (
-    <div className="flex items-center gap-2 w-full">
-      <span className="text-[11px] text-white/40 w-10 text-right tabular-nums">{formatTime(currentTime)}</span>
-      <Slider
-        value={[currentTime]}
-        max={duration || 1}
-        step={1}
-        onValueChange={onSeek}
-        className="flex-1 [&>span:first-child]:h-1 [&_[role=slider]]:h-3 [&_[role=slider]]:w-3 [&_[role=slider]]:opacity-0 [&_[role=slider]]:transition-all [&_[role=slider]]:duration-200 hover:[&_[role=slider]]:opacity-100"
-        aria-label="Seek"
-      />
-      <span className="text-[11px] text-white/40 w-10 tabular-nums">{formatTime(duration)}</span>
-    </div>
-  )
-}
 
 interface FullscreenPlayerProps {
   isOpen: boolean
@@ -52,7 +23,8 @@ interface FullscreenPlayerProps {
   volume: number[]
   isMuted: boolean
   shuffleMode: boolean
-  isTransitioning: boolean
+  /** A picked song is loading. */
+  isLoading: boolean
   songs: Song[]
   sortedSongs: Song[]
   viewMode: "grouped" | "list"
@@ -60,7 +32,7 @@ interface FullscreenPlayerProps {
   onPlayPause: () => void
   onSkipNext: () => void
   onSkipPrevious: () => void
-  onSeek: (value: number[]) => void
+  onSeek: (seconds: number) => void
   onVolumeChange: (value: number[]) => void
   onToggleMute: () => void
   onToggleShuffle: () => void
@@ -84,7 +56,7 @@ export function FullscreenPlayer({
   volume,
   isMuted,
   shuffleMode,
-  isTransitioning,
+  isLoading,
   songs,
   sortedSongs,
   viewMode,
@@ -205,7 +177,7 @@ export function FullscreenPlayer({
         <AlbumArtBackground
           albumArt={currentSong?.albumArt}
           songId={currentSong?.id}
-          isTransitioning={isTransitioning}
+          isTransitioning={isLoading}
           positioning="absolute"
         />
       </div>
@@ -243,7 +215,7 @@ export function FullscreenPlayer({
                   songId={currentSong.id}
                   albumArt={currentSong.albumArt}
                   title={`${currentSong.title} album art`}
-                  isTransitioning={isTransitioning}
+                  isTransitioning={isLoading}
                   className="w-80 h-80 lg:w-96 lg:h-96"
                   style={{
                     boxShadow: "0 52px 52px -20px rgba(0,0,0,0.3), 0 4px 20px rgba(0,0,0,0.1)",
@@ -261,7 +233,7 @@ export function FullscreenPlayer({
                   songId={currentSong.id}
                   albumArt={currentSong.albumArt}
                   title={`${currentSong.title} album art`}
-                  isTransitioning={isTransitioning}
+                  isTransitioning={isLoading}
                   className="w-80 h-80 lg:w-96 lg:h-96"
                   style={{
                     boxShadow: "0 52px 52px -20px rgba(0,0,0,0.3), 0 4px 20px rgba(0,0,0,0.1)",
@@ -299,7 +271,7 @@ export function FullscreenPlayer({
       >
         <div className="flex items-center justify-between px-4 h-14 border-b border-white/10">
           <span className="text-sm font-semibold text-white/80">Queue</span>
-          <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-white/50 hover:text-white" onClick={() => setShowPlaylist(false)}>
+          <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-white/50 hover:text-white" onClick={() => setShowPlaylist(false)} aria-label="Close queue">
             <X className="w-3.5 h-3.5" />
           </Button>
         </div>
@@ -349,45 +321,46 @@ export function FullscreenPlayer({
         {/* Center: Controls + Seekbar */}
         <div className="flex-1 flex flex-col items-center gap-1 max-w-2xl mx-auto">
           {/* Controls */}
-          <div className="flex items-center gap-3">
-            <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-white/60 hover:text-white" onClick={onToggleShuffle} aria-label="Shuffle">
-              <Shuffle className={`w-3.5 h-3.5 ${shuffleMode ? "text-primary" : ""}`} />
-            </Button>
-            <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-white/70 hover:text-white" onClick={onSkipPrevious} disabled={songs.length === 0}>
-              <SkipBack className="w-4 h-4" />
-            </Button>
-            <Button
-              onClick={onPlayPause}
-              size="icon"
-              className="w-9 h-9 rounded-full bg-white text-black hover:bg-white/90"
-              disabled={!currentSong}
-            >
-              {isPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4 ml-0.5" />}
-            </Button>
-            <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-white/70 hover:text-white" onClick={onSkipNext} disabled={songs.length === 0}>
-              <SkipForward className="w-4 h-4" />
-            </Button>
-            <div className="w-7" /> {/* spacer to balance shuffle */}
+          <div className="flex items-center gap-3 text-white">
+            <TransportButton label="Shuffle" size="sm" pressed={shuffleMode} onClick={onToggleShuffle}>
+              <Shuffle className="h-3.5 w-3.5" />
+            </TransportButton>
+            <TransportButton label="Previous track" size="sm" onClick={onSkipPrevious} disabled={songs.length === 0}>
+              <SkipIcon direction="back" size="sm" />
+            </TransportButton>
+            <PlayButton size="sm" isPlaying={isPlaying} isLoading={isLoading} onClick={onPlayPause} disabled={!currentSong} />
+            <TransportButton label="Next track" size="sm" onClick={onSkipNext} disabled={songs.length === 0}>
+              <SkipIcon direction="forward" size="sm" />
+            </TransportButton>
+            {/* Balances the shuffle button so play sits at the centre. */}
+            <div className="h-9 w-9" aria-hidden="true" />
           </div>
-          {/* Seekbar */}
-          <FullscreenSeekBar duration={duration} onSeek={onSeek} />
+          {/* While a pick loads, the bar already belongs to it: empty, at its length. */}
+          <SeekBar
+            className="w-full"
+            duration={isLoading ? (currentSong?.duration ?? 0) : duration}
+            onSeek={onSeek}
+            isPlaying={isPlaying}
+            disabled={isLoading}
+            timesPosition="sides"
+          />
         </div>
 
         {/* Right: Utility buttons + Volume */}
         <div className="flex items-center gap-1 w-[240px] flex-shrink-0 justify-end">
-          <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-white/50 hover:text-white" onClick={() => { onClose(); onShowLyrics(); }}>
+          <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-white/50 hover:text-white" onClick={() => { onClose(); onShowLyrics(); }} aria-label="Show lyrics">
             <Mic className="w-3.5 h-3.5" />
           </Button>
-          <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-white/50 hover:text-white" onClick={() => { onClose(); onShowYoutube(); }}>
+          <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-white/50 hover:text-white" onClick={() => { onClose(); onShowYoutube(); }} aria-label="Show video">
             <Youtube className="w-3.5 h-3.5" />
           </Button>
-          <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-white/50 hover:text-white" onClick={() => { onClose(); onShowInsights(); }}>
+          <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-white/50 hover:text-white" onClick={() => { onClose(); onShowInsights(); }} aria-label="Song insights">
             <Sparkles className="w-3.5 h-3.5" />
           </Button>
-          <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-white/50 hover:text-white" onClick={() => { onClose(); onShowArtist(); }}>
+          <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-white/50 hover:text-white" onClick={() => { onClose(); onShowArtist(); }} aria-label="Artist info">
             <User className="w-3.5 h-3.5" />
           </Button>
-          <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-white/50 hover:text-white" onClick={() => { onClose(); onShowEqualizer(); }}>
+          <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-white/50 hover:text-white" onClick={() => { onClose(); onShowEqualizer(); }} aria-label="Equalizer settings">
             <Settings className="w-3.5 h-3.5" />
           </Button>
           <Button
@@ -395,11 +368,13 @@ export function FullscreenPlayer({
             size="sm"
             className={`h-7 w-7 p-0 hover:text-white ${showPlaylist ? "text-primary" : "text-white/50"}`}
             onClick={() => setShowPlaylist(!showPlaylist)}
+            aria-label="Queue"
+            aria-pressed={showPlaylist}
           >
             <ListMusic className="w-3.5 h-3.5" />
           </Button>
           <div className="flex items-center gap-1 ml-1">
-            <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-white/50 hover:text-white" onClick={onToggleMute}>
+            <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-white/50 hover:text-white" onClick={onToggleMute} aria-label={isMuted ? "Unmute" : "Mute"}>
               {isMuted ? <VolumeX className="w-3.5 h-3.5" /> : <Volume2 className="w-3.5 h-3.5" />}
             </Button>
             <Slider

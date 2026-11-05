@@ -2,22 +2,22 @@
 
 import { useState, useRef, useEffect, useCallback, useMemo, lazy, Suspense } from "react"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent } from "@/components/ui/card"
 import { Slider } from "@/components/ui/slider"
-import { Badge } from "@/components/ui/badge"
-import { Separator } from "@/components/ui/separator"
 import { toast } from "@/hooks/use-toast"
 import { ToastAction } from "@/components/ui/toast"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import {
-  Play, Pause, SkipBack, SkipForward,
   Volume2, VolumeX, Settings, Mic, Youtube, Sparkles, Shuffle, Maximize2, User,
   Search, Music, List, Globe, Library, MonitorSpeaker, Cloud,
 } from "lucide-react"
 
 import Image from "next/image"
 import { Wordmark } from "@/components/brand/wordmark"
-import { EnhancedPlaylist, type Song, type PlaylistScrollTarget } from "@/components/enhanced-playlist"
+import { PlayButton } from "@/components/player/play-button"
+import { RollingText } from "@/components/player/rolling-text"
+import { SeekBar } from "@/components/player/seek-bar"
+import { SkipIcon, TransportButton } from "@/components/player/transport-button"
+import { EnhancedPlaylist, type PlaylistScrollTarget } from "@/components/enhanced-playlist"
 import { RefinedEqualizer, type EqualizerBand } from "@/components/refined-equalizer"
 import { AlbumArtBackground } from "@/components/album-art-background"
 import { AlbumArtDisplay } from "@/components/album-art-display"
@@ -27,6 +27,8 @@ import { useFolderSync } from "@/hooks/use-folder-sync"
 import { usePlaylistManager } from "@/hooks/use-playlist-manager"
 import { useWarmNextSong } from "@/hooks/use-warm-next-song"
 import { useAudioEngine } from "@/hooks/use-audio-engine"
+import { usePlaybackController, useTransportEvents } from "@/hooks/use-playback-controller"
+import { useSongColors } from "@/hooks/use-song-colors"
 import { useEqualizerManager, DEFAULT_EQUALIZER_BANDS } from "@/hooks/use-equalizer-manager"
 import { useFileImporter } from "@/hooks/use-file-importer"
 import { usePlaylistPersistence, useAutoSave } from "@/hooks/use-playlist-persistence"
@@ -34,11 +36,8 @@ import { useMediaControls } from "@/hooks/use-media-controls"
 import { useTidalSearch } from "@/hooks/use-tidal-search"
 import { OnlineSearchSidebar } from "@/components/dab/online-search-sidebar"
 import { AlbumArtCache } from "@/lib/album-art-cache"
-import { LoudnessAnalyzer } from "@/lib/loudness-analyzer"
 import { getAllPresets, type EqPreset } from "@/lib/eq-presets"
-import { formatTime, waitForCanPlay } from "@/lib/utils"
 import { resetPlaybackTime } from "@/lib/playback-time-store"
-import { usePlaybackTime } from "@/hooks/use-playback-time"
 import { AddMusicControls } from "@/components/add-music-control"
 import { FullscreenPlayer } from "@/components/fullscreen-player"
 import { SyncPanel } from "@/components/sync-panel"
@@ -68,42 +67,10 @@ const CROSSFADE_AUTO_SECONDS = 0
 /** Manual track-change crossfade (Next/Prev/pick) — short & snappy. */
 const CROSSFADE_MANUAL_SECONDS = 0.4
 
-/**
- * Seek bar, split out so that subscribing to the playback position re-renders
- * this strip alone. Reading the position in the player component instead would
- * put the whole tree below it — playlist included — back into the render path
- * on every tick, which is what this store exists to prevent.
- */
-function PlayerSeekBar({
-  duration,
-  onSeek,
-}: {
-  duration: number
-  onSeek: (value: number[]) => void
-}) {
-  const currentTime = usePlaybackTime()
-
-  return (
-    <div className="space-y-1">
-      <Slider
-        value={[currentTime]}
-        max={duration}
-        step={1}
-        onValueChange={onSeek}
-        className="w-full [&>span:first-child]:h-1.5 [&>span:first-child]:bg-white/10 [&>span:first-child]:backdrop-blur-md [&_[role=slider]]:h-3.5 [&_[role=slider]]:w-3.5"
-        aria-label="Seek position"
-      />
-      <div className="flex justify-between text-xs text-muted-foreground">
-        <span>{formatTime(currentTime)}</span>
-        <span>{formatTime(duration)}</span>
-      </div>
-    </div>
-  )
-}
+/** The artist and album under the title link into the library. */
+const JUMP_LINK_CLASS = "hover:text-foreground hover:underline underline-offset-2 transition-colors duration-attack ease-attack"
 
 export default function EnhancedMusicPlayer() {
-  const [currentBitrate, setCurrentBitrate] = useState<number | undefined>()
-  const [isTransitioning, setIsTransitioning] = useState(false)
   const [activeView, setActiveView] = useState<"player" | "lyrics" | "youtube" | "insights" | "artist">("player");
   const [forceRefreshTrigger, setForceRefreshTrigger] = useState(0);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -129,29 +96,10 @@ export default function EnhancedMusicPlayer() {
   const albumArtRef = useRef<HTMLDivElement>(null)
   const audioRef = useRef<HTMLAudioElement>(null)
   const secondaryAudioRef = useRef<HTMLAudioElement>(null)
-  const skipToNextRef = useRef<() => void>(() => {})
-  const selectSongAbortRef = useRef<AbortController | null>(null)
-  const pendingPreloadRef = useRef<Song | null>(null)
-  // Mirrors the sync role for the auto-advance guard below, which is defined
-  // before the session exists.
+  // Mirrors the sync role for the auto-advance guard in the playback
+  // controller, which is created before the session exists.
   const isFollowingRef = useRef(false)
-
-  // Stable onEnded callback using ref — THIS FIXES THE STALE CLOSURE BUG
-  const handleEnded = useCallback(() => {
-    skipToNextRef.current()
-  }, [])
-
-  // Stable onNearEnd callback using ref (needs access to getNextSong)
-  const nearEndHandlerRef = useRef<() => void>(() => {})
-  const handleNearEnd = useCallback(() => {
-    nearEndHandlerRef.current()
-  }, [])
-
-  // Crossfade-start fires before the track ends — advance early so the two
-  // tracks overlap. Same advance path as onEnded (which becomes a no-op fallback).
-  const handleCrossfadeStart = useCallback(() => {
-    skipToNextRef.current()
-  }, [])
+  const transportEvents = useTransportEvents()
 
   const [equalizerBands, setEqualizerBands] = useState<EqualizerBand[]>(DEFAULT_EQUALIZER_BANDS)
   const [normalizationEnabled, setNormalizationEnabledState] = useState(false)
@@ -159,33 +107,30 @@ export default function EnhancedMusicPlayer() {
   const [customEqPresets, setCustomEqPresets] = useState<EqPreset[]>([])
   const [activeEqPresetId, setActiveEqPresetId] = useState<string | undefined>(undefined)
 
-  const {
-    isPlaying, setIsPlaying,
-    duration, setDuration, volume, setVolume, isMuted,
-    filterNodes, audioContextRef, playPromiseRef, gainNodeRef,
-    initializeAudioContext, play, pause, seek,
-    changeVolume, toggleMute, adjustVolume, applyNormalization,
-    setNormalizationEnabled: engineSetNormalizationEnabled,
-    setPreamp: engineSetPreamp,
-    setPlaybackRate, getPosition,
-    preloadNextSong, swapToPreloaded, resetGaplessState, isPreloaded, crossfadeTo,
-  } = useAudioEngine({
+  const engine = useAudioEngine({
     audioRef,
     secondaryAudioRef,
     equalizerBands,
-    onEnded: handleEnded,
-    onNearEnd: handleNearEnd,
+    onEnded: transportEvents.onEnded,
+    onNearEnd: transportEvents.onNearEnd,
     crossfadeDuration: CROSSFADE_AUTO_SECONDS,
     manualCrossfadeDuration: CROSSFADE_MANUAL_SECONDS,
-    onCrossfadeStart: handleCrossfadeStart,
+    // Crossfade-start fires before the track ends: advance early so the two
+    // overlap. Same path as onEnded, which then has nothing left to do.
+    onCrossfadeStart: transportEvents.onEnded,
   })
-
   const {
-    songs, setSongs, currentSong, setCurrentSong,
-    shuffleMode, setShuffleMode, viewMode, setViewMode,
-    sortedSongs, getNextSong, peekNextSong, getPreviousSong, notifySongSelected,
-    toggleShuffle, removeSong, resetPlaylist, playNext,
-  } = usePlaylistManager({
+    isPlaying, setIsPlaying,
+    duration, setDuration, volume, setVolume, isMuted,
+    filterNodes, audioContextRef,
+    pause, seek,
+    changeVolume, toggleMute, adjustVolume,
+    setNormalizationEnabled: engineSetNormalizationEnabled,
+    setPreamp: engineSetPreamp,
+    setPlaybackRate, getPosition,
+  } = engine
+
+  const playlist = usePlaylistManager({
     onCurrentSongRemoved: () => {
       pause()
       if (audioRef.current) audioRef.current.src = ""
@@ -197,6 +142,12 @@ export default function EnhancedMusicPlayer() {
       setDuration(0)
     },
   })
+  const {
+    songs, setSongs, currentSong, setCurrentSong,
+    shuffleMode, setShuffleMode, viewMode, setViewMode,
+    sortedSongs, peekNextSong,
+    toggleShuffle, removeSong, resetPlaylist, playNext,
+  } = playlist
 
   const {
     showEqualizer, setShowEqualizer,
@@ -344,218 +295,18 @@ export default function EnhancedMusicPlayer() {
 
   useAutoSave(persistenceData, isInitialized, isRestoringPlaylist, savePlaylist)
 
-  const selectSong = useCallback(
-    async (song: Song, isAutoAdvance = false) => {
-      // Abort any previous in-flight selectSong call
-      selectSongAbortRef.current?.abort()
-      const abort = new AbortController()
-      selectSongAbortRef.current = abort
-
-      if (playPromiseRef.current) {
-        try {
-          await playPromiseRef.current
-        } catch (e) {
-          if ((e as DOMException).name !== "AbortError") {
-            console.error("Play promise error:", e)
-          }
-        }
-      }
-
-      if (abort.signal.aborted) return
-
-      // Gapless fast path: if this song was preloaded, do instant swap
-      if (isAutoAdvance && isPreloaded && pendingPreloadRef.current?.id === song.id) {
-        applyNormalization(song.gainCorrection ?? 0)
-        const swapped = swapToPreloaded()
-        if (swapped) {
-          releaseMediaUrl(currentSong?.url)
-          setCurrentSong(song)
-          setCurrentBitrate(song.bitrate)
-          setIsPlaying(true)
-          notifySongSelected(song, isAutoAdvance)
-          preloadUpcomingSongs()
-          pendingPreloadRef.current = null
-          return
-        }
-      }
-
-      pendingPreloadRef.current = null
-
-      // Lazy loudness analysis — runs in background on first play (deferred from import
-      // to avoid OfflineAudioContext throttling when tab is in background). Skipped
-      // entirely while normalization is off: no point decoding a whole FLAC into RAM
-      // for a correction that would not be applied.
-      if (normalizationEnabled && song.loudnessLUFS == null && song.file) {
-        LoudnessAnalyzer.analyze(song.file).then((loudness) => {
-          setSongs((prev) =>
-            prev.map((s) =>
-              s.id === song.id
-                ? { ...s, loudnessLUFS: loudness.lufs, gainCorrection: loudness.gainCorrection }
-                : s
-            )
-          )
-          // Analysis may finish after the user already skipped away — only
-          // apply the correction if this song is still the selected one.
-          if (!abort.signal.aborted) {
-            applyNormalization(loudness.gainCorrection)
-          }
-        }).catch(() => { /* non-critical */ })
-      }
-
-      // Manual / non-preloaded crossfade: blend into the new track via the
-      // inactive element instead of a hard reload. Returns false (→ normal load)
-      // when crossfade is off or nothing is currently playing.
-      const source = songSource(song)
-      if (!source) {
-        console.error("Song has neither a local file nor a cloud copy:", song.id)
-        toast({ title: "This song can't be played", variant: "destructive" })
-        return
-      }
-
-      applyNormalization(song.gainCorrection ?? 0)
-      const faded = await crossfadeTo(source, abort.signal)
-      if (abort.signal.aborted) return
-      if (faded) {
-        releaseMediaUrl(currentSong?.url)
-        setCurrentSong(song)
-        setCurrentBitrate(song.bitrate)
-        setIsPlaying(true)
-        notifySongSelected(song, isAutoAdvance)
-        preloadUpcomingSongs()
-        return
-      }
-
-      // Reset gapless state so we load into primary audio element
-      resetGaplessState()
-
-      setIsTransitioning(true)
-      releaseMediaUrl(currentSong?.url)
-      preloadUpcomingSongs()
-      setCurrentSong(song)
-      setCurrentBitrate(song.bitrate)
-      setIsPlaying(false)
-      notifySongSelected(song, isAutoAdvance)
-      applyNormalization(song.gainCorrection ?? 0)
-
-      if (audioRef.current) {
-        audioRef.current.pause()
-        const audioUrl = createMediaUrl(source)
-        const updatedSong = { ...song, url: audioUrl }
-        setCurrentSong(updatedSong)
-        audioRef.current.src = audioUrl
-        audioRef.current.load()
-
-        try {
-          await waitForCanPlay(audioRef.current)
-
-          if (abort.signal.aborted) return
-
-          initializeAudioContext()
-          playPromiseRef.current = audioRef.current.play()
-          await playPromiseRef.current
-          if (!abort.signal.aborted) setIsPlaying(true)
-        } catch (error) {
-          if (!abort.signal.aborted) {
-            if ((error as DOMException).name !== "AbortError") {
-              console.error("Error playing song:", error)
-              toast({ title: "Playback Error", variant: "destructive" })
-            }
-            setIsPlaying(false)
-          }
-        } finally {
-          if (!abort.signal.aborted) setIsTransitioning(false)
-        }
-      }
-    },
-    [currentSong, notifySongSelected, initializeAudioContext, preloadUpcomingSongs, isPreloaded, swapToPreloaded, resetGaplessState, applyNormalization, crossfadeTo, normalizationEnabled],
-  )
-  
-  /**
-   * Put the current song into the primary element when nothing is loaded.
-   * After a restored session the playlist holds a song but no element has a
-   * source yet, so anything that starts playback has to cover that case —
-   * the play button and, in a sync session, the follower.
-   */
-  const ensureSourceLoaded = useCallback(async () => {
-    const audio = audioRef.current
-    const source = songSource(currentSong)
-    if (!audio || audio.src || !currentSong || !source) return
-
-    resetGaplessState() // ensure we're on primary
-    const audioUrl = createMediaUrl(source)
-    setCurrentSong({ ...currentSong, url: audioUrl })
-    audio.src = audioUrl
-    audio.load()
-    await waitForCanPlay(audio)
-  }, [currentSong, resetGaplessState, setCurrentSong])
-
-  const startPlayback = useCallback(async () => {
-    await ensureSourceLoaded()
-    try {
-      initializeAudioContext()
-      await play()
-    } catch (error) {
-      if ((error as DOMException).name !== "AbortError") {
-        console.error("Error playing audio:", error)
-        toast({ title: "Playback Error", variant: "destructive" })
-      }
-      setIsPlaying(false)
-    }
-  }, [ensureSourceLoaded, initializeAudioContext, play, setIsPlaying])
-
-  const togglePlayPause = async () => {
-    if (!currentSong) return
-
-    if (playPromiseRef.current) {
-      try {
-        await playPromiseRef.current
-      } catch (e) {
-        if ((e as DOMException).name !== "AbortError") {
-          console.error("Play promise error on toggle:", e)
-        }
-      }
-    }
-
-    if (isPlaying) {
-      pause()
-    } else {
-      await startPlayback()
-    }
-  }
-
-  const skipToNext = () => {
-    // A follower takes track changes from the host. Advancing on its own would
-    // race the host's own advance and leave the two devices on different songs.
-    if (isFollowingRef.current) return
-    const nextSong = getNextSong()
-    if (nextSong) selectSong(nextSong, true)
-  }
-
-  // Keep skipToNextRef always pointing to the latest skipToNext (bug fix for stale closures)
-  // eslint-disable-next-line react-hooks/refs -- intentional: ref updated during render to avoid stale closure in audio ended callback
-  skipToNextRef.current = skipToNext
-
-  // Keep nearEndHandlerRef pointing to the latest handler (preloads next song for gapless)
-  nearEndHandlerRef.current = () => {
-    const nextSong = getNextSong()
-    const source = songSource(nextSong)
-    if (nextSong && source) {
-      pendingPreloadRef.current = nextSong
-      preloadNextSong(source)
-    }
-  }
-
-  const skipToPrevious = () => {
-    const prevSong = getPreviousSong()
-    if (prevSong) selectSong(prevSong, false)
-  }
-
-  // Stable identity matters: an inline arrow here changes on every render and
-  // defeats the memo() on every playlist row, which is the whole reason the
-  // rows were re-rendering in bulk.
-  const handleSongSelect = useCallback((song: Song) => {
-    selectSong(song, false)
-  }, [selectSong])
+  const {
+    selectSong, handleSongSelect, startPlayback, togglePlayPause, skipToNext, skipToPrevious,
+    displaySong, isLoading: isLoadingSong, direction: changeDirection,
+  } = usePlaybackController({
+    audioRef,
+    engine,
+    playlist,
+    normalizationEnabled,
+    preloadUpcomingSongs,
+    isFollowingRef,
+    events: transportEvents,
+  })
 
   // --- Multi-device sync --------------------------------------------------
 
@@ -574,7 +325,7 @@ export default function EnhancedMusicPlayer() {
     selectTrackByKey: async (key) => {
       const song = findTrackByKey(songs, key)
       if (!song) return false
-      await selectSong(song, false)
+      await selectSong(song)
       return true
     },
     // Autoplay policy is satisfied: joining or hosting is a click, and that
@@ -600,16 +351,11 @@ export default function EnhancedMusicPlayer() {
     if (isHosting) syncBroadcast()
   }, [isPlaying, currentSong?.id, isHosting, syncBroadcast])
 
-  const handleSeek = useCallback((value: number[]) => {
-    seek(value[0])
+  const handleSeek = useCallback((seconds: number) => {
+    seek(seconds)
     // Seeks are not visible to the effect above, so they announce themselves.
     if (isHosting) syncBroadcast()
   }, [seek, isHosting, syncBroadcast])
-
-  const formatBitrate = (bitrate?: number) => {
-    if (!bitrate) return "Unknown"
-    return bitrate >= 1000 ? `${(bitrate / 1000).toFixed(1)}M` : `${Math.round(bitrate)}k`
-  }
 
   useMediaControls({
     currentSong, isPlaying, songs, audioRef,
@@ -626,7 +372,7 @@ export default function EnhancedMusicPlayer() {
     },
     onVolumeAdjust: adjustVolume,
     onToggleMute: toggleMute,
-    onPlayFirstSong: () => { if (songs.length > 0) selectSong(songs[0], false) },
+    onPlayFirstSong: () => { if (songs.length > 0) void selectSong(songs[0]) },
     enableExtendedShortcuts: true,
   })
 
@@ -673,9 +419,17 @@ export default function EnhancedMusicPlayer() {
     setIsFullscreen(true)
   }, [])
 
+  const songColors = useSongColors(displaySong)
+
   return (
-    <div className="min-h-screen max-h-screen overflow-hidden relative">
-      <AlbumArtBackground albumArt={currentSong?.albumArt} songId={currentSong?.id} isTransitioning={isTransitioning} />
+    // The desktop player sits on artwork darkened to ink in both themes, so it
+    // takes the dark theme's tokens whatever the app theme is.
+    <div
+      className="dark song-scope min-h-screen max-h-screen overflow-hidden relative text-foreground"
+      style={songColors}
+      data-playing={isPlaying || undefined}
+    >
+      <AlbumArtBackground albumArt={displaySong?.albumArt} songId={displaySong?.id} isTransitioning={isLoadingSong} />
       {/* crossOrigin: cloud songs stream from R2, and Web Audio outputs silence for a cross-origin element without CORS */}
       <audio ref={audioRef} preload="metadata" crossOrigin="anonymous" className="hidden" />
       <audio ref={secondaryAudioRef} preload="metadata" crossOrigin="anonymous" className="hidden" />
@@ -690,7 +444,7 @@ export default function EnhancedMusicPlayer() {
             <Image src="/icon-192x192.png" alt="Audora" width={32} height={32} className="rounded-lg" />
             {/* Below 1280 px the centred search pill leaves no room beside the icon. */}
             <Wordmark aria-hidden="true" className="hidden text-2xl text-white xl:inline" />
-            {isRestoringPlaylist && <Badge variant="secondary">Restoring...</Badge>}
+            {isRestoringPlaylist && <span className="type-data text-muted-foreground">Restoring…</span>}
           </div>
 
           {/* Center: Search + Controls — truly centered via absolute */}
@@ -833,50 +587,53 @@ export default function EnhancedMusicPlayer() {
               <>
                 <div className="flex flex-col h-full px-6 pb-6 pt-2">
 
-                    {currentSong ? (
+                    {displaySong ? (
                       <>
                         {/* Album Art */}
                         <div ref={albumArtRef} className="flex-1 min-h-0 min-w-0 flex items-center justify-center [container-type:size]">
                           <div className="aspect-square h-[min(100cqw,100cqh)]">
                             <AlbumArtDisplay
-                              songId={currentSong.id}
-                              albumArt={currentSong.albumArt}
-                              title={`${currentSong.title} album art`}
-                              isTransitioning={isTransitioning}
+                              songId={displaySong.id}
+                              albumArt={displaySong.albumArt}
+                              title={`${displaySong.title} album art`}
+                              isTransitioning={isLoadingSong}
                               className="!w-full !h-full shadow-2xl shadow-black/30"
                             />
                           </div>
                         </div>
 
                         {/* Song info — left aligned, flows into controls */}
-                        <div
-                          className={`flex-shrink-0 pt-3 pb-3 transition-all duration-500 ease-out ${isTransitioning ? "translate-x-2 opacity-70" : "translate-x-0 opacity-100"}`}
-                        >
-                          <h2 className="text-xl font-bold line-clamp-1 leading-tight">{currentSong.title}</h2>
-                          <p className="text-base text-muted-foreground font-medium mt-0.5 line-clamp-1">
-                            {currentSong.artist && (
-                              <button
-                                type="button"
-                                onClick={() => jumpToArtist(currentSong.artist!)}
-                                className="hover:text-foreground hover:underline underline-offset-2 transition-colors"
-                                title={`Jump to ${currentSong.artist}`}
-                              >
-                                {currentSong.artist}
-                              </button>
-                            )}
-                            {currentSong.album && (
-                              <>
-                                {" \u2014 "}
+                        <div className="flex-shrink-0 min-w-0 pt-4 pb-2">
+                          <h2 className="font-display text-2xl font-semibold leading-tight tracking-[-0.02em]">
+                            <RollingText text={displaySong.title || "Unknown title"} direction={changeDirection} />
+                          </h2>
+                          <p className="mt-1 text-base text-muted-foreground">
+                            <RollingText
+                              text={[displaySong.artist, displaySong.album].filter(Boolean).join(" \u2014 ")}
+                              direction={changeDirection}
+                            >
+                              {displaySong.artist && (
                                 <button
                                   type="button"
-                                  onClick={() => jumpToAlbum(currentSong.album!)}
-                                  className="hover:text-foreground hover:underline underline-offset-2 transition-colors"
-                                  title={`Jump to ${currentSong.album}`}
+                                  onClick={() => jumpToArtist(displaySong.artist!)}
+                                  className={JUMP_LINK_CLASS}
+                                  title={`Jump to ${displaySong.artist}`}
                                 >
-                                  {currentSong.album}
+                                  {displaySong.artist}
                                 </button>
-                              </>
-                            )}
+                              )}
+                              {displaySong.artist && displaySong.album && " \u2014 "}
+                              {displaySong.album && (
+                                <button
+                                  type="button"
+                                  onClick={() => jumpToAlbum(displaySong.album!)}
+                                  className={JUMP_LINK_CLASS}
+                                  title={`Jump to ${displaySong.album}`}
+                                >
+                                  {displaySong.album}
+                                </button>
+                              )}
+                            </RollingText>
                           </p>
                         </div>
                       </>
@@ -886,36 +643,33 @@ export default function EnhancedMusicPlayer() {
 
                     {/* Controls — right after song info, not pushed to bottom */}
                     <div className="flex-shrink-0 space-y-2">
-                      {/* Seek bar */}
-                      {duration > 0 && <PlayerSeekBar duration={duration} onSeek={handleSeek} />}
+                      {/* While a pick loads, the bar already belongs to it: empty, at its length. */}
+                      <SeekBar
+                        duration={isLoadingSong ? (displaySong?.duration ?? 0) : duration}
+                        onSeek={handleSeek}
+                        isPlaying={isPlaying}
+                        disabled={isLoadingSong}
+                      />
 
                       {/* Transport: shuffle, prev, play, next */}
-                      <div className="flex items-center justify-center gap-6">
-                        <Button
-                          variant={shuffleMode ? "default" : "ghost"}
-                          size="sm"
-                          className="h-8 w-8 p-0"
-                          onClick={toggleShuffle}
-                          aria-label={shuffleMode ? "Disable shuffle" : "Enable shuffle"}
-                        >
-                          <Shuffle className="w-3.5 h-3.5" />
-                        </Button>
-                        <Button variant="ghost" size="sm" className="h-9 w-9 p-0" onClick={skipToPrevious} disabled={songs.length === 0} aria-label="Previous track">
-                          <SkipBack className="w-5 h-5" />
-                        </Button>
-                        <Button
-                          onClick={togglePlayPause}
-                          size="icon"
-                          className="w-11 h-11 rounded-full shadow-lg"
-                          disabled={!currentSong}
-                          aria-label={isPlaying ? "Pause" : "Play"}
-                        >
-                          {isPlaying ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5 ml-0.5" />}
-                        </Button>
-                        <Button variant="ghost" size="sm" className="h-9 w-9 p-0" onClick={skipToNext} disabled={songs.length === 0} aria-label="Next track">
-                          <SkipForward className="w-5 h-5" />
-                        </Button>
-                        <div className="h-8 w-8" />
+                      <div className="flex items-center justify-center gap-5">
+                        <TransportButton label="Shuffle" size="sm" pressed={shuffleMode} onClick={toggleShuffle}>
+                          <Shuffle className="h-4 w-4" />
+                        </TransportButton>
+                        <TransportButton label="Previous track" onClick={skipToPrevious} disabled={songs.length === 0}>
+                          <SkipIcon direction="back" />
+                        </TransportButton>
+                        <PlayButton
+                          isPlaying={isPlaying}
+                          isLoading={isLoadingSong}
+                          onClick={() => void togglePlayPause()}
+                          disabled={!displaySong}
+                        />
+                        <TransportButton label="Next track" onClick={skipToNext} disabled={songs.length === 0}>
+                          <SkipIcon direction="forward" />
+                        </TransportButton>
+                        {/* Balances the shuffle button so play sits at the centre. */}
+                        <div className="h-9 w-9" aria-hidden="true" />
                       </div>
 
                       {/* Secondary controls */}
@@ -1010,7 +764,7 @@ export default function EnhancedMusicPlayer() {
           <div className="h-full bg-transparent overflow-hidden">
             <EnhancedPlaylist
               songs={songs}
-              currentSong={currentSong}
+              currentSong={displaySong}
               onSongSelect={handleSongSelect}
               onSongRemove={removeSong}
               onSongPlayNext={playNext}
@@ -1032,13 +786,13 @@ export default function EnhancedMusicPlayer() {
       <FullscreenPlayer
         isOpen={isFullscreen}
         onClose={() => setIsFullscreen(false)}
-        currentSong={currentSong}
+        currentSong={displaySong}
         isPlaying={isPlaying}
+        isLoading={isLoadingSong}
         duration={duration}
         volume={volume}
         isMuted={isMuted}
         shuffleMode={shuffleMode}
-        isTransitioning={isTransitioning}
         songs={songs}
         sortedSongs={sortedSongs}
         viewMode={viewMode}

@@ -322,7 +322,7 @@ export function MobilePlaylist({
       <div className="flex-1 min-h-0 flex">
         <div className="flex-1 min-w-0">
           <ScrollArea className="h-full" ref={scrollAreaRef}>
-            <div className="px-4 pb-32 space-y-2">
+            <div className="px-4 pb-4 space-y-2">
               {songs.length === 0 ? (
                 <div className="text-center text-muted-foreground py-12">
                   <Music className="w-12 h-12 mx-auto mb-4 opacity-50" />

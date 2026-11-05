@@ -1,55 +1,24 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useEffect, useState } from "react"
+import { Settings, Mic, Music, Volume2, VolumeX, Youtube, Sparkles, User } from "lucide-react"
+
 import { Button } from "@/components/ui/button"
 import { Slider } from "@/components/ui/slider"
-import { Badge } from "@/components/ui/badge"
-import { Play, Pause, SkipBack, SkipForward, Settings, Mic, Share2, Music, Volume2, VolumeX, Youtube, Sparkles, User } from "lucide-react"
-import { formatTime } from "@/lib/utils"
-import { usePlaybackTime } from "@/hooks/use-playback-time"
 import { AlbumArtDisplay } from "@/components/album-art-display"
+import { PlayButton } from "@/components/player/play-button"
+import { RollingText, type RollDirection } from "@/components/player/rolling-text"
+import { SeekBar } from "@/components/player/seek-bar"
+import { SkipIcon, TransportButton } from "@/components/player/transport-button"
 
-/**
- * Progress strip, split out so the position subscription re-renders this alone
- * instead of the whole player bar and its controls.
- */
-function MobileProgressBar({
-  duration,
-  onSeek,
-  isTransitioning,
-}: {
-  duration: number
-  onSeek: (value: number[]) => void
-  isTransitioning?: boolean
-}) {
-  const currentTime = usePlaybackTime()
-
-  return (
-    <div className="px-4 pt-2">
-      <Slider
-        value={[currentTime]}
-        max={duration || 100}
-        step={1}
-        onValueChange={onSeek}
-        className="w-full h-1"
-        disabled={!duration || isTransitioning}
-      />
-      <div className="flex justify-between text-xs text-muted-foreground mt-1">
-        <span>{formatTime(currentTime)}</span>
-        <span>{formatTime(duration)}</span>
-      </div>
-    </div>
-  )
-}
+/** The volume slider tucks itself away after this long without a touch. */
+const VOLUME_IDLE_MS = 3000
 
 interface Song {
   id: string
   title?: string
   artist?: string
-  album?: string
-  duration?: number
   format?: string
-  isHiRes?: boolean
   albumArt?: string
   albumArtThumb?: string
 }
@@ -57,69 +26,59 @@ interface Song {
 interface MobilePlayerBarProps {
   currentSong: Song | null
   isPlaying: boolean
+  /** A picked song is loading. */
+  isLoading: boolean
+  /** Which way the last song change reads: 1 forward, -1 back. */
+  direction: RollDirection
   duration: number
+  volume: number[]
+  isMuted: boolean
+  onVolumeChange: (value: number[]) => void
+  onToggleMute: () => void
   onPlayPause: () => void
   onSkipPrevious: () => void
   onSkipNext: () => void
-  onSeek: (value: number[]) => void
+  onSeek: (seconds: number) => void
   onSettingsClick: () => void
   onLyricsClick: () => void
-  onNetworkSharingClick?: () => void
   onVideoClick: () => void
   onInsightsClick?: () => void
   onArtistClick?: () => void
-  isTransitioning?: boolean
 }
 
 export function MobilePlayerBar({
   currentSong,
   isPlaying,
+  isLoading,
+  direction,
   duration,
+  volume,
+  isMuted,
+  onVolumeChange,
+  onToggleMute,
   onPlayPause,
   onSkipPrevious,
   onSkipNext,
   onSeek,
   onSettingsClick,
   onLyricsClick,
-  onNetworkSharingClick,
   onVideoClick,
   onInsightsClick,
   onArtistClick,
-  isTransitioning = false,
 }: MobilePlayerBarProps) {
   const [showVolumeControl, setShowVolumeControl] = useState(false)
-  const [volume, setVolume] = useState([80])
-  const [isMuted, setIsMuted] = useState(false)
 
-  // Auto-hide volume control after 3 seconds of inactivity
   useEffect(() => {
-    if (showVolumeControl) {
-      const timer = setTimeout(() => {
-        setShowVolumeControl(false)
-      }, 3000)
-      return () => clearTimeout(timer)
-    }
+    if (!showVolumeControl) return
+    const timer = setTimeout(() => setShowVolumeControl(false), VOLUME_IDLE_MS)
+    return () => clearTimeout(timer)
   }, [showVolumeControl, volume])
-
-  const handleVolumeToggle = () => {
-    setShowVolumeControl(!showVolumeControl)
-  }
-
-  const handleVolumeChange = (value: number[]) => {
-    setVolume(value)
-    // In a real implementation, this would control the actual audio volume
-  }
-
-  const toggleMute = () => {
-    setIsMuted(!isMuted)
-    // In a real implementation, this would mute/unmute the audio
-  }
 
   if (!currentSong) {
     return (
-      <div className="fixed bottom-0 left-0 right-0 bg-background/95 backdrop-blur-md border-t border-border p-4 safe-area-pb">
+      <div className="shrink-0 bg-background/95 backdrop-blur-md border-t border-border p-4 safe-area-pb">
         <div className="flex items-center justify-center text-muted-foreground">
-          <Music className="w-5 h-5 mr-2" />
+          <Music className="w-5 h-5 mr-2" aria-hidden="true" />
           <span className="text-sm">No song selected</span>
         </div>
       </div>
@@ -127,87 +86,69 @@ export function MobilePlayerBar({
   }
 
   return (
-    <div className="fixed bottom-0 left-0 right-0 bg-background/95 backdrop-blur-md border-t border-border safe-area-pb">
-      {/* Progress Bar */}
-      <MobileProgressBar duration={duration} onSeek={onSeek} isTransitioning={isTransitioning} />
+    <div className="shrink-0 bg-background/95 backdrop-blur-md border-t border-border safe-area-pb">
+      {/* While a pick loads, the bar already belongs to it: empty, at its length. */}
+      <SeekBar
+        className="px-4 pt-1"
+        duration={duration}
+        onSeek={onSeek}
+        isPlaying={isPlaying}
+        disabled={isLoading}
+      />
 
-      {/* Main Player Controls */}
-      <div className="px-4 py-3">
+      <div className="px-4 pb-3 pt-1">
         <div className="flex items-center gap-3">
-          {/* Album Art */}
-          <div className="relative flex-shrink-0">
-            {/* Goes through AlbumArtDisplay rather than a raw <img>: art is
-                stored as a reference, and resolving one to a URL is the cache's
-                job. A raw src would render the reference verbatim. */}
-            <AlbumArtDisplay
-              songId={currentSong.id}
-              albumArt={currentSong.albumArt}
-              thumbnail={currentSong.albumArtThumb}
-              title={`${currentSong.title} album art`}
-              size="small"
-              rounded="rounded-lg"
-              isTransitioning={isTransitioning}
-              className={`transition-all duration-300 ${
-                isTransitioning ? "scale-95 opacity-70" : "scale-100 opacity-100"
-              }`}
-            />
-          </div>
+          {/* Goes through AlbumArtDisplay rather than a raw <img>: art is
+              stored as a reference, and resolving one to a URL is the cache's
+              job. A raw src would render the reference verbatim. */}
+          <AlbumArtDisplay
+            songId={currentSong.id}
+            albumArt={currentSong.albumArt}
+            thumbnail={currentSong.albumArtThumb}
+            title={`${currentSong.title} album art`}
+            size="small"
+            rounded="rounded-lg"
+            isTransitioning={isLoading}
+            className="flex-shrink-0"
+          />
 
-          {/* Song Info */}
           <div className="flex-1 min-w-0">
-            <div
-              className={`transition-all duration-300 ${
-                isTransitioning ? "translate-x-2 opacity-70" : "translate-x-0 opacity-100"
-              }`}
-            >
-              <h3 className="font-semibold text-sm truncate leading-tight">{currentSong.title || "Unknown Title"}</h3>
-              <p className="text-xs text-muted-foreground truncate">{currentSong.artist || "Unknown Artist"}</p>
-              <div className="flex items-center gap-2 mt-1">
-                {currentSong.isHiRes && (
-                  <Badge
-                    variant="secondary"
-                    className="text-xs px-1.5 py-0.5 h-auto bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100"
-                  >
-                    Hi-Res
-                  </Badge>
-                )}
-                {currentSong.format && (
-                  <Badge variant="outline" className="text-xs px-1.5 py-0.5 h-auto">
-                    {currentSong.format.toUpperCase()}
-                  </Badge>
-                )}
-              </div>
-            </div>
+            <p className="text-sm font-semibold leading-tight">
+              <RollingText text={currentSong.title || "Unknown title"} direction={direction} />
+            </p>
+            <p className="text-xs text-muted-foreground">
+              <RollingText text={currentSong.artist || "Unknown artist"} direction={direction} />
+            </p>
           </div>
 
-          {/* Playback Controls */}
+          {currentSong.format && (
+            <span className="type-data uppercase text-muted-foreground">
+              {currentSong.format}
+            </span>
+          )}
+
           <div className="flex items-center gap-1">
-            <Button variant="ghost" size="icon" className="w-8 h-8" onClick={onSkipPrevious} disabled={isTransitioning} aria-label="Previous track">
-              <SkipBack className="w-4 h-4" />
-            </Button>
-
-            <Button
-              variant="default"
-              size="icon"
-              className="w-10 h-10 rounded-full shadow-lg"
-              onClick={onPlayPause}
-              disabled={isTransitioning}
-              aria-label={isPlaying ? "Pause" : "Play"}
-            >
-              {isPlaying ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5 ml-0.5" />}
-            </Button>
-
-            <Button variant="ghost" size="icon" className="w-8 h-8" onClick={onSkipNext} disabled={isTransitioning} aria-label="Next track">
-              <SkipForward className="w-4 h-4" />
-            </Button>
+            <TransportButton label="Previous track" size="sm" onClick={onSkipPrevious}>
+              <SkipIcon direction="back" size="sm" />
+            </TransportButton>
+            <PlayButton size="sm" isPlaying={isPlaying} isLoading={isLoading} onClick={onPlayPause} />
+            <TransportButton label="Next track" size="sm" onClick={onSkipNext}>
+              <SkipIcon direction="forward" size="sm" />
+            </TransportButton>
           </div>
         </div>
 
-        {/* Secondary Controls */}
+        {/* Secondary controls */}
         <div className="flex items-center justify-between mt-3">
-          {/* Left Controls */}
           <div className="flex items-center gap-1">
-            <Button variant="ghost" size="icon" className="w-8 h-8" onClick={handleVolumeToggle} aria-label={isMuted ? "Unmute" : "Mute"}>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="w-8 h-8"
+              onClick={() => setShowVolumeControl((shown) => !shown)}
+              aria-label="Volume"
+              aria-expanded={showVolumeControl}
+            >
               {isMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
             </Button>
 
@@ -232,39 +173,27 @@ export function MobilePlayerBar({
             )}
           </div>
 
-          {/* Center - Network Sharing */}
-          {onNetworkSharingClick && (
-            <Button variant="ghost" size="icon" className="w-8 h-8" onClick={onNetworkSharingClick}>
-              <Share2 className="w-4 h-4" />
-            </Button>
-          )}
-
-          {/* Right Controls */}
-          <div className="flex items-center gap-1">
-            <Button variant="ghost" size="icon" className="w-8 h-8" onClick={onSettingsClick}>
-              <Settings className="w-4 h-4" />
-            </Button>
-          </div>
+          <Button variant="ghost" size="icon" className="w-8 h-8" onClick={onSettingsClick} aria-label="Equalizer settings">
+            <Settings className="w-4 h-4" />
+          </Button>
         </div>
 
-        {/* Volume Control Slider */}
         {showVolumeControl && (
-          <div className="mt-3 px-2">
-            <div className="bg-muted/50 rounded-lg p-3">
-              <div className="flex items-center gap-3">
-                <Button variant="ghost" size="icon" className="w-6 h-6" onClick={toggleMute}>
-                  {isMuted ? <VolumeX className="w-3 h-3" /> : <Volume2 className="w-3 h-3" />}
-                </Button>
-                <Slider
-                  value={isMuted ? [0] : volume}
-                  max={100}
-                  step={1}
-                  onValueChange={handleVolumeChange}
-                  className="flex-1"
-                />
-                <span className="text-xs text-muted-foreground w-8 text-right">{isMuted ? 0 : volume[0]}%</span>
-              </div>
-            </div>
+          <div className="mt-3 flex items-center gap-3 rounded-lg bg-muted/50 px-3 py-2">
+            <Button variant="ghost" size="icon" className="w-7 h-7" onClick={onToggleMute} aria-label={isMuted ? "Unmute" : "Mute"}>
+              {isMuted ? <VolumeX className="w-3.5 h-3.5" /> : <Volume2 className="w-3.5 h-3.5" />}
+            </Button>
+            <Slider
+              value={isMuted ? [0] : volume}
+              max={100}
+              step={1}
+              onValueChange={onVolumeChange}
+              className="flex-1"
+              aria-label="Volume level"
+            />
+            <span className="w-9 text-right type-data text-muted-foreground">
+              {isMuted ? 0 : volume[0]}%
+            </span>
           </div>
         )}
       </div>

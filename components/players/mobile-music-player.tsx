@@ -1,15 +1,15 @@
 "use client"
 
 import { useState, useRef, useEffect, useCallback, useMemo } from "react"
-import { toast } from "@/hooks/use-toast"
 
 import { AlbumArtCache } from "@/lib/album-art-cache"
-import { LoudnessAnalyzer } from "@/lib/loudness-analyzer"
 import { getAllPresets, type EqPreset } from "@/lib/eq-presets"
 import { useAlbumArtPreloader } from "@/hooks/use-album-art-preloader"
 import { usePlaylistManager } from "@/hooks/use-playlist-manager"
 import { useWarmNextSong } from "@/hooks/use-warm-next-song"
 import { useAudioEngine } from "@/hooks/use-audio-engine"
+import { usePlaybackController, useTransportEvents } from "@/hooks/use-playback-controller"
+import { useSongColors } from "@/hooks/use-song-colors"
 import { useEqualizerManager, DEFAULT_EQUALIZER_BANDS } from "@/hooks/use-equalizer-manager"
 import { useFileImporter } from "@/hooks/use-file-importer"
 import { usePlaylistPersistence, useAutoSave } from "@/hooks/use-playlist-persistence"
@@ -39,7 +39,7 @@ import { findTrackByKey, trackLabel, trackSyncKey } from "@/lib/sync/song-match"
 import { createMediaUrl, releaseMediaUrl, songSource } from "@/lib/media-source"
 
 import type { EqualizerBand } from "@/components/refined-equalizer"
-import { formatTime, waitForCanPlay } from "@/lib/utils"
+import { formatTime } from "@/lib/utils"
 import { resetPlaybackTime } from "@/lib/playback-time-store"
 
 /** Auto-advance crossfade (song ends on its own). 0 = gapless, no overlap. */
@@ -49,36 +49,16 @@ const CROSSFADE_MANUAL_SECONDS = 0.4
 
 export default function MobileMusicPlayer() {
   const [searchQuery, setSearchQuery] = useState("")
-  const [isTransitioning, setIsTransitioning] = useState(false)
   const [sidebarMode, setSidebarMode] = useState<"library" | "online">("library")
   const [showSync, setShowSync] = useState(false)
   const [showCloud, setShowCloud] = useState(false)
 
   const audioRef = useRef<HTMLAudioElement>(null)
   const secondaryAudioRef = useRef<HTMLAudioElement>(null)
-  const skipToNextRef = useRef<() => void>(() => {})
-  const selectSongAbortRef = useRef<AbortController | null>(null)
-  const pendingPreloadRef = useRef<Song | null>(null)
-  // Mirrors the sync role for the auto-advance guard below, which is defined
-  // before the session exists.
+  // Mirrors the sync role for the auto-advance guard in the playback
+  // controller, which is created before the session exists.
   const isFollowingRef = useRef(false)
-
-  // Stable onEnded callback using ref — THIS FIXES THE STALE CLOSURE BUG
-  const handleEnded = useCallback(() => {
-    skipToNextRef.current()
-  }, [])
-
-  // Stable onNearEnd callback using ref (needs access to getNextSong)
-  const nearEndHandlerRef = useRef<() => void>(() => {})
-  const handleNearEnd = useCallback(() => {
-    nearEndHandlerRef.current()
-  }, [])
-
-  // Crossfade-start fires before the track ends — advance early so the two
-  // tracks overlap. Same advance path as onEnded (which becomes a no-op fallback).
-  const handleCrossfadeStart = useCallback(() => {
-    skipToNextRef.current()
-  }, [])
+  const transportEvents = useTransportEvents()
 
   const [equalizerBands, setEqualizerBands] = useState<EqualizerBand[]>(DEFAULT_EQUALIZER_BANDS)
   const [normalizationEnabled, setNormalizationEnabledState] = useState(false)
@@ -86,33 +66,30 @@ export default function MobileMusicPlayer() {
   const [customEqPresets, setCustomEqPresets] = useState<EqPreset[]>([])
   const [activeEqPresetId, setActiveEqPresetId] = useState<string | undefined>(undefined)
 
-  const {
-    isPlaying, setIsPlaying,
-    duration, setDuration, volume, setVolume, isMuted,
-    filterNodes, audioContextRef, playPromiseRef, gainNodeRef,
-    initializeAudioContext, play, pause, seek,
-    changeVolume, toggleMute, adjustVolume, applyNormalization,
-    setNormalizationEnabled: engineSetNormalizationEnabled,
-    setPreamp: engineSetPreamp,
-    setPlaybackRate, getPosition,
-    preloadNextSong, swapToPreloaded, resetGaplessState, isPreloaded, crossfadeTo,
-  } = useAudioEngine({
+  const engine = useAudioEngine({
     audioRef,
     secondaryAudioRef,
     equalizerBands,
-    onEnded: handleEnded,
-    onNearEnd: handleNearEnd,
+    onEnded: transportEvents.onEnded,
+    onNearEnd: transportEvents.onNearEnd,
     crossfadeDuration: CROSSFADE_AUTO_SECONDS,
     manualCrossfadeDuration: CROSSFADE_MANUAL_SECONDS,
-    onCrossfadeStart: handleCrossfadeStart,
+    // Crossfade-start fires before the track ends: advance early so the two
+    // overlap. Same path as onEnded, which then has nothing left to do.
+    onCrossfadeStart: transportEvents.onEnded,
   })
-
   const {
-    songs, setSongs, currentSong, setCurrentSong,
-    shuffleMode, setShuffleMode, viewMode, setViewMode,
-    sortedSongs, getNextSong, peekNextSong, getPreviousSong, notifySongSelected,
-    toggleShuffle, removeSong, resetPlaylist, playNext,
-  } = usePlaylistManager({
+    isPlaying, setIsPlaying,
+    duration, setDuration, volume, setVolume, isMuted,
+    filterNodes, audioContextRef,
+    pause, seek,
+    changeVolume, toggleMute, adjustVolume,
+    setNormalizationEnabled: engineSetNormalizationEnabled,
+    setPreamp: engineSetPreamp,
+    setPlaybackRate, getPosition,
+  } = engine
+
+  const playlist = usePlaylistManager({
     onCurrentSongRemoved: () => {
       pause()
       if (audioRef.current) audioRef.current.src = ""
@@ -124,6 +101,12 @@ export default function MobileMusicPlayer() {
       setDuration(0)
     },
   })
+  const {
+    songs, setSongs, currentSong, setCurrentSong,
+    shuffleMode, setShuffleMode, viewMode, setViewMode,
+    sortedSongs, peekNextSong,
+    toggleShuffle, removeSong, resetPlaylist, playNext,
+  } = playlist
 
   const {
     showEqualizer, setShowEqualizer,
@@ -348,201 +331,18 @@ export default function MobileMusicPlayer() {
   useAutoSave(persistenceData, isInitialized, isRestoringPlaylist, savePlaylist)
 
   // Player control functions
-  const selectSong = useCallback(async (song: Song, isAutoAdvance = false) => {
-    // Abort any previous in-flight selectSong call
-    selectSongAbortRef.current?.abort()
-    const abort = new AbortController()
-    selectSongAbortRef.current = abort
-
-    // Gapless fast path: if this song was preloaded, do instant swap
-    if (isAutoAdvance && isPreloaded && pendingPreloadRef.current?.id === song.id) {
-      applyNormalization(song.gainCorrection ?? 0)
-      const swapped = swapToPreloaded()
-      if (swapped) {
-        releaseMediaUrl(currentSong?.url)
-        setCurrentSong(song)
-        setIsPlaying(true)
-        notifySongSelected(song, isAutoAdvance)
-        setTimeout(() => preloadUpcomingSongs(), 100)
-        pendingPreloadRef.current = null
-        return
-      }
-    }
-
-    pendingPreloadRef.current = null
-
-    // Lazy loudness analysis — runs in background on first play. Skipped
-    // entirely while normalization is off: no point decoding a whole FLAC
-    // into RAM for a correction that would not be applied.
-    if (normalizationEnabled && song.loudnessLUFS == null && song.file) {
-      LoudnessAnalyzer.analyze(song.file).then((loudness) => {
-        setSongs((prev) =>
-          prev.map((s) =>
-            s.id === song.id
-              ? { ...s, loudnessLUFS: loudness.lufs, gainCorrection: loudness.gainCorrection }
-              : s
-          )
-        )
-        // Analysis may finish after the user already skipped away — only
-        // apply the correction if this song is still the selected one.
-        if (!abort.signal.aborted) {
-          applyNormalization(loudness.gainCorrection)
-        }
-      }).catch(() => { /* non-critical */ })
-    }
-
-    // Manual / non-preloaded crossfade: blend into the new track via the
-    // inactive element instead of a hard reload. Returns false (→ normal load)
-    // when crossfade is off or nothing is currently playing.
-    const source = songSource(song)
-    if (!source) {
-      console.error("Song has neither a local file nor a cloud copy:", song.id)
-      toast({ title: "This song can't be played", variant: "destructive" })
-      return
-    }
-
-    applyNormalization(song.gainCorrection ?? 0)
-    const faded = await crossfadeTo(source, abort.signal)
-    if (abort.signal.aborted) return
-    if (faded) {
-      releaseMediaUrl(currentSong?.url)
-      setCurrentSong(song)
-      setIsPlaying(true)
-      notifySongSelected(song, isAutoAdvance)
-      setTimeout(() => preloadUpcomingSongs(), 100)
-      return
-    }
-
-    // Reset gapless state so we load into primary audio element
-    resetGaplessState()
-
-    try {
-      setIsTransitioning(true)
-
-      if (currentSong?.url !== song.url) releaseMediaUrl(currentSong?.url)
-
-      setTimeout(() => preloadUpcomingSongs(), 100)
-
-      setCurrentSong(song)
-      setIsPlaying(false)
-      notifySongSelected(song, isAutoAdvance)
-      applyNormalization(song.gainCorrection ?? 0)
-
-      if (audioRef.current) {
-        audioRef.current.pause()
-        audioRef.current.currentTime = 0
-
-        const audioUrl = createMediaUrl(source)
-        const updatedSong = { ...song, url: audioUrl }
-        setCurrentSong(updatedSong)
-        audioRef.current.src = audioUrl
-
-        audioRef.current.load()
-        await waitForCanPlay(audioRef.current)
-
-        if (abort.signal.aborted) return
-
-        initializeAudioContext()
-
-        setTimeout(() => {
-          if (!abort.signal.aborted) setIsTransitioning(false)
-        }, 500)
-
-        try {
-          await audioRef.current.play()
-          if (!abort.signal.aborted) setIsPlaying(true)
-        } catch (error) {
-          if (!abort.signal.aborted) {
-            console.error("Error auto-playing song:", error)
-            setIsPlaying(false)
-            toast({ title: "Playback error", description: "Click play to start the song manually.", variant: "default" })
-          }
-        }
-      }
-    } catch (error) {
-      if (!abort.signal.aborted) {
-        console.error("Error selecting song:", error)
-        setIsPlaying(false)
-        setIsTransitioning(false)
-        toast({ title: "Error loading song", description: "Unable to load the selected audio file.", variant: "destructive" })
-      }
-    }
-  }, [currentSong, notifySongSelected, initializeAudioContext, preloadUpcomingSongs, setIsPlaying, setCurrentSong, isPreloaded, swapToPreloaded, resetGaplessState, applyNormalization, crossfadeTo, normalizationEnabled])
-
-
-  /**
-   * Put the current song into the primary element when nothing is loaded.
-   * After a restored session the playlist holds a song but no element has a
-   * source yet, so anything that starts playback has to cover that case —
-   * the play button and, in a sync session, the follower.
-   */
-  const ensureSourceLoaded = useCallback(async () => {
-    const audio = audioRef.current
-    const source = songSource(currentSong)
-    if (!audio || audio.src || !currentSong || !source) return
-
-    resetGaplessState() // ensure we're on primary
-    const audioUrl = createMediaUrl(source)
-    setCurrentSong({ ...currentSong, url: audioUrl })
-    audio.src = audioUrl
-    audio.load()
-    await waitForCanPlay(audio)
-  }, [currentSong, resetGaplessState, setCurrentSong])
-
-  const startPlayback = useCallback(async () => {
-    await ensureSourceLoaded()
-    initializeAudioContext()
-    try {
-      await play()
-    } catch (error) {
-      console.error("Error playing audio:", error)
-      setIsPlaying(false)
-      toast({ title: "Playback error", description: "Unable to play the selected song.", variant: "destructive" })
-    }
-  }, [ensureSourceLoaded, initializeAudioContext, play, setIsPlaying])
-
-  const togglePlayPause = async () => {
-    if (!currentSong) return
-
-    if (isPlaying) {
-      pause()
-    } else {
-      await startPlayback()
-    }
-  }
-
-  const skipToNext = () => {
-    // A follower takes track changes from the host. Advancing on its own would
-    // race the host's own advance and leave the two devices on different songs.
-    if (isFollowingRef.current) return
-    const nextSong = getNextSong()
-    if (nextSong) selectSong(nextSong, true)
-  }
-
-  // Keep skipToNextRef always pointing to the latest skipToNext (bug fix for stale closures)
-  // eslint-disable-next-line react-hooks/refs -- intentional: ref updated during render to avoid stale closure in audio ended callback
-  skipToNextRef.current = skipToNext
-
-  // Keep nearEndHandlerRef pointing to the latest handler (preloads next song for gapless)
-  nearEndHandlerRef.current = () => {
-    const nextSong = getNextSong()
-    const source = songSource(nextSong)
-    if (nextSong && source) {
-      pendingPreloadRef.current = nextSong
-      preloadNextSong(source)
-    }
-  }
-
-  const skipToPrevious = () => {
-    const prevSong = getPreviousSong()
-    if (prevSong) selectSong(prevSong, false)
-  }
-
-  // Stable identity keeps the memo() on the playlist rows effective — see the
-  // matching note in the desktop player.
-  const handleSongSelect = useCallback((song: Song) => {
-    selectSong(song, false)
-  }, [selectSong])
+  const {
+    selectSong, handleSongSelect, startPlayback, togglePlayPause, skipToNext, skipToPrevious,
+    displaySong, isLoading: isLoadingSong, direction: changeDirection,
+  } = usePlaybackController({
+    audioRef,
+    engine,
+    playlist,
+    normalizationEnabled,
+    preloadUpcomingSongs,
+    isFollowingRef,
+    events: transportEvents,
+  })
 
   // --- Multi-device sync --------------------------------------------------
 
@@ -556,7 +356,7 @@ export default function MobileMusicPlayer() {
     selectTrackByKey: async (key) => {
       const song = findTrackByKey(songs, key)
       if (!song) return false
-      await selectSong(song, false)
+      await selectSong(song)
       return true
     },
     // Autoplay policy is satisfied: joining or hosting is a tap, and that
@@ -580,8 +380,8 @@ export default function MobileMusicPlayer() {
     if (isHosting) syncBroadcast()
   }, [isPlaying, currentSong?.id, isHosting, syncBroadcast])
 
-  const handleSeek = useCallback((value: number[]) => {
-    seek(value[0])
+  const handleSeek = useCallback((seconds: number) => {
+    seek(seconds)
     // Seeks are not visible to the effect above, so they announce themselves.
     if (isHosting) syncBroadcast()
   }, [seek, isHosting, syncBroadcast])
@@ -603,7 +403,7 @@ export default function MobileMusicPlayer() {
     },
     onVolumeAdjust: adjustVolume,
     onToggleMute: toggleMute,
-    onPlayFirstSong: () => { if (songs.length > 0) selectSong(songs[0], false) },
+    onPlayFirstSong: () => { if (songs.length > 0) void selectSong(songs[0]) },
   })
 
 
@@ -623,10 +423,12 @@ export default function MobileMusicPlayer() {
     }
   }, [])
 
+  const songColors = useSongColors(displaySong)
+
   return (
-    <div className="min-h-screen relative bg-background">
+    <div className="song-scope min-h-screen relative bg-background" style={songColors} data-playing={isPlaying || undefined}>
       {/* Dynamic Background */}
-      <AlbumArtBackground albumArt={currentSong?.albumArt} songId={currentSong?.id} isTransitioning={isTransitioning} />
+      <AlbumArtBackground albumArt={displaySong?.albumArt} songId={displaySong?.id} isTransitioning={isLoadingSong} />
 
       {/* Hidden file inputs */}
       <input
@@ -652,7 +454,7 @@ export default function MobileMusicPlayer() {
       <audio ref={secondaryAudioRef} preload="metadata" crossOrigin="anonymous" />
 
       {/* Mobile Layout */}
-      <div className="flex flex-col h-screen relative z-10">
+      <div className="flex flex-col h-dvh relative z-10">
         {/* Header */}
         <MobileHeader
           onFileUpload={() => fileInputRef.current?.click()}
@@ -690,7 +492,7 @@ export default function MobileMusicPlayer() {
             songs={songs}
             filteredSongs={filteredSongs}
             groupedSongs={groupedSongs}
-            currentSong={currentSong}
+            currentSong={displaySong}
             viewMode={viewMode}
             onSongSelect={handleSongSelect}
             onSongRemove={removeSong}
@@ -702,9 +504,15 @@ export default function MobileMusicPlayer() {
 
         {/* Player Bar */}
         <MobilePlayerBar
-          currentSong={currentSong}
+          currentSong={displaySong}
           isPlaying={isPlaying}
-          duration={duration}
+          isLoading={isLoadingSong}
+          direction={changeDirection}
+          duration={isLoadingSong ? (displaySong?.duration ?? 0) : duration}
+          volume={volume}
+          isMuted={isMuted}
+          onVolumeChange={changeVolume}
+          onToggleMute={toggleMute}
           onPlayPause={togglePlayPause}
           onSkipPrevious={skipToPrevious}
           onSkipNext={skipToNext}
@@ -714,7 +522,6 @@ export default function MobileMusicPlayer() {
           onVideoClick={() => setShowVideo(true)}
           onInsightsClick={() => setShowInsights(true)}
           onArtistClick={() => setShowArtist(true)}
-          isTransitioning={isTransitioning}
         />
 
         {/* Two-device playback — its own sheet so the live readout only

@@ -2,6 +2,28 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Registered so a song change can swell from one colour to the next instead of jumping. */
+@property --song-accent {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: transparent;
+}
+@property --mark-1 {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: transparent;
+}
+@property --mark-2 {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: transparent;
+}
+@property --mark-3 {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: transparent;
+}
+
 @layer base {
   :root {
     /* Audora red: a dark, true red, a touch warm, never leaning toward pink or purple.
@@ -23,6 +45,9 @@
     --ink-3: 40 4.6% 12.7%;
     --ink-4: 45 4.5% 17.3%;
 
+    /* Paper: the text colour on ink, in both themes. */
+    --paper: 42.9 20% 93.1%;
+
     /* The three lights in the wordmark's ring. */
     --mark-1: hsl(var(--blood-300));
     --mark-2: hsl(var(--blood-500));
@@ -34,6 +59,8 @@
     --motion-decay: 220ms;
     --motion-release: 420ms;
     --motion-swell: 1100ms;
+    /* A control let go: it overshoots, then settles (with --ease-pluck). */
+    --motion-pluck: 380ms;
     --ease-attack: cubic-bezier(0.3, 0.7, 0.4, 1);
     --ease-decay: cubic-bezier(0.16, 1, 0.3, 1);
     --ease-release: cubic-bezier(0.33, 0, 0.15, 1);
@@ -66,24 +93,24 @@
   /* Night, the main theme: warm graphite, never blue-black. */
   .dark {
     --background: var(--ink-0);
-    --foreground: 42.9 20% 93.1%;
+    --foreground: var(--paper);
     --card: var(--ink-2);
-    --card-foreground: 42.9 20% 93.1%;
+    --card-foreground: var(--paper);
     --popover: var(--ink-2);
-    --popover-foreground: 42.9 20% 93.1%;
+    --popover-foreground: var(--paper);
     --primary: var(--blood-400);
     --primary-foreground: 0 0% 100%;
     --secondary: var(--ink-3);
-    --secondary-foreground: 42.9 20% 93.1%;
+    --secondary-foreground: var(--paper);
     --muted: var(--ink-3);
     --muted-foreground: 40 6.9% 65.9%;
     --accent: var(--ink-3);
-    --accent-foreground: 42.9 20% 93.1%;
+    --accent-foreground: var(--paper);
     --destructive: var(--blood-300);
     --destructive-foreground: var(--ink-0);
     --border: var(--ink-3);
     --input: var(--ink-4);
-    --ring: 42.9 20% 93.1%;
+    --ring: var(--paper);
   }
 }
 
@@ -117,6 +144,313 @@
     -webkit-mask: radial-gradient(closest-side, transparent 58%, #000 61%);
     mask: radial-gradient(closest-side, transparent 58%, #000 61%);
     transform: translateY(0.014em);
+  }
+
+  /* The data role: times, formats and counts, set the way audio gear labels
+     them. Figures keep one width so a running clock does not jitter. */
+  .type-data {
+    @apply font-mono tabular-nums;
+    font-size: 0.71875rem; /* 11.5px */
+    letter-spacing: -0.01em;
+  }
+
+  /* The song's colours. A player root carries the cover's colours as custom
+     properties (hooks/use-song-colors); this turns them into the accent for
+     the surface the player sits on, and, while music plays, lends them to the
+     wordmark ring. Without a readable cover the accent stays neutral. */
+  .song-scope {
+    --song-accent: var(--song-accent-on-paper, hsl(var(--foreground)));
+    transition:
+      --song-accent var(--motion-swell) var(--ease-swell),
+      --mark-1 var(--motion-swell) var(--ease-swell),
+      --mark-2 var(--motion-swell) var(--ease-swell),
+      --mark-3 var(--motion-swell) var(--ease-swell);
+  }
+  .dark .song-scope,
+  .song-scope.dark {
+    --song-accent: var(--song-accent-on-ink, hsl(var(--foreground)));
+  }
+  .song-scope[data-playing] {
+    --mark-1: var(--song-ring-1-on-paper, hsl(var(--blood-300)));
+    --mark-2: var(--song-ring-2-on-paper, hsl(var(--blood-500)));
+    --mark-3: var(--song-ring-3-on-paper, hsl(var(--blood-400)));
+  }
+  .dark .song-scope[data-playing],
+  .song-scope.dark[data-playing] {
+    --mark-1: var(--song-ring-1-on-ink, hsl(var(--blood-300)));
+    --mark-2: var(--song-ring-2-on-ink, hsl(var(--blood-500)));
+    --mark-3: var(--song-ring-3-on-ink, hsl(var(--blood-400)));
+  }
+  /* The ring turns slowly while music plays, and only then. */
+  .song-scope[data-playing] .wordmark-ring {
+    animation: wordmark-ring-turn 18s linear infinite;
+  }
+
+  /* Play and pause: one shape becomes the other. The press is the attack, the
+     let-go a pluck; while a song loads, an arc in the song's colour turns
+     around the button until the sound starts. */
+  .play-button {
+    position: relative;
+    flex: none;
+    display: grid;
+    place-items: center;
+    border-radius: 9999px;
+    background: hsl(var(--foreground));
+    color: hsl(var(--background));
+    transition: transform var(--motion-pluck) var(--ease-pluck), opacity var(--motion-decay) var(--ease-decay);
+  }
+  .play-button:active:not(:disabled) {
+    transform: scale(0.92);
+    transition: transform var(--motion-attack) var(--ease-attack);
+  }
+  .play-button:disabled {
+    opacity: 0.4;
+  }
+  .play-button:focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 3px;
+  }
+  .play-glyph {
+    position: relative;
+    width: 33%;
+    height: 37%;
+    transform: translateX(10%);
+    transition: transform var(--motion-decay) var(--ease-decay);
+  }
+  .play-glyph > span {
+    position: absolute;
+    inset: 0;
+    background: currentColor;
+    transition: clip-path var(--motion-decay) var(--ease-decay);
+  }
+  .play-glyph > span:first-child {
+    clip-path: polygon(0 0, 50% 25%, 50% 75%, 0 100%);
+  }
+  .play-glyph > span:last-child {
+    clip-path: polygon(50% 25%, 100% 50%, 100% 50%, 50% 75%);
+  }
+  .play-button[data-playing] .play-glyph {
+    transform: none;
+  }
+  .play-button[data-playing] .play-glyph > span:first-child {
+    clip-path: polygon(6% 0, 38% 0, 38% 100%, 6% 100%);
+  }
+  .play-button[data-playing] .play-glyph > span:last-child {
+    clip-path: polygon(62% 0, 94% 0, 94% 100%, 62% 100%);
+  }
+  .play-button-arc {
+    position: absolute;
+    inset: -4px;
+    width: calc(100% + 8px);
+    height: calc(100% + 8px);
+    fill: none;
+    stroke: var(--song-accent, hsl(var(--foreground)));
+    stroke-width: 2.5;
+    stroke-linecap: round;
+    stroke-dasharray: 34 200;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity var(--motion-release) var(--ease-release);
+  }
+  .play-button[data-loading] .play-button-arc {
+    opacity: 1;
+    animation: play-arc-turn 0.9s linear infinite;
+    transition-duration: var(--motion-attack);
+  }
+
+  /* Previous, next, shuffle: quiet until touched. */
+  .transport-button {
+    display: grid;
+    place-items: center;
+    flex: none;
+    border-radius: 9999px;
+    color: currentColor;
+    transition:
+      background-color var(--motion-release) var(--ease-release),
+      color var(--motion-release) var(--ease-release),
+      transform var(--motion-pluck) var(--ease-pluck);
+  }
+  .transport-button:hover:not(:disabled) {
+    background-color: hsl(var(--foreground) / 0.07);
+    transition-duration: var(--motion-attack), var(--motion-attack), var(--motion-pluck);
+  }
+  .transport-button:active:not(:disabled) {
+    transform: scale(0.88);
+    transition: transform var(--motion-attack) var(--ease-attack);
+  }
+  .transport-button:disabled {
+    opacity: 0.35;
+  }
+  .transport-button:focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 2px;
+  }
+  .transport-button[aria-pressed="true"] {
+    color: var(--song-accent);
+  }
+
+  /* Seek: the track thickens under the pointer and shows where you would land.
+     Only transform and opacity move. */
+  .seek-bar {
+    position: relative;
+    height: 26px;
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+    touch-action: none;
+  }
+  .seek-bar[aria-disabled="true"] {
+    cursor: default;
+    opacity: 0.5;
+  }
+  .seek-bar:focus-visible {
+    outline: none;
+  }
+  .seek-track {
+    position: relative;
+    width: 100%;
+    height: 4px;
+    border-radius: 4px;
+    overflow: hidden;
+    background: hsl(var(--foreground) / 0.12);
+    transition: transform var(--motion-release) var(--ease-release);
+  }
+  .seek-fill {
+    position: absolute;
+    inset: 0;
+    background: hsl(var(--foreground));
+    transform-origin: left;
+  }
+  .seek-bar[data-playing] .seek-fill {
+    background: var(--song-accent);
+  }
+  .seek-knob-rail {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+  }
+  .seek-knob {
+    position: absolute;
+    top: 50%;
+    left: 0;
+    width: 14px;
+    height: 14px;
+    margin: -7px 0 0 -7px;
+    border-radius: 9999px;
+    background: hsl(var(--foreground));
+    box-shadow: 0 2px 10px rgb(0 0 0 / 0.5);
+    pointer-events: none;
+    transform: scale(0);
+    transition: transform var(--motion-release) var(--ease-release);
+  }
+  .seek-tip {
+    position: absolute;
+    bottom: calc(100% + 4px);
+    padding: 3px 7px;
+    border-radius: 6px;
+    background: hsl(var(--ink-4));
+    color: hsl(var(--paper));
+    pointer-events: none;
+    white-space: nowrap;
+    opacity: 0;
+    transform: translateX(-50%);
+    transition: opacity var(--motion-release) var(--ease-release);
+  }
+  .seek-bar:not([aria-disabled="true"]):hover .seek-track,
+  .seek-bar[data-scrubbing] .seek-track,
+  .seek-bar:focus-visible .seek-track {
+    transform: scaleY(1.75);
+    transition: transform var(--motion-attack) var(--ease-attack);
+  }
+  .seek-bar:not([aria-disabled="true"]):hover .seek-knob,
+  .seek-bar[data-scrubbing] .seek-knob,
+  .seek-bar:focus-visible .seek-knob {
+    transform: scale(1);
+    transition: transform var(--motion-pluck) var(--ease-pluck);
+  }
+  .seek-bar:not([aria-disabled="true"]):hover .seek-tip,
+  .seek-bar[data-scrubbing] .seek-tip {
+    opacity: 1;
+    transition-duration: var(--motion-attack);
+  }
+
+  /* Text that changes with the song rolls in the direction you skipped. The
+     timings are the design language's text roll: the old line leaves in
+     380 ms on the release curve, the new one lands in 520 ms on the decay
+     curve, starting 60 ms behind it so the two never collide. */
+  .roll {
+    display: grid;
+    overflow: hidden;
+  }
+  .roll > span {
+    grid-area: 1 / 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .roll-out {
+    animation: roll-out 380ms var(--ease-release) forwards;
+  }
+  .roll-in {
+    animation: roll-in 520ms var(--ease-decay) 60ms backwards;
+  }
+}
+
+@keyframes wordmark-ring-turn {
+  from {
+    transform: translateY(0.014em) rotate(0turn);
+  }
+  to {
+    transform: translateY(0.014em) rotate(1turn);
+  }
+}
+
+@keyframes play-arc-turn {
+  to {
+    transform: rotate(1turn);
+  }
+}
+
+/* --roll-dir is 1 for a skip forward and -1 for a skip back. */
+@keyframes roll-out {
+  to {
+    transform: translateY(calc(var(--roll-dir, 1) * -70%));
+    opacity: 0;
+  }
+}
+
+@keyframes roll-in {
+  from {
+    transform: translateY(calc(var(--roll-dir, 1) * 70%));
+    opacity: 0;
+  }
+}
+
+@keyframes fade-out {
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .song-scope[data-playing] .wordmark-ring {
+    animation: none;
+  }
+  .play-button[data-loading] .play-button-arc {
+    animation-duration: 2.4s;
+  }
+  .roll-out {
+    animation: fade-out var(--motion-attack) linear forwards;
+  }
+  .roll-in {
+    animation: fade-in var(--motion-decay) linear backwards;
   }
 }
 
