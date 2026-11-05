@@ -20,7 +20,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { useLongPress } from "@/hooks/use-long-press"
-import { artistOf } from "@/lib/library-rows"
+import { artistOf } from "@/lib/library-groups"
 import { hoverSong, leaveSong, warmSong } from "@/lib/song-warmup"
 import { formatTime } from "@/lib/utils"
 import { SongMenuItems, type SongActions } from "./song-menu"
@@ -48,6 +48,8 @@ interface SongRowProps {
   number: number
   /** Artist and album under the title. */
   detailed: boolean
+  /** The song's cover beside the title. Off where every row shares one, as on an album's page. */
+  art?: boolean
   /** Set on the current song's row only. */
   playback?: RowPlayback
   layout: LibraryLayout
@@ -71,6 +73,7 @@ export const SongRow = memo(function SongRow({
   song,
   number,
   detailed,
+  art = true,
   playback,
   layout,
   onSelect,
@@ -80,7 +83,13 @@ export const SongRow = memo(function SongRow({
   const longPress = useLongPress(() => setMenuOpen(true))
 
   const row = (
-    <div className="library-row" data-layout={layout} data-playback={playback} {...longPress}>
+    <div
+      className="library-row"
+      data-layout={layout}
+      data-art={art ? undefined : "off"}
+      data-playback={playback}
+      {...longPress}
+    >
       <button
         type="button"
         className="library-row-main"
@@ -104,15 +113,17 @@ export const SongRow = memo(function SongRow({
             <i />
           </span>
         </span>
-        <AlbumArtDisplay
-          songId={song.id}
-          albumArt={song.albumArt}
-          thumbnail={song.albumArtThumb}
-          title={`${song.title} album art`}
-          size="row"
-          rounded="rounded-md"
-          className="library-row-art"
-        />
+        {art && (
+          <AlbumArtDisplay
+            songId={song.id}
+            albumArt={song.albumArt}
+            thumbnail={song.albumArtThumb}
+            title={`${song.title} album art`}
+            size="row"
+            rounded="rounded-md"
+            className="library-row-art"
+          />
+        )}
         <span className="library-row-text">
           <span className="library-row-title">{song.title}</span>
           {detailed && <span className="library-row-sub">{creditLine(song)}</span>}

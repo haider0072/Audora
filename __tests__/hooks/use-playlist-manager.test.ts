@@ -83,6 +83,35 @@ describe('usePlaylistManager', () => {
       expect(sorted.map(s => s.id)).toEqual(['3', '2', '4', '1'])
     })
 
+    it('keeps two albums without a year apart, each in track order', () => {
+      const { result } = renderHook(() => usePlaylistManager())
+
+      act(() => {
+        result.current.setSongs([
+          makeSong({ id: 'b2', artist: 'X', album: 'Beta', trackNumber: '2' }),
+          makeSong({ id: 'a1', artist: 'X', album: 'Alpha', trackNumber: '1' }),
+          makeSong({ id: 'b1', artist: 'X', album: 'Beta', trackNumber: '1' }),
+          makeSong({ id: 'a2', artist: 'X', album: 'Alpha', trackNumber: '2' }),
+        ])
+      })
+
+      expect(result.current.sortedSongs.map(s => s.id)).toEqual(['a1', 'a2', 'b1', 'b2'])
+    })
+
+    it('puts an album without a year after the ones with one', () => {
+      const { result } = renderHook(() => usePlaylistManager())
+
+      act(() => {
+        result.current.setSongs([
+          makeSong({ id: 'none', artist: 'X', album: 'Aardvark' }),
+          makeSong({ id: 'late', artist: 'X', album: 'Zebra', year: '2020' }),
+          makeSong({ id: 'early', artist: 'X', album: 'Yak', year: '1999-04-01' }),
+        ])
+      })
+
+      expect(result.current.sortedSongs.map(s => s.id)).toEqual(['early', 'late', 'none'])
+    })
+
     it('handles missing metadata gracefully', () => {
       const { result } = renderHook(() => usePlaylistManager())
 

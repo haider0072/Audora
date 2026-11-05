@@ -1,4 +1,12 @@
-import { formatTime, formatTotalDuration, waitForCanPlay } from '@/lib/utils'
+import { formatCount, formatTime, formatTotalDuration, waitForCanPlay } from '@/lib/utils'
+
+describe('formatCount', () => {
+  it('names one of a thing in the singular, and any other count in the plural', () => {
+    expect(formatCount(1, 'song')).toBe('1 song')
+    expect(formatCount(12, 'album')).toBe('12 albums')
+    expect(formatCount(0, 'song')).toBe('0 songs')
+  })
+})
 
 describe('formatTotalDuration', () => {
   it('gives hours and minutes for a long stretch', () => {

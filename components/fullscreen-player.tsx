@@ -9,8 +9,9 @@ import {
 import { AlbumArtDisplay } from "./album-art-display"
 import { AlbumArtBackground } from "./album-art-background"
 import { LibraryPanel } from "./library/library-panel"
-import type { LibraryActions } from "./library/library-list"
 import { rowPlayback } from "./library/song-row"
+import type { LibraryActions } from "./library/use-row-actions"
+import { useLibraryNavigation } from "@/hooks/use-library-navigation"
 import type { Song } from "@/lib/song"
 import { PlayButton } from "./player/play-button"
 import { QualityLabel } from "./player/quality-label"
@@ -82,6 +83,7 @@ export function FullscreenPlayer({
   const [mounted, setMounted] = useState(false)
   const [visible, setVisible] = useState(false)
   const [showPlaylist, setShowPlaylist] = useState(false)
+  const libraryNavigation = useLibraryNavigation(sortedSongs)
 
   // FLIP animation refs
   const albumArtAnimRef = useRef<HTMLDivElement>(null)
@@ -283,6 +285,7 @@ export function FullscreenPlayer({
             playback={rowPlayback(isLoading, isPlaying)}
             onSelect={onSongSelect}
             actions={libraryActions}
+            navigation={libraryNavigation}
           />
         </div>
       </div>

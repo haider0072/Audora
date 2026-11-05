@@ -1,54 +1,12 @@
 import { fireEvent, render, screen, within } from "@testing-library/react"
 
-import { LibraryList, type LibraryActions, type LibraryJump } from "@/components/library/library-list"
+import { LibraryList } from "@/components/library/library-list"
+import type { LibraryActions } from "@/components/library/use-row-actions"
 import type { Song } from "@/lib/song"
+import { stubLibraryDom } from "@/testing/library-dom"
 
-// jsdom has no PointerEvent, and a plain Event drops `button` and `pointerType`.
-if (typeof window.PointerEvent === "undefined") {
-  class PointerEventStandIn extends MouseEvent {
-    readonly pointerId: number
-    readonly pointerType: string
-    constructor(type: string, init: PointerEventInit = {}) {
-      super(type, init)
-      this.pointerId = init.pointerId ?? 0
-      this.pointerType = init.pointerType ?? "mouse"
-    }
-  }
-  window.PointerEvent = PointerEventStandIn as unknown as typeof PointerEvent
-}
-// Nor an AnimationEvent, which the list reads `animationName` from.
-if (typeof window.AnimationEvent === "undefined") {
-  class AnimationEventStandIn extends Event {
-    readonly animationName: string
-    constructor(type: string, init: AnimationEventInit = {}) {
-      super(type, init)
-      this.animationName = init.animationName ?? ""
-    }
-  }
-  window.AnimationEvent = AnimationEventStandIn as unknown as typeof AnimationEvent
-}
-
-/** The viewport is 600 px tall. */
-const VIEWPORT_HEIGHT = 600
-
-// jsdom lays nothing out: give the list a viewport to fill, and scrolling that moves it.
-const scrollTo = jest.fn(function (this: HTMLElement, options: ScrollToOptions) {
-  this.scrollTop = options.top ?? 0
-  this.dispatchEvent(new Event("scroll"))
-})
-beforeAll(() => {
-  global.ResizeObserver = class {
-    observe() {}
-    unobserve() {}
-    disconnect() {}
-  }
-  Object.defineProperty(HTMLElement.prototype, "clientHeight", { configurable: true, get: () => VIEWPORT_HEIGHT })
-  HTMLElement.prototype.scrollTo = scrollTo as unknown as HTMLElement["scrollTo"]
-})
-afterAll(() => {
-  delete (HTMLElement.prototype as { clientHeight?: number }).clientHeight
-})
-beforeEach(() => scrollTo.mockClear())
+// jsdom lays nothing out: the list gets a 600 px viewport, and scrolling that moves it.
+const scrollTo = stubLibraryDom(600)
 
 function song(id: string, fields: Partial<Song> = {}): Song {
   return { id, url: `blob:${id}`, title: id, duration: 200, ...fields } as Song
@@ -82,6 +40,7 @@ function renderList(props: Props = {}) {
     layout: "desktop" as const,
     onSelect: jest.fn(),
     actions: actions(),
+    onOpen: jest.fn(),
     ...props,
   }
   const view = render(<LibraryList {...all} />)
@@ -106,6 +65,14 @@ describe("LibraryList, grouped", () => {
     expect(screen.getByText("Cherry-coloured Funk")).toBeInTheDocument()
     const cocteau = screen.getByRole("heading", { level: 3, name: "Cocteau Twins" }).parentElement as HTMLElement
     expect(within(cocteau).getByText("2 songs")).toBeInTheDocument()
+  })
+
+  it("opens an artist's or an album's page from its header", () => {
+    const { props } = renderList()
+    fireEvent.click(screen.getByRole("button", { name: "Beach House" }))
+    expect(props.onOpen).toHaveBeenLastCalledWith({ kind: "artist", artist: "Beach House" })
+    fireEvent.click(screen.getByRole("button", { name: "Heaven or Las Vegas" }))
+    expect(props.onOpen).toHaveBeenLastCalledWith({ kind: "album", artist: "Cocteau Twins", album: "Heaven or Las Vegas" })
   })
 
   it("places every row where its height says", () => {
@@ -158,14 +125,30 @@ describe("LibraryList, empty", () => {
     expect(screen.getByText("Nothing matches “no such song”")).toBeInTheDocument()
   })
 
-  it("says when the library is empty", () => {
+  it("says when the library is empty, and offers a way to fill it", () => {
+    const onClick = jest.fn()
+    renderList({ songs: [], emptyAction: { label: "Add a folder", onClick } })
+    expect(screen.getByText("Your library is quiet")).toBeInTheDocument()
+    expect(screen.getByText("Drop music anywhere, or add a folder.")).toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: "Add a folder" }))
+    expect(onClick).toHaveBeenCalledTimes(1)
+  })
+
+  it("does not talk about dropping files on a phone", () => {
+    renderList({ songs: [], layout: "phone" })
+    expect(screen.getByText("Add songs to start listening.")).toBeInTheDocument()
+  })
+
+  it("says so when the library is empty because the device is offline", () => {
+    const onLine = jest.spyOn(navigator, "onLine", "get").mockReturnValue(false)
     renderList({ songs: [] })
-    expect(screen.getByText("Your library is empty")).toBeInTheDocument()
+    expect(screen.getByText("You're offline")).toBeInTheDocument()
+    onLine.mockRestore()
   })
 
   it("says nothing while songs are still arriving", () => {
     renderList({ songs: [], loading: true })
-    expect(screen.queryByText("Your library is empty")).not.toBeInTheDocument()
+    expect(screen.queryByText("Your library is quiet")).not.toBeInTheDocument()
   })
 })
 
@@ -180,36 +163,6 @@ describe("LibraryList, moving around", () => {
     renderList()
     expect(screen.getByRole("button", { name: "Jump to B" })).toBeEnabled()
     expect(screen.getByRole("button", { name: "Jump to Z" })).toBeDisabled()
-  })
-
-  it("makes a jump asked for from outside, marks where it landed, and hands it back", () => {
-    const onJumpDone = jest.fn()
-    const jump: LibraryJump = { to: "artist", song: LIBRARY[4] }
-    renderList({ jump, onJumpDone })
-    expect(scrollTo).toHaveBeenLastCalledWith({ top: 336, behavior: "smooth" })
-    expect(onJumpDone).toHaveBeenCalledTimes(1)
-    const header = screen.getByRole("heading", { level: 3, name: "Cocteau Twins" }).closest(".library-sticky")
-    expect(header).toHaveAttribute("data-flash")
-  })
-
-  it("lands an album under its artist's header", () => {
-    renderList({ jump: { to: "album", song: LIBRARY[4] }, onJumpDone: jest.fn() })
-    expect(scrollTo).toHaveBeenLastCalledWith({ top: 476 - 52, behavior: "smooth" })
-  })
-
-  it("lands at once when the jump is many screens away", () => {
-    const many = Array.from({ length: 200 }, (_, i) =>
-      song(`s${i}`, { title: `Track ${i}`, artist: `Artist ${String(i).padStart(3, "0")}`, album: "One" }),
-    )
-    renderList({ songs: many, jump: { to: "artist", song: many[150] }, onJumpDone: jest.fn() })
-    expect(scrollTo).toHaveBeenLastCalledWith({ top: 150 * (52 + 32 + 56), behavior: "instant" })
-  })
-
-  it("drops the mark once it has played", () => {
-    renderList({ jump: { to: "artist", song: LIBRARY[0] }, onJumpDone: jest.fn() })
-    const header = screen.getByRole("heading", { level: 3, name: "Air" }).closest(".library-sticky") as HTMLElement
-    fireEvent.animationEnd(header, { animationName: "library-flash" })
-    expect(header).not.toHaveAttribute("data-flash")
   })
 
   it("starts a new search from the top", () => {
@@ -242,12 +195,12 @@ describe("LibraryList, a song's menu", () => {
     expect(props.actions.removeSong).toHaveBeenCalledWith("bh-1")
   })
 
-  it("goes to the song's album", () => {
-    renderList()
+  it("goes to the song's artist or album", () => {
+    const { props } = renderList()
     fireEvent.click(within(openMenu("Cherry-coloured Funk")).getByRole("menuitem", { name: "Go to album" }))
-    expect(scrollTo).toHaveBeenLastCalledWith({ top: 476 - 52, behavior: "smooth" })
-    const album = screen.getByRole("heading", { level: 4, name: "Heaven or Las Vegas" }).closest(".library-slot")
-    expect(album).toHaveAttribute("data-flash")
+    expect(props.onOpen).toHaveBeenLastCalledWith({ kind: "album", artist: "Cocteau Twins", album: "Heaven or Las Vegas" })
+    fireEvent.click(within(openMenu("Cherry-coloured Funk")).getByRole("menuitem", { name: "Go to artist" }))
+    expect(props.onOpen).toHaveBeenLastCalledWith({ kind: "artist", artist: "Cocteau Twins" })
   })
 
   it("does not offer to remove a song that lives only in the cloud", () => {
