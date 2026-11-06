@@ -1,4 +1,13 @@
-import { downloadExtension, downloadFileName, downloadTags } from "@/lib/download-file"
+/**
+ * @jest-environment node
+ */
+import {
+  downloadContentType,
+  downloadExtension,
+  downloadFileName,
+  downloadTags,
+  downloadTrack,
+} from "@/lib/download-file"
 import type { TidalTrack } from "@/lib/tidal-types"
 
 const TRACK: TidalTrack = {
@@ -17,6 +26,31 @@ const TRACK: TidalTrack = {
   discNumber: 1,
   isrc: "KRA382500001",
 }
+
+describe("downloadTrack", () => {
+  it("keeps what naming, tagging and fetching a track need, and nothing else", () => {
+    expect(downloadTrack({ ...TRACK, source: "qobuz" })).toEqual({
+      id: "amnesia",
+      title: "AMNESIA",
+      artist: "WOODZ",
+      albumTitle: "AMNESIA",
+      albumCover: "https://static.qobuz.com/images/covers/amnesia.jpg",
+      releaseDate: "2025-03-10",
+      genre: "K-Pop",
+      trackNumber: 1,
+      discNumber: 1,
+      copyright: undefined,
+      isrc: "KRA382500001",
+    })
+  })
+})
+
+describe("downloadContentType", () => {
+  it("takes the type the source labelled the file with, and FLAC when it gave none", () => {
+    expect(downloadContentType(new Headers({ "content-type": "audio/mp4" }))).toBe("audio/mp4")
+    expect(downloadContentType(new Headers())).toBe("audio/flac")
+  })
+})
 
 describe("downloadExtension", () => {
   it("names FLAC as FLAC, and anything else as AAC in an MP4 file", () => {

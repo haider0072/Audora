@@ -26,11 +26,14 @@ export interface FlacMetadata {
   isrc?: string
 }
 
-/** A picture to embed: its bytes, and their type. */
+/** A picture to embed: its bytes, and their type, or "" when it is not known. */
 export interface FlacPicture {
   data: Uint8Array
   type: string
 }
+
+/** Covers are nearly always JPEG, so a picture of unknown type is written as one. */
+const DEFAULT_PICTURE_TYPE = "image/jpeg"
 
 interface MetadataBlock {
   type: number
@@ -110,7 +113,7 @@ function vorbisCommentBlock(metadata: FlacMetadata): Uint8Array {
 
 /** A PICTURE block holding `picture` as the front cover, with no description. */
 function pictureBlock(picture: FlacPicture): Uint8Array {
-  const mime = new TextEncoder().encode(picture.type)
+  const mime = new TextEncoder().encode(picture.type || DEFAULT_PICTURE_TYPE)
   const block = new Uint8Array(4 + 4 + mime.length + 4 + 16 + 4 + picture.data.length)
   const view = new DataView(block.buffer)
   let pos = 0
@@ -180,6 +183,6 @@ export async function embedFlacMetadata(flacBlob: Blob, metadata: FlacMetadata, 
   const flac = new Uint8Array(await flacBlob.arrayBuffer())
   if (!isFlac(flac)) return flacBlob
 
-  const picture = artBlob ? { data: new Uint8Array(await artBlob.arrayBuffer()), type: artBlob.type || "image/jpeg" } : null
+  const picture = artBlob ? { data: new Uint8Array(await artBlob.arrayBuffer()), type: artBlob.type } : null
   return new Blob([withFlacMetadata(flac, metadata, picture)], { type: "audio/flac" })
 }

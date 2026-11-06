@@ -62,6 +62,13 @@ export type CloudUploadPlan =
   /** The library already holds this track; nothing to send. */
   | { status: "exists"; key: string }
 
+/** The answer to saving an online track straight to the cloud library. */
+export interface CloudImportResult {
+  /** `stored` when the song was written now; `exists` when the library already held it. */
+  status: "stored" | "exists"
+  key: string
+}
+
 /** The cloud side of a song, attached to `Song.cloud`. */
 export interface CloudSongRef {
   key: string

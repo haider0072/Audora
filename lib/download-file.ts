@@ -13,6 +13,40 @@ export const DOWNLOAD_EXTENSIONS = ["flac", "m4a"] as const
 
 export type DownloadExtension = (typeof DOWNLOAD_EXTENSIONS)[number]
 
+/**
+ * What saving a track needs to know of it: the id the source fetches it by,
+ * what it is named after, and the catalog's details it is tagged with.
+ * Everything past the name is optional, as the catalog does not always say.
+ */
+export interface DownloadTrack {
+  id: string
+  title: string
+  artist: string
+  albumTitle?: string
+  albumCover?: string
+  releaseDate?: string
+  genre?: string
+  trackNumber?: number
+  discNumber?: number
+  copyright?: string
+  isrc?: string
+}
+
+/** The part of a catalog track that saving it needs, as the app sends it to the cloud import. */
+export function downloadTrack(track: TidalTrack): DownloadTrack {
+  const { id, title, artist, albumTitle, albumCover, releaseDate, genre, trackNumber, discNumber, copyright, isrc } =
+    track
+  return { id, title, artist, albumTitle, albumCover, releaseDate, genre, trackNumber, discNumber, copyright, isrc }
+}
+
+/**
+ * The type a download came as. The source labels every file it sends; one
+ * it did not is taken as FLAC, the format it sends most.
+ */
+export function downloadContentType(headers: Headers): string {
+  return headers.get("content-type") || "audio/flac"
+}
+
 export function downloadExtension(contentType: string): DownloadExtension {
   return contentType.includes("flac") ? "flac" : "m4a"
 }
@@ -22,7 +56,7 @@ export function downloadFileName(artist: string, title: string, extension: Downl
 }
 
 /** The tags a download carries: the catalog's own, as Vorbis comments. */
-export function downloadTags(track: TidalTrack): FlacMetadata {
+export function downloadTags(track: DownloadTrack): FlacMetadata {
   return {
     title: track.title,
     artist: track.artist,

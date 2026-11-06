@@ -3,7 +3,7 @@
 import { useState, useCallback, useRef, useEffect } from "react"
 import { useOnlineStatus } from "@/hooks/use-online-status"
 import { toast } from "@/hooks/use-toast"
-import { downloadExtension, downloadFileName, downloadTags } from "@/lib/download-file"
+import { downloadContentType, downloadExtension, downloadFileName, downloadTags } from "@/lib/download-file"
 import { TidalService, type SearchSource } from "@/lib/tidal-service"
 import { MetadataExtractor } from "@/lib/metadata-extractor"
 import { PlaylistStorage } from "@/lib/playlist-storage"
@@ -456,7 +456,7 @@ export function useTidalSearch(options: UseTidalSearchOptions) {
         updateDownload(track.id, { status: "processing", progress: 100 })
 
         // Create File object
-        const contentType = res.headers.get("content-type") || "audio/flac"
+        const contentType = downloadContentType(res.headers)
         const ext = downloadExtension(contentType)
         const isFlac = ext === "flac"
         const blob = new Blob(chunks, { type: contentType })
