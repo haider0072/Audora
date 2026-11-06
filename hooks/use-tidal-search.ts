@@ -1,9 +1,17 @@
 "use client"
 
-import { useState, useCallback, useRef, useEffect } from "react"
+import { useState, useCallback, useMemo, useRef, useEffect } from "react"
 import { useOnlineStatus } from "@/hooks/use-online-status"
 import { toast } from "@/hooks/use-toast"
-import { makeUploadName } from "@/lib/cloud/upload-rules"
+import { saveTrackToCloud } from "@/lib/cloud/save-to-cloud"
+import {
+  downloadContentType,
+  downloadExtension,
+  downloadFileName,
+  downloadFileNames,
+  downloadTags,
+} from "@/lib/download-file"
+import { fileNameOf, normalizeName } from "@/lib/sync/song-match"
 import { TidalService, type SearchSource } from "@/lib/tidal-service"
 import { MetadataExtractor } from "@/lib/metadata-extractor"
 import { PlaylistStorage } from "@/lib/playlist-storage"
@@ -18,6 +26,7 @@ import {
   type TidalSearchResult,
   type TidalDiscographyResult,
   type DownloadState,
+  type DownloadTarget,
 } from "@/lib/tidal-types"
 
 export interface UseTidalSearchOptions {
@@ -28,6 +37,22 @@ export interface UseTidalSearchOptions {
    * this to pause its own library audio so the two don't overlap.
    */
   onPreviewStart?: () => void
+  /**
+   * Where downloads are saved: this device, unless the cloud library alone
+   * is chosen. Read when a download is asked for, so changing it leaves the
+   * downloads already waiting going where they were.
+   */
+  downloadTarget?: DownloadTarget
+  /** The cloud library is signed in, so a song can be saved straight to it. */
+  cloudReady?: boolean
+  /** A song was saved straight to the cloud library; the host lists the library again to show it. */
+  onSavedToCloud?: () => void
+}
+
+/** A download waiting its turn, and where it is saved. */
+interface DownloadJob {
+  track: TidalTrack
+  target: DownloadTarget
 }
 
 export type TidalView = "search" | "album" | "artist"
@@ -51,15 +76,18 @@ const TRY_AGAIN = "Check the connection and try again."
 const MAX_CONCURRENT_DOWNLOADS = 2
 
 export function useTidalSearch(options: UseTidalSearchOptions) {
-  const { songs, onSongDownloaded, onPreviewStart } = options
+  const { songs, onSongDownloaded, onPreviewStart, downloadTarget = "device", cloudReady = false, onSavedToCloud } =
+    options
   // The host's latest callbacks, read when they are called: the download
   // queue keeps the functions of the render it was made in.
   const onSongDownloadedRef = useRef(onSongDownloaded)
   const onPreviewStartRef = useRef(onPreviewStart)
+  const onSavedToCloudRef = useRef(onSavedToCloud)
   useEffect(() => {
     onSongDownloadedRef.current = onSongDownloaded
     onPreviewStartRef.current = onPreviewStart
-  }, [onSongDownloaded, onPreviewStart])
+    onSavedToCloudRef.current = onSavedToCloud
+  }, [onSongDownloaded, onPreviewStart, onSavedToCloud])
 
   // Search state
   const [searchQuery, setSearchQuery] = useState("")
@@ -103,7 +131,7 @@ export function useTidalSearch(options: UseTidalSearchOptions) {
   // Download state
   const [downloads, setDownloads] = useState<Map<string, DownloadState>>(new Map())
   const abortControllers = useRef<Map<string, AbortController>>(new Map())
-  const downloadQueue = useRef<TidalTrack[]>([])
+  const downloadQueue = useRef<DownloadJob[]>([])
   const activeDownloads = useRef(0)
 
   // Paste-a-link resolve state (separate from `downloads` because resolution
@@ -341,14 +369,43 @@ export function useTidalSearch(options: UseTidalSearchOptions) {
     setCurrentView(previousView)
   }, [previousView, dropPendingPage])
 
+  // What the library holds: downloads to this device by the id they get, and
+  // every song by its file name and album. That is how a track saved straight
+  // to the cloud, under the cloud's own id, is known as this one; the album
+  // keeps a song of the same name on another, such as an intro, apart.
+  const libraryIds = useMemo(() => new Set(songs.map((song) => song.id)), [songs])
+  const albumsByName = useMemo(() => {
+    const albums = new Map<string, Set<string>>()
+    for (const song of songs) {
+      const name = fileNameOf(song)
+      if (!name) continue
+      const key = normalizeName(name)
+      albums.set(key, (albums.get(key) ?? new Set<string>()).add(normalizeName(song.album ?? "")))
+    }
+    return albums
+  }, [songs])
+
   // Check if track is already in library
   const isInLibrary = useCallback(
-    (trackId: string) => {
-      const tidalId = `tidal-${trackId}`
-      return songs.some((s) => s.id === tidalId)
+    (track: TidalTrack) => {
+      if (libraryIds.has(`tidal-${track.id}`)) return true
+      const album = normalizeName(track.albumTitle ?? "")
+      return downloadFileNames(track).some((name) => albumsByName.get(normalizeName(name))?.has(album))
     },
-    [songs]
+    [libraryIds, albumsByName]
   )
+
+  // A save to the cloud alone needs the cloud library signed in. Refuses one
+  // while it is not, saying so once for everything asked for; true when it did.
+  const refuseWithoutCloud = useCallback(() => {
+    if (downloadTarget !== "cloud" || cloudReady) return false
+    toast({
+      title: "Sign in to the cloud library to save there",
+      description: "Or have downloads saved on this device, in Settings.",
+      variant: "destructive",
+    })
+    return true
+  }, [downloadTarget, cloudReady])
 
   // Update download state helper
   const updateDownload = useCallback(
@@ -371,10 +428,11 @@ export function useTidalSearch(options: UseTidalSearchOptions) {
       downloadQueue.current.length > 0 &&
       activeDownloads.current < MAX_CONCURRENT_DOWNLOADS
     ) {
-      const track = downloadQueue.current.shift()
-      if (!track) break
+      const job = downloadQueue.current.shift()
+      if (!job) break
       activeDownloads.current++
-      processDownload(track).finally(() => {
+      const run = job.target === "cloud" ? processCloudSave(job.track) : processDownload(job.track)
+      run.finally(() => {
         activeDownloads.current--
         processQueue()
       })
@@ -456,13 +514,13 @@ export function useTidalSearch(options: UseTidalSearchOptions) {
         updateDownload(track.id, { status: "processing", progress: 100 })
 
         // Create File object
-        const contentType = res.headers.get("content-type") || "audio/flac"
-        const isFlac = contentType.includes("flac")
-        const ext = isFlac ? "flac" : "m4a"
+        const contentType = downloadContentType(res.headers)
+        const ext = downloadExtension(contentType)
+        const isFlac = ext === "flac"
         const blob = new Blob(chunks, { type: contentType })
         // The cloud library matches its copy to this one by name and size,
-        // so the file gets a name it takes as it is.
-        const fileName = makeUploadName(`${track.artist} - ${track.title}`, ext)
+        // and a download straight to the cloud is named the same way.
+        const fileName = downloadFileName(track.artist, track.title, ext)
         const file = new File([blob], fileName, {
           type: contentType,
           lastModified: Date.now(),
@@ -528,24 +586,10 @@ export function useTidalSearch(options: UseTidalSearchOptions) {
         // Embed full metadata + album art into FLAC
         if (isFlac) {
           try {
-            finalBlob = await embedFlacMetadata(
-              blob,
-              {
-                title: track.title,
-                artist: track.artist,
-                album: track.albumTitle,
-                albumArtist: track.artist,
-                date: track.releaseDate ? track.releaseDate.slice(0, 4) : undefined,
-                genre: track.genre || undefined,
-                trackNumber: track.trackNumber ? String(track.trackNumber) : undefined,
-                discNumber: track.discNumber ? String(track.discNumber) : undefined,
-                copyright: track.copyright || undefined,
-                isrc: track.isrc || undefined,
-              },
-              artBlob
-            )
-          } catch {
-            // Fall back to raw blob if embedding fails
+            finalBlob = await embedFlacMetadata(blob, downloadTags(track), artBlob)
+          } catch (err) {
+            // The song is still whole without its tags, so it is saved as it came.
+            console.warn(`Could not tag ${track.title}; saving it as it came:`, err)
           }
         }
 
@@ -614,6 +658,40 @@ export function useTidalSearch(options: UseTidalSearchOptions) {
     [quality, updateDownload]
   )
 
+  // Save a track straight to the cloud library: the server fetches, tags and
+  // stores it, so nothing is kept on this device.
+  const processCloudSave = useCallback(
+    async (track: TidalTrack) => {
+      updateDownload(track.id, { status: "saving" })
+
+      const controller = new AbortController()
+      abortControllers.current.set(track.id, controller)
+
+      try {
+        const result = await saveTrackToCloud(track, controller.signal)
+        // Listing the library again brings the song in, which the search then shows as in the library.
+        onSavedToCloudRef.current?.()
+        updateDownload(track.id, { status: "complete" })
+        toast({
+          title: result.status === "stored" ? `Saved to the cloud: ${track.title}` : `Already in the cloud: ${track.title}`,
+        })
+      } catch (err) {
+        if (controller.signal.aborted) {
+          updateDownload(track.id, { status: "cancelled" })
+          return
+        }
+        console.error(`Could not save ${track.title} to the cloud:`, err)
+        updateDownload(track.id, {
+          status: "error",
+          error: err instanceof Error ? err.message : "Could not save to the cloud",
+        })
+        toast({ title: `Couldn't save to the cloud: ${track.title}`, variant: "destructive" })
+      } finally {
+        abortControllers.current.delete(track.id)
+      }
+    },
+    [updateDownload]
+  )
 
   /**
    * Bring a track that is already on disk back into the playlist.
@@ -668,16 +746,19 @@ export function useTidalSearch(options: UseTidalSearchOptions) {
   // Download a single track
   const downloadTrack = useCallback(
     async (track: TidalTrack) => {
-      if (isInLibrary(track.id)) {
+      if (isInLibrary(track)) {
         toast({ title: "Already in library" })
         return
       }
+      if (refuseWithoutCloud()) return
+      const target = downloadTarget
 
       // React state can disagree with what is actually stored. Recover the
       // existing bytes rather than paying for them twice; fall through to a
-      // real download if the record turns out to be unusable.
+      // real download if the record turns out to be unusable. A save to the
+      // cloud alone keeps nothing here, so it has nothing here to recover.
       const songId = `tidal-${track.id}`
-      if (await PlaylistStorage.hasSongFile(songId)) {
+      if (target === "device" && (await PlaylistStorage.hasSongFile(songId))) {
         if (await restoreStoredTrack(songId, track)) {
           toast({ title: `Restored from storage: ${track.title}` })
           return
@@ -703,10 +784,10 @@ export function useTidalSearch(options: UseTidalSearchOptions) {
         return next
       })
 
-      downloadQueue.current.push(track)
+      downloadQueue.current.push({ track, target })
       processQueue()
     },
-    [isInLibrary, downloads, processQueue, restoreStoredTrack]
+    [isInLibrary, refuseWithoutCloud, downloadTarget, downloads, processQueue, restoreStoredTrack]
   )
 
   // Download from a pasted streaming URL (Amazon / Qobuz / Tidal / Deezer /
@@ -722,12 +803,13 @@ export function useTidalSearch(options: UseTidalSearchOptions) {
         toast({ title: "Enter a valid link (http/https)", variant: "destructive" })
         return false
       }
+      if (refuseWithoutCloud()) return false
 
       setIsResolvingUrl(true)
       try {
         const track = await TidalService.resolveUrl(url)
 
-        if (isInLibrary(track.id)) {
+        if (isInLibrary(track)) {
           toast({ title: "Already in library" })
           return false
         }
@@ -745,7 +827,7 @@ export function useTidalSearch(options: UseTidalSearchOptions) {
         setIsResolvingUrl(false)
       }
     },
-    [isInLibrary, downloadTrack]
+    [isInLibrary, refuseWithoutCloud, downloadTrack]
   )
 
   // Download entire album
@@ -756,10 +838,11 @@ export function useTidalSearch(options: UseTidalSearchOptions) {
         toast({ title: "No tracks to download", variant: "destructive" })
         return
       }
+      if (refuseWithoutCloud()) return
 
       let queued = 0
       for (const track of tracks) {
-        if (!isInLibrary(track.id)) {
+        if (!isInLibrary(track)) {
           const existing = downloads.get(track.id)
           if (!existing || ["error", "cancelled"].includes(existing.status)) {
             downloadTrack(track)
@@ -774,15 +857,16 @@ export function useTidalSearch(options: UseTidalSearchOptions) {
         toast({ title: `Queued ${queued} track(s) for download` })
       }
     },
-    [isInLibrary, downloads, downloadTrack]
+    [isInLibrary, refuseWithoutCloud, downloads, downloadTrack]
   )
 
-  // Cancel a download
+  // Cancel a download: stop one under way, or take one still waiting out of the queue.
   const cancelDownload = useCallback((trackId: string) => {
     const controller = abortControllers.current.get(trackId)
     if (controller) {
       controller.abort()
     }
+    downloadQueue.current = downloadQueue.current.filter((job) => job.track.id !== trackId)
     updateDownload(trackId, { status: "cancelled" })
   }, [updateDownload])
 

@@ -20,6 +20,7 @@ import { useLibraryStorage } from "@/hooks/use-library-storage"
 import { useReturnFocus } from "@/hooks/use-return-focus"
 import { toast } from "@/hooks/use-toast"
 import { formatBytes, STORAGE_WARN_THRESHOLD, type QuotaStatus } from "@/lib/storage-quota"
+import type { DownloadTarget } from "@/lib/tidal-types"
 import { formatCount } from "@/lib/utils"
 
 export interface SettingsViewProps {
@@ -33,6 +34,9 @@ export interface SettingsViewProps {
   onOpenCloud: () => void
   syncConnected: boolean
   onOpenSync: () => void
+  /** Where online downloads are saved. */
+  downloadTarget: DownloadTarget
+  onDownloadTargetChange: (target: DownloadTarget) => void
   /** Songs in the library: what a reset removes, and whether there is anything to reclaim or reset. */
   songCount: number
   /** Clears the library; true once it is cleared. */
@@ -40,6 +44,20 @@ export interface SettingsViewProps {
 }
 
 const MEASURING = "Measuring…"
+
+/** Each place online downloads can go: how its row reads, and the change it offers. */
+const DOWNLOAD_TARGETS: Record<DownloadTarget, { value: string; detail: string; change: string }> = {
+  device: {
+    value: "This device",
+    detail: "Saved in this browser, and to the cloud library too while it's signed in.",
+    change: "Save to the cloud only",
+  },
+  cloud: {
+    value: "Cloud only",
+    detail: "Saved straight to the cloud library, never in this browser. The cloud library must be signed in.",
+    change: "Save on this device",
+  },
+}
 
 /** What the browser's own figures can honestly say about the space it gives. */
 function spaceRow(quota: QuotaStatus | undefined): { value: string; detail: string } {
@@ -62,9 +80,9 @@ function spaceRow(quota: QuotaStatus | undefined): { value: string; detail: stri
 
 /**
  * Settings, as rows that each say how a thing stands and offer the change: the
- * sound, the cloud library and the second device, what the library stores,
- * and the reset. The view's head is the player's. Styled by `.settings` in
- * app/globals.css.
+ * sound, the cloud library, where online downloads go and the second device,
+ * what the library stores, and the reset. The view's head is the player's.
+ * Styled by `.settings` in app/globals.css.
  */
 export function SettingsView({
   soundPreset,
@@ -75,6 +93,8 @@ export function SettingsView({
   onOpenCloud,
   syncConnected,
   onOpenSync,
+  downloadTarget,
+  onDownloadTargetChange,
   songCount,
   onReset,
 }: SettingsViewProps) {
@@ -88,6 +108,7 @@ export function SettingsView({
   const { info } = storage
   const space = spaceRow(info?.quota)
   const cloudLabel = CLOUD_STATUS_LABELS[cloudStatus]
+  const downloads = DOWNLOAD_TARGETS[downloadTarget]
   const stored = info
     ? `, with ${formatBytes(info.used - info.albumArtSize)} of audio and ${formatBytes(info.albumArtSize)} of album art`
     : ""
@@ -144,6 +165,11 @@ export function SettingsView({
           >
             <RowButton aria-haspopup="dialog" onClick={onOpenCloud}>
               Open cloud library
+            </RowButton>
+          </SettingsRow>
+          <SettingsRow label="Online downloads" detail={downloads.detail} value={downloads.value}>
+            <RowButton onClick={() => onDownloadTargetChange(downloadTarget === "cloud" ? "device" : "cloud")}>
+              {downloads.change}
             </RowButton>
           </SettingsRow>
           <SettingsRow

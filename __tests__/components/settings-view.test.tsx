@@ -45,6 +45,8 @@ function renderSettings(props: Partial<SettingsViewProps> = {}, storage = storag
     onOpenCloud: jest.fn(),
     syncConnected: false,
     onOpenSync: jest.fn(),
+    downloadTarget: "device",
+    onDownloadTargetChange: jest.fn(),
     songCount: 2,
     onReset: jest.fn().mockResolvedValue(true),
     ...props,
@@ -74,6 +76,22 @@ describe("SettingsView", () => {
     expect(within(row("Two-device playback")).getByText("Off")).toBeInTheDocument()
     fireEvent.click(screen.getByRole("button", { name: "Open two-device playback" }))
     expect(props.onOpenSync).toHaveBeenCalledTimes(1)
+  })
+
+  it("says where online downloads go, and offers the other place", () => {
+    const { props } = renderSettings()
+    expect(within(row("Online downloads")).getByText("This device")).toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: "Save to the cloud only" }))
+    expect(props.onDownloadTargetChange).toHaveBeenCalledWith("cloud")
+  })
+
+  it("says when online downloads go to the cloud alone, and offers this device back", () => {
+    const { props } = renderSettings({ downloadTarget: "cloud" })
+    const downloads = row("Online downloads")
+    expect(within(downloads).getByText("Cloud only")).toBeInTheDocument()
+    expect(within(downloads).getByText(/never in this browser/)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: "Save on this device" }))
+    expect(props.onDownloadTargetChange).toHaveBeenCalledWith("device")
   })
 
   it("shows what the library keeps here, with the real figures", () => {

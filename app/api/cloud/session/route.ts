@@ -4,6 +4,7 @@ import { z } from "zod"
 import { getCloudConfig } from "@/lib/cloud/config"
 import { notConfigured, rejectCrossOrigin, requireCloudSession, verifiedSession } from "@/lib/cloud/guard"
 import { LoginThrottleStore, checkLogin, clientAddressOf, clientIdFor } from "@/lib/cloud/login-throttle"
+import { readJsonBody } from "@/lib/cloud/request-body"
 import {
   SESSION_COOKIE,
   SESSION_COOKIE_OPTIONS,
@@ -73,16 +74,8 @@ export async function POST(request: NextRequest) {
   const config = getCloudConfig()
   if (!config) return notConfigured()
 
-  let body: unknown
-  try {
-    body = await request.json()
-  } catch {
-    return NextResponse.json({ error: "Malformed body" }, { status: 400 })
-  }
-  const parsed = loginSchema.safeParse(body)
-  if (!parsed.success) {
-    return NextResponse.json({ error: "Malformed body" }, { status: 400 })
-  }
+  const body = await readJsonBody(request, loginSchema)
+  if (body.denied) return body.denied
 
   const clientId = clientIdFor(config, clientAddressOf(request.headers))
   const throttle = new LoginThrottleStore(config)
@@ -92,7 +85,7 @@ export async function POST(request: NextRequest) {
     const verdict = checkLogin(state, clientId, Date.now())
     if (!verdict.allowed) return tooManyAttempts(verdict.retryAfterMs)
 
-    if (!isCorrectPassword(config, parsed.data.password)) {
+    if (!isCorrectPassword(config, body.data.password)) {
       await throttle.recordFailure(clientId)
       return NextResponse.json({ error: "Wrong password" }, { status: 401, headers: NO_STORE })
     }

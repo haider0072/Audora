@@ -170,6 +170,12 @@ describe("DownloadIndicator", () => {
     expect(props.onCancel).toHaveBeenCalledTimes(1)
   })
 
+  it("turns while the server saves a song to the cloud, and stops the save when pressed", () => {
+    const props = renderIndicator(download("t1", "saving"))
+    fireEvent.click(screen.getByRole("button", { name: "Stop saving Palette to the cloud" }))
+    expect(props.onCancel).toHaveBeenCalledTimes(1)
+  })
+
   it("offers to try a failed download again, in words", () => {
     const props = renderIndicator({ ...download("t1", "error"), error: "Network error" })
     const retry = screen.getByRole("button", { name: "Palette didn't download: try again" })
@@ -208,6 +214,13 @@ describe("DownloadQueueBar", () => {
     expect(screen.getByText("1 more song")).toBeInTheDocument()
     expect(screen.getByText("42%")).toBeInTheDocument()
     expect(container.querySelector<HTMLElement>(".online-strip")?.style.getPropertyValue("--progress")).toBe("0.42")
+  })
+
+  it("says a song is being saved to the cloud, with no figure for how far, as the server gives none", () => {
+    const { container } = render(<DownloadQueueBar downloads={new Map([["t1", download("t1", "saving")]])} />)
+    expect(screen.getByText(/Saving to the cloud/)).toBeInTheDocument()
+    expect(screen.queryByText(/%$/)).not.toBeInTheDocument()
+    expect(container.querySelector<HTMLElement>(".online-strip")?.style.getPropertyValue("--progress")).toBe("0")
   })
 })
 

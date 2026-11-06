@@ -2763,7 +2763,8 @@
     width: 18px;
     height: 18px;
   }
-  .online-download > .progress-ring {
+  .online-download > .progress-ring,
+  .online-download[data-state="saving"] > .busy-arc {
     width: 22px;
     height: 22px;
   }

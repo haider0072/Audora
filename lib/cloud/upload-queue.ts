@@ -1,6 +1,7 @@
 import { trackSyncKey } from "@/lib/sync/song-match"
 
 import { isAudioFileName } from "./audio-files"
+import { SIGNED_OUT_MESSAGE, readError } from "./response-error"
 import type { CloudUploadPlan } from "./types"
 import { MAX_UPLOAD_BYTES, checkUploadName } from "./upload-rules"
 
@@ -399,15 +400,6 @@ export class UploadQueue {
   }
 }
 
-async function readError(response: Response): Promise<string> {
-  try {
-    const body = (await response.json()) as { error?: string }
-    return body.error ?? `Request failed (${response.status})`
-  } catch {
-    return `Request failed (${response.status})`
-  }
-}
-
 /** No progress for this long means the connection has stalled. */
 const STALL_TIMEOUT_MS = 60_000
 
@@ -422,7 +414,7 @@ export const browserTransport: UploadTransport = {
       signal,
     })
     if (!response.ok) {
-      const message = response.status === 401 ? "Signed out — sign in again, then retry" : await readError(response)
+      const message = response.status === 401 ? SIGNED_OUT_MESSAGE : await readError(response)
       // 403 here is the origin check, which a retry cannot change.
       throw new UploadError(message, response.status !== 403 && isRetryableStatus(response.status))
     }

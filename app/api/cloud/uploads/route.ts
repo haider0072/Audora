@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server"
 import { z } from "zod"
 
 import { requireCloudMutation } from "@/lib/cloud/guard"
+import { readJsonBody } from "@/lib/cloud/request-body"
 import { MAX_UPLOAD_BYTES, checkUploadName } from "@/lib/cloud/upload-rules"
 import { planUpload } from "@/lib/cloud/uploads"
 
@@ -25,21 +26,13 @@ export async function POST(request: NextRequest) {
   const { config, denied } = await requireCloudMutation(request)
   if (denied) return denied
 
-  let body: unknown
-  try {
-    body = await request.json()
-  } catch {
-    return NextResponse.json({ error: "Malformed body" }, { status: 400 })
-  }
-  const parsed = uploadSchema.safeParse(body)
-  if (!parsed.success) {
-    return NextResponse.json({ error: "Malformed body" }, { status: 400 })
-  }
-  const name = checkUploadName(parsed.data.name)
+  const body = await readJsonBody(request, uploadSchema)
+  if (body.denied) return body.denied
+  const name = checkUploadName(body.data.name)
   if (!name.ok) return NextResponse.json({ error: name.reason }, { status: 400 })
 
   try {
-    return NextResponse.json(await planUpload(config, name.name, parsed.data.size), { headers: NO_STORE })
+    return NextResponse.json(await planUpload(config, name.name, body.data.size), { headers: NO_STORE })
   } catch (error) {
     console.error("Could not plan a cloud upload:", error)
     return NextResponse.json({ error: "Could not reach the cloud library" }, { status: 502 })

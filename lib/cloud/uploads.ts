@@ -12,7 +12,8 @@ import type { CloudUploadPlan } from "./types"
  * The browser PUTs the file straight to R2 with the URL this signs, so the
  * audio never passes through a function and no size limit but R2's applies.
  * Uploads land beside the existing songs, at `library/<file name>`, which the
- * indexer picks up on the client's next listing.
+ * indexer picks up on the client's next listing. The cloud import places the
+ * songs it fetches itself by the same rule (see `imports.ts`).
  */
 
 /**
@@ -22,9 +23,14 @@ import type { CloudUploadPlan } from "./types"
  */
 const UPLOAD_URL_LIFETIME_SECONDS = 15 * 60
 
+/** Where a file goes in the library: a key free for it, or the key it is already stored under. */
+export interface UploadPlace {
+  status: "free" | "exists"
+  key: string
+}
+
 /**
- * Plan the upload of one file, already checked by `checkUploadName` and
- * no larger than `MAX_UPLOAD_BYTES`.
+ * Place one file, already checked by `checkUploadName`, in the library.
  *
  * Songs are one track when their name and size match — the identity
  * `trackSyncKey` gives them everywhere else — so a file already stored under
@@ -32,24 +38,27 @@ const UPLOAD_URL_LIFETIME_SECONDS = 15 * 60
  * the same name goes to a key derived from both, which can only ever hold
  * that one track.
  */
-export async function planUpload(config: CloudConfig, name: string, size: number): Promise<CloudUploadPlan> {
-  const client = new R2Client(config)
-
-  const offer = async (key: string): Promise<CloudUploadPlan> => {
-    const signed = await client.presignPut(key, {
-      contentType: audioContentType(name),
-      contentLength: size,
-      expiresInSeconds: UPLOAD_URL_LIFETIME_SECONDS,
-    })
-    return { status: "upload", key, ...signed }
-  }
-
+export async function placeUpload(client: R2Client, name: string, size: number): Promise<UploadPlace> {
   const primary = `${LIBRARY_PREFIX}${name}`
   const atPrimary = await client.head(primary)
-  if (!atPrimary) return offer(primary)
+  if (!atPrimary) return { status: "free", key: primary }
   if (atPrimary.size === size) return { status: "exists", key: primary }
 
   const digest = createHash("sha256").update(`${name}\n${size}`).digest("hex").slice(0, 12)
   const secondary = `${LIBRARY_PREFIX}${digest}/${name}`
-  return (await client.head(secondary)) ? { status: "exists", key: secondary } : offer(secondary)
+  return { status: (await client.head(secondary)) ? "exists" : "free", key: secondary }
+}
+
+/** Plan the upload of one file, no larger than `MAX_UPLOAD_BYTES`: where it goes, and a URL to PUT it to. */
+export async function planUpload(config: CloudConfig, name: string, size: number): Promise<CloudUploadPlan> {
+  const client = new R2Client(config)
+  const place = await placeUpload(client, name, size)
+  if (place.status === "exists") return { status: "exists", key: place.key }
+
+  const signed = await client.presignPut(place.key, {
+    contentType: audioContentType(name),
+    contentLength: size,
+    expiresInSeconds: UPLOAD_URL_LIFETIME_SECONDS,
+  })
+  return { status: "upload", key: place.key, ...signed }
 }

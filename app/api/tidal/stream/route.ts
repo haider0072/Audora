@@ -1,9 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
-import {
-  initLucidaDownload,
-  waitForLucidaReady,
-  fetchLucidaAudio,
-} from "@/lib/lucida-client"
+import { downloadContentType } from "@/lib/download-file"
+import { fetchLucidaTrackAudio } from "@/lib/lucida-client"
 import { decodeId } from "@/lib/lucida-ids"
 
 export const maxDuration = 300
@@ -28,15 +25,7 @@ export async function GET(request: NextRequest) {
   )
 
   try {
-    const { handoff, server } = await initLucidaDownload(trackUrl, { country })
-
-    await waitForLucidaReady(handoff, server, {
-      signal: request.signal,
-      maxAttempts: 80,
-      intervalMs: 1500,
-    })
-
-    const audioRes = await fetchLucidaAudio(handoff, server, request.signal)
+    const audioRes = await fetchLucidaTrackAudio(trackUrl, { country, signal: request.signal })
 
     if (!audioRes.ok || !audioRes.body) {
       console.error("Lucida tidal audio fetch failed:", audioRes.status)
@@ -46,7 +35,7 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    const contentType = audioRes.headers.get("content-type") || "audio/flac"
+    const contentType = downloadContentType(audioRes.headers)
     const contentLength = audioRes.headers.get("content-length")
 
     const headers: Record<string, string> = {

@@ -19,9 +19,10 @@ interface DownloadIndicatorProps {
 
 /**
  * A song's download, as one control in a row: the way to get it, how far it
- * has come (a ring that fills, and stops it when pressed), and whether it is
- * in the library. A failure says so and offers to try again: words and an
- * icon, never red, which is Audora's own. Styled by `.online-download`.
+ * has come (a ring that fills, or an arc while the server saves it to the
+ * cloud, and stops it when pressed), and whether it is in the library. A
+ * failure says so and offers to try again: words and an icon, never red,
+ * which is Audora's own. Styled by `.online-download`.
  */
 export const DownloadIndicator = memo(function DownloadIndicator({
   title,
@@ -65,6 +66,20 @@ export const DownloadIndicator = memo(function DownloadIndicator({
           <BusyArc />
           <span className="sr-only">Finishing the download</span>
         </span>
+      )
+    case "saving":
+      // The server reports nothing until the song is saved, so an arc turns where the ring would fill.
+      return (
+        <TransportButton
+          label={`Stop saving ${title} to the cloud`}
+          size="sm"
+          className="online-download"
+          data-state="saving"
+          onClick={onCancel}
+        >
+          <BusyArc radius={9} />
+          <X className="online-download-stop" aria-hidden="true" />
+        </TransportButton>
       )
     case "error":
       return (

@@ -34,7 +34,7 @@ export interface SyncTrackFields {
 export function trackSyncKey(track: SyncTrackFields | null | undefined): TrackKey | null {
   if (!track) return null
 
-  const name = track.fileName ?? track.file?.name
+  const name = fileNameOf(track)
   const size = track.fileSize ?? track.file?.size
 
   if (!name || typeof size !== "number" || !Number.isFinite(size) || size <= 0) {
@@ -44,11 +44,16 @@ export function trackSyncKey(track: SyncTrackFields | null | undefined): TrackKe
   return `${size}:${normalizeName(name)}`
 }
 
+/** The name a track's file has: recorded on restored and cloud songs, read from the file on fresh imports. */
+export function fileNameOf(track: SyncTrackFields): string | undefined {
+  return track.fileName ?? track.file?.name
+}
+
 /**
  * Fold away the differences a file name can pick up in transit without its
  * contents changing: Unicode composition, case, and surrounding whitespace.
  */
-function normalizeName(name: string): string {
+export function normalizeName(name: string): string {
   return name.normalize("NFC").trim().toLowerCase()
 }
 
