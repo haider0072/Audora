@@ -1,17 +1,24 @@
 import { act, renderHook, waitFor } from "@testing-library/react"
 
 import { useTidalSearch } from "@/hooks/use-tidal-search"
+import { embedFlacMetadata } from "@/lib/flac-art-embedder"
+import { MetadataExtractor } from "@/lib/metadata-extractor"
+import { PlaylistStorage } from "@/lib/playlist-storage"
+import type { Song } from "@/lib/song"
 import { TidalService } from "@/lib/tidal-service"
-import type { TidalAlbum, TidalDiscographyResult, TidalSearchResult } from "@/lib/tidal-types"
+import type { TidalAlbum, TidalDiscographyResult, TidalSearchResult, TidalTrack } from "@/lib/tidal-types"
 
 jest.mock("@/hooks/use-toast", () => ({ toast: jest.fn() }))
 jest.mock("@/hooks/use-online-status", () => ({ useOnlineStatus: () => true }))
 jest.mock("@/lib/tidal-service", () => ({
   TidalService: { search: jest.fn(), getAlbum: jest.fn(), getDiscography: jest.fn(), getStreamUrl: jest.fn() },
 }))
-// Downloads write to storage and embed art; none of that is under test here.
-jest.mock("@/lib/metadata-extractor", () => ({ MetadataExtractor: {} }))
-jest.mock("@/lib/playlist-storage", () => ({ PlaylistStorage: {} }))
+// A download reads tags, stores the file and embeds art; these stand in for
+// all of that, so a download can be followed to the song it hands over.
+jest.mock("@/lib/metadata-extractor", () => ({ MetadataExtractor: { extractMetadata: jest.fn() } }))
+jest.mock("@/lib/playlist-storage", () => ({
+  PlaylistStorage: { hasSongFile: jest.fn(), storeSongFile: jest.fn() },
+}))
 jest.mock("@/lib/flac-art-embedder", () => ({ embedFlacMetadata: jest.fn() }))
 
 const search = jest.mocked(TidalService.search)
@@ -242,5 +249,84 @@ describe("useTidalSearch, pages over the results", () => {
       await openingFirst
     })
     expect(result.current).toMatchObject({ currentView: "album", previousView: "search", selectedAlbum: second })
+  })
+})
+
+describe("useTidalSearch, downloads", () => {
+  const TRACK: TidalTrack = {
+    id: "bib",
+    title: "Back In Black",
+    artist: "AC/DC",
+    artistId: "acdc",
+    albumTitle: "Back In Black",
+    albumId: "bib-album",
+    // No cover, so the download asks for nothing but the audio.
+    albumCover: "",
+    releaseDate: "1980-07-25",
+    genre: "Rock",
+    duration: 255,
+    audioQuality: "HI_RES_LOSSLESS",
+  }
+
+  /** The stream's answer: one chunk of FLAC, then the end. */
+  function audioResponse() {
+    let sent = false
+    return {
+      ok: true,
+      status: 200,
+      headers: { get: (name: string) => (name === "content-type" ? "audio/flac" : null) },
+      body: {
+        getReader: () => ({
+          read: async () => {
+            if (sent) return { done: true, value: undefined }
+            sent = true
+            return { done: false, value: new Uint8Array([0x66, 0x4c, 0x61, 0x43]) }
+          },
+        }),
+      },
+    }
+  }
+
+  const originalFetch = global.fetch
+  let linkClick: jest.SpyInstance
+
+  beforeAll(() => {
+    // jsdom has no object URLs, which a download makes to save its file.
+    Object.assign(URL, { createObjectURL: () => "blob:download", revokeObjectURL: () => {} })
+  })
+
+  beforeEach(() => {
+    jest.mocked(PlaylistStorage.hasSongFile).mockResolvedValue(false)
+    jest.mocked(PlaylistStorage.storeSongFile).mockResolvedValue(undefined)
+    jest.mocked(MetadataExtractor.extractMetadata).mockRejectedValue(new Error("No tags"))
+    jest.mocked(embedFlacMetadata).mockImplementation(async (blob) => blob)
+    global.fetch = jest.fn().mockResolvedValue(audioResponse())
+    // Saving to the Downloads folder clicks a link, which jsdom cannot follow.
+    linkClick = jest.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {})
+  })
+
+  afterEach(() => {
+    global.fetch = originalFetch
+    linkClick.mockRestore()
+  })
+
+  it("hands a finished download to the host's latest callback, under a name the cloud takes", async () => {
+    const first = jest.fn<void, [Song]>()
+    const latest = jest.fn<void, [Song]>()
+    const { result, rerender } = renderHook(
+      ({ onSongDownloaded }) => useTidalSearch({ songs: [], onSongDownloaded }),
+      { initialProps: { onSongDownloaded: first } },
+    )
+    rerender({ onSongDownloaded: latest })
+
+    await act(() => result.current.downloadTrack(TRACK))
+    await waitFor(() => expect(result.current.downloads.get(TRACK.id)?.status).toBe("complete"))
+
+    expect(first).not.toHaveBeenCalled()
+    expect(latest).toHaveBeenCalledTimes(1)
+    const [song] = latest.mock.calls[0]
+    expect(song).toMatchObject({ id: "tidal-bib", title: "Back In Black", artist: "AC/DC" })
+    expect(song.file?.name).toBe("AC-DC - Back In Black.flac")
+    expect(PlaylistStorage.storeSongFile).toHaveBeenCalledWith("tidal-bib", song.file)
   })
 })
