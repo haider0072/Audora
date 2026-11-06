@@ -25,6 +25,7 @@ function cloudWith(overrides: Partial<UseCloudLibraryReturn> = {}): UseCloudLibr
     signIn: jest.fn().mockResolvedValue(true),
     signOut: jest.fn().mockResolvedValue(undefined),
     refresh: jest.fn(),
+    upload: jest.fn(),
     ...overrides,
   }
 }

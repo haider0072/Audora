@@ -7,6 +7,7 @@ import { clearLibrarySnapshot, readLibrarySnapshot, saveLibrarySnapshot } from "
 import { mergeCloudLibrary } from "@/lib/cloud/merge"
 import { preconnect } from "@/lib/cloud/preconnect"
 import { prefetchThumbnails } from "@/lib/cloud/thumbnail-prefetch"
+import { cloudUploads } from "@/lib/cloud/upload-queue"
 import type { CloudIndexResponse, CloudLibraryResponse, CloudSong } from "@/lib/cloud/types"
 
 /**
@@ -47,6 +48,12 @@ export interface UseCloudLibraryReturn {
   signOut: (options?: { everywhere?: boolean }) => Promise<void>
   /** Fetch the listing again — or, while one is in flight, once more after it. */
   refresh: () => void
+  /**
+   * Send files up to the cloud library, while this device is signed in to it.
+   * Otherwise nothing is sent: the files stay on this device, and Sync now in
+   * the cloud panel sends them once it is signed in.
+   */
+  upload: (files: Iterable<File>) => void
 }
 
 async function readError(response: Response): Promise<string> {
@@ -232,5 +239,12 @@ export function useCloudLibrary({ isReady, songCount, setSongs }: UseCloudLibrar
     else void load()
   }, [load])
 
-  return { status, songCount: cloudSongs.length, pending, error, signIn, signOut, refresh }
+  const upload = useCallback(
+    (files: Iterable<File>) => {
+      if (status === "ready") cloudUploads.add(files)
+    },
+    [status],
+  )
+
+  return { status, songCount: cloudSongs.length, pending, error, signIn, signOut, refresh, upload }
 }

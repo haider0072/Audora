@@ -3,6 +3,7 @@
 import { useState, useCallback, useRef, useEffect } from "react"
 import { useOnlineStatus } from "@/hooks/use-online-status"
 import { toast } from "@/hooks/use-toast"
+import { makeUploadName } from "@/lib/cloud/upload-rules"
 import { TidalService, type SearchSource } from "@/lib/tidal-service"
 import { MetadataExtractor } from "@/lib/metadata-extractor"
 import { PlaylistStorage } from "@/lib/playlist-storage"
@@ -51,10 +52,14 @@ const MAX_CONCURRENT_DOWNLOADS = 2
 
 export function useTidalSearch(options: UseTidalSearchOptions) {
   const { songs, onSongDownloaded, onPreviewStart } = options
+  // The host's latest callbacks, read when they are called: the download
+  // queue keeps the functions of the render it was made in.
+  const onSongDownloadedRef = useRef(onSongDownloaded)
   const onPreviewStartRef = useRef(onPreviewStart)
   useEffect(() => {
+    onSongDownloadedRef.current = onSongDownloaded
     onPreviewStartRef.current = onPreviewStart
-  }, [onPreviewStart])
+  }, [onSongDownloaded, onPreviewStart])
 
   // Search state
   const [searchQuery, setSearchQuery] = useState("")
@@ -455,7 +460,9 @@ export function useTidalSearch(options: UseTidalSearchOptions) {
         const isFlac = contentType.includes("flac")
         const ext = isFlac ? "flac" : "m4a"
         const blob = new Blob(chunks, { type: contentType })
-        const fileName = `${track.artist} - ${track.title}.${ext}`
+        // The cloud library matches its copy to this one by name and size,
+        // so the file gets a name it takes as it is.
+        const fileName = makeUploadName(`${track.artist} - ${track.title}`, ext)
         const file = new File([blob], fileName, {
           type: contentType,
           lastModified: Date.now(),
@@ -562,7 +569,7 @@ export function useTidalSearch(options: UseTidalSearchOptions) {
         song.fileSize = fileWithArt.size
         await PlaylistStorage.storeSongFile(songId, fileWithArt)
 
-        onSongDownloaded(song)
+        onSongDownloadedRef.current(song)
 
         updateDownload(track.id, { status: "complete" })
         toast({ title: `Downloaded: ${track.title}` })
@@ -604,7 +611,7 @@ export function useTidalSearch(options: UseTidalSearchOptions) {
         abortControllers.current.delete(track.id)
       }
     },
-    [quality, onSongDownloaded, updateDownload]
+    [quality, updateDownload]
   )
 
 
@@ -640,7 +647,7 @@ export function useTidalSearch(options: UseTidalSearchOptions) {
       // it was needed and pin its blob until the page went away.
       const albumArt = storedArtRef(songId)
 
-      onSongDownloaded({
+      onSongDownloadedRef.current({
         ...metadata,
         id: songId,
         title: track.title,
@@ -655,7 +662,7 @@ export function useTidalSearch(options: UseTidalSearchOptions) {
 
       return true
     },
-    [onSongDownloaded]
+    []
   )
 
   // Download a single track

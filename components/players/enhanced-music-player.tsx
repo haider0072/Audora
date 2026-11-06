@@ -153,11 +153,19 @@ export default function EnhancedMusicPlayer() {
   } = playlist
   const libraryActions = useMemo(() => ({ playNext, addToQueue, removeSong }), [playNext, addToQueue, removeSong])
 
+  // The cloud library, which waits for the saved library to be restored, comes
+  // before the online search, whose downloads go up to it.
+  const { isInitialized, isRestoringPlaylist, restorePlaylist, savePlaylist } = usePlaylistPersistence()
+  const cloud = useCloudLibrary({ isReady: isInitialized, songCount: songs.length, setSongs })
+  useCloudUploadSync(cloud.refresh)
+
   // Tidal online search & download
   const tidalSearch = useTidalSearch({
     songs,
     onSongDownloaded: (newSong) => {
       setSongs((prev) => [...prev, newSong])
+      // Downloads go up to the cloud library too, so the other devices get them.
+      if (newSong.file) cloud.upload([newSong.file])
     },
     // Whenever a search-result preview starts, silence the main library
     // playback so the two streams don't overlap.
@@ -285,10 +293,7 @@ export default function EnhancedMusicPlayer() {
     onSongsAdded: (newSongs) => setSongs((prev) => [...prev, ...newSongs]),
   })
 
-  const { isInitialized, isRestoringPlaylist, restorePlaylist, savePlaylist } = usePlaylistPersistence()
-  const cloud = useCloudLibrary({ isReady: isInitialized, songCount: songs.length, setSongs })
   useStreamInfoBackfill(songs, setSongs)
-  useCloudUploadSync(cloud.refresh)
   useWarmNextSong(currentSong?.id, isPlaying, peekNextSong)
 
   // Folder sync hook
