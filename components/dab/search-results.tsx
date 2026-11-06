@@ -5,7 +5,7 @@ import { memo, useId, type ReactNode } from "react"
 import type { LibraryLayout } from "@/components/library/song-row"
 import { StatusMessage } from "@/components/status-message"
 import type { SearchType } from "@/hooks/use-tidal-search"
-import type { DownloadState, TidalSearchResult } from "@/lib/tidal-types"
+import type { DownloadState, TidalSearchResult, TidalTrack } from "@/lib/tidal-types"
 import { formatCount, formatDetails } from "@/lib/utils"
 import {
   OnlineAlbumRow,
@@ -55,7 +55,7 @@ interface SearchResultsProps {
   layout: LibraryLayout
   showSource: boolean
   downloads: Map<string, DownloadState>
-  isInLibrary: (trackId: string) => boolean
+  isInLibrary: (track: TidalTrack) => boolean
   preview: OnlinePreview
   /** The album or artist whose page is on the way. */
   opening: string | null
@@ -124,7 +124,7 @@ export const SearchResults = memo(function SearchResults({
                 showSource={showSource}
                 playback={previewPlayback(preview, track.id)}
                 download={downloads.get(track.id)}
-                inLibrary={isInLibrary(track.id)}
+                inLibrary={isInLibrary(track)}
                 actions={actions}
               />
             </li>

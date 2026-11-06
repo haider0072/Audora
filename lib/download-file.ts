@@ -55,6 +55,11 @@ export function downloadFileName(artist: string, title: string, extension: Downl
   return makeUploadName(`${artist} - ${title}`, extension)
 }
 
+/** Every name a track's download may be saved under: one for each type it may arrive as. */
+export function downloadFileNames(track: Pick<DownloadTrack, "artist" | "title">): string[] {
+  return DOWNLOAD_EXTENSIONS.map((extension) => downloadFileName(track.artist, track.title, extension))
+}
+
 /** The tags a download carries: the catalog's own, as Vorbis comments. */
 export function downloadTags(track: DownloadTrack): FlacMetadata {
   return {

@@ -1,6 +1,8 @@
 import { act, renderHook, waitFor } from "@testing-library/react"
 
-import { useTidalSearch } from "@/hooks/use-tidal-search"
+import { toast } from "@/hooks/use-toast"
+import { useTidalSearch, type UseTidalSearchOptions } from "@/hooks/use-tidal-search"
+import { downloadTrack } from "@/lib/download-file"
 import { embedFlacMetadata } from "@/lib/flac-art-embedder"
 import { MetadataExtractor } from "@/lib/metadata-extractor"
 import { PlaylistStorage } from "@/lib/playlist-storage"
@@ -328,5 +330,181 @@ describe("useTidalSearch, downloads", () => {
     expect(song).toMatchObject({ id: "tidal-bib", title: "Back In Black", artist: "AC/DC" })
     expect(song.file?.name).toBe("AC-DC - Back In Black.flac")
     expect(PlaylistStorage.storeSongFile).toHaveBeenCalledWith("tidal-bib", song.file)
+  })
+
+  describe("straight to the cloud", () => {
+    type FetchArgs = [RequestInfo | URL, RequestInit?]
+    let fetchMock: jest.Mock<Promise<Response>, FetchArgs>
+
+    /** The server's answer once it has saved a track, or found it already there. */
+    function saved(status: "stored" | "exists") {
+      return { ok: true, status: 200, json: async () => ({ status, key: "library/x.flac" }) } as unknown as Response
+    }
+
+    function renderCloud(props: Partial<UseTidalSearchOptions> = {}) {
+      const onSavedToCloud = jest.fn()
+      const onSongDownloaded = jest.fn<void, [Song]>()
+      const view = renderHook(
+        (overrides: Partial<UseTidalSearchOptions>) =>
+          useTidalSearch({
+            songs: [],
+            onSongDownloaded,
+            downloadTarget: "cloud",
+            cloudReady: true,
+            onSavedToCloud,
+            ...overrides,
+          }),
+        { initialProps: props },
+      )
+      return { ...view, onSavedToCloud, onSongDownloaded }
+    }
+
+    const tracks = ["one", "two", "three"].map((id) => ({ ...TRACK, id, title: `Song ${id}` }))
+
+    beforeEach(() => {
+      // Calls from earlier tests would read as this one's; what the mocks answer stays.
+      jest.clearAllMocks()
+      fetchMock = jest.fn<Promise<Response>, FetchArgs>().mockResolvedValue(saved("stored"))
+      global.fetch = fetchMock
+    })
+
+    it("has the server save the track, keeping nothing here, then lists the library again", async () => {
+      const answer = answerLater<Response>()
+      fetchMock.mockReturnValue(answer.promise)
+      const { result, onSavedToCloud, onSongDownloaded } = renderCloud()
+
+      await act(() => result.current.downloadTrack(TRACK))
+      expect(result.current.downloads.get(TRACK.id)?.status).toBe("saving")
+      const [url, init] = fetchMock.mock.calls[0]
+      expect(url).toBe("/api/cloud/imports")
+      expect(init?.method).toBe("POST")
+      expect(JSON.parse(String(init?.body))).toEqual(downloadTrack(TRACK))
+
+      await act(async () => answer.answer(saved("stored")))
+      await waitFor(() => expect(result.current.downloads.get(TRACK.id)?.status).toBe("complete"))
+      expect(onSavedToCloud).toHaveBeenCalledTimes(1)
+      expect(toast).toHaveBeenCalledWith({ title: "Saved to the cloud: Back In Black" })
+      expect(onSongDownloaded).not.toHaveBeenCalled()
+      expect(PlaylistStorage.hasSongFile).not.toHaveBeenCalled()
+      expect(PlaylistStorage.storeSongFile).not.toHaveBeenCalled()
+      expect(linkClick).not.toHaveBeenCalled()
+    })
+
+    it("says so when the cloud already held the track", async () => {
+      fetchMock.mockResolvedValue(saved("exists"))
+      const { result } = renderCloud()
+      await act(() => result.current.downloadTrack(TRACK))
+      await waitFor(() => expect(result.current.downloads.get(TRACK.id)?.status).toBe("complete"))
+      expect(toast).toHaveBeenCalledWith({ title: "Already in the cloud: Back In Black" })
+    })
+
+    it("says why a save failed, as the server put it", async () => {
+      fetchMock.mockResolvedValue({
+        ok: false,
+        status: 502,
+        json: async () => ({ error: "The source could not send the song" }),
+      } as unknown as Response)
+      const { result, onSavedToCloud } = renderCloud()
+      jest.spyOn(console, "error").mockImplementation(() => {})
+
+      await act(() => result.current.downloadTrack(TRACK))
+      await waitFor(() => expect(result.current.downloads.get(TRACK.id)?.status).toBe("error"))
+      expect(result.current.downloads.get(TRACK.id)?.error).toBe("The source could not send the song")
+      expect(toast).toHaveBeenCalledWith({ title: "Couldn't save to the cloud: Back In Black", variant: "destructive" })
+      expect(onSavedToCloud).not.toHaveBeenCalled()
+      jest.mocked(console.error).mockRestore()
+    })
+
+    it("refuses while the cloud library is signed out, saying so once even for an album", async () => {
+      const { result } = renderCloud({ cloudReady: false })
+
+      await act(() => result.current.downloadTrack(TRACK))
+      await act(() => result.current.downloadAlbum({ ...ALBUM, tracks }))
+      expect(fetchMock).not.toHaveBeenCalled()
+      expect(result.current.downloads.size).toBe(0)
+      const refusals = jest.mocked(toast).mock.calls.filter(([shown]) => shown.title === "Sign in to the cloud library to save there")
+      expect(refusals).toHaveLength(2)
+    })
+
+    it("stops the save on the server too when it is stopped", async () => {
+      let signal: AbortSignal | undefined
+      fetchMock.mockImplementation((_url, init) => {
+        signal = init?.signal ?? undefined
+        return new Promise((_resolve, reject) =>
+          signal?.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError"))),
+        )
+      })
+      const { result, onSavedToCloud } = renderCloud()
+
+      await act(() => result.current.downloadTrack(TRACK))
+      act(() => result.current.cancelDownload(TRACK.id))
+      expect(signal?.aborted).toBe(true)
+      await waitFor(() => expect(result.current.downloads.get(TRACK.id)?.status).toBe("cancelled"))
+      expect(onSavedToCloud).not.toHaveBeenCalled()
+    })
+
+    it("sends a waiting download where it was asked to go, after the setting changes", async () => {
+      const answers = tracks.map(() => answerLater<Response>())
+      answers.forEach((answer) => fetchMock.mockReturnValueOnce(answer.promise))
+      const { result, rerender } = renderCloud()
+
+      for (const track of tracks) await act(() => result.current.downloadTrack(track))
+      // Two at a time, so the third waits its turn.
+      expect(result.current.downloads.get("three")?.status).toBe("queued")
+      rerender({ downloadTarget: "device" })
+
+      await act(async () => answers[0].answer(saved("stored")))
+      await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3))
+      expect(fetchMock.mock.calls[2][0]).toBe("/api/cloud/imports")
+      expect(result.current.downloads.get("three")?.status).toBe("saving")
+    })
+
+    it("takes a waiting download out of the queue when it is stopped", async () => {
+      const answers = tracks.map(() => answerLater<Response>())
+      answers.forEach((answer) => fetchMock.mockReturnValueOnce(answer.promise))
+      const { result } = renderCloud()
+
+      for (const track of tracks) await act(() => result.current.downloadTrack(track))
+      act(() => result.current.cancelDownload("three"))
+      await act(async () => {
+        answers[0].answer(saved("stored"))
+        answers[1].answer(saved("stored"))
+      })
+
+      await waitFor(() => expect(result.current.downloads.get("two")?.status).toBe("complete"))
+      expect(fetchMock).toHaveBeenCalledTimes(2)
+      expect(result.current.downloads.get("three")?.status).toBe("cancelled")
+    })
+  })
+})
+
+describe("useTidalSearch, what the library holds", () => {
+  const TRACK = { id: "bib", title: "Back In Black", artist: "AC/DC", albumTitle: "Back In Black" } as TidalTrack
+
+  function holding(songs: Partial<Song>[]) {
+    const { result } = renderHook(() => useTidalSearch({ songs: songs as Song[], onSongDownloaded: jest.fn() }))
+    return result.current.isInLibrary
+  }
+
+  it("knows a download to this device by the id it was given", () => {
+    expect(holding([{ id: "tidal-bib" }])(TRACK)).toBe(true)
+  })
+
+  it.each([
+    ["saved straight to the cloud", "AC-DC - Back In Black.flac", "Back In Black"],
+    ["that came as AAC", "AC-DC - Back In Black.m4a", "Back In Black"],
+    ["named in another case", "ac-dc - back in black.FLAC", "BACK IN BLACK"],
+  ])("knows a song %s by the name its download is given, on its album", (_label, fileName, album) => {
+    expect(holding([{ id: "cloud-1", fileName, album }])(TRACK)).toBe(true)
+  })
+
+  it("does not take a song of the same name on another album for it, as with an intro", () => {
+    const intro = { ...TRACK, title: "Intro", albumTitle: "Second" }
+    expect(holding([{ id: "cloud-1", fileName: "AC-DC - Intro.flac", album: "First" }])(intro)).toBe(false)
+  })
+
+  it("does not take another song for it", () => {
+    const songs = [{ id: "cloud-1", fileName: "AC-DC - Hells Bells.flac", album: "Back In Black" }, { id: "tidal-hb" }]
+    expect(holding(songs)(TRACK)).toBe(false)
   })
 })

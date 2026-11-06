@@ -6,7 +6,7 @@ import { ArrowDownToLine, Check } from "lucide-react"
 import { BusyArc } from "@/components/busy-arc"
 import { PageFrame } from "@/components/library/page-frame"
 import type { LibraryLayout } from "@/components/library/song-row"
-import type { DownloadState, TidalAlbum } from "@/lib/tidal-types"
+import type { DownloadState, TidalAlbum, TidalTrack } from "@/lib/tidal-types"
 import { formatCount, formatDetails, formatTotalDuration } from "@/lib/utils"
 import {
   OnlineCover,
@@ -24,7 +24,7 @@ interface AlbumDetailViewProps {
   /** Where Back goes: the results, or the artist's page. */
   backLabel: string
   downloads: Map<string, DownloadState>
-  isInLibrary: (trackId: string) => boolean
+  isInLibrary: (track: TidalTrack) => boolean
   preview: OnlinePreview
   /** The artist whose page is on the way. */
   opening: string | null
@@ -55,7 +55,7 @@ export const AlbumDetailView = memo(function AlbumDetailView({
   const titleId = useId()
   const headingRef = useRef<HTMLHeadingElement>(null)
   const tracks = album.tracks ?? []
-  const missing = tracks.filter((track) => !isInLibrary(track.id)).length
+  const missing = tracks.filter((track) => !isInLibrary(track)).length
   const openingArtist = Boolean(album.artistId) && opening === album.artistId
   const artistNote = album.artistId && unopened?.id === album.artistId ? unopened.note : undefined
 
@@ -116,7 +116,7 @@ export const AlbumDetailView = memo(function AlbumDetailView({
               showSource={false}
               playback={previewPlayback(preview, track.id)}
               download={downloads.get(track.id)}
-              inLibrary={isInLibrary(track.id)}
+              inLibrary={isInLibrary(track)}
               actions={actions}
             />
           </li>

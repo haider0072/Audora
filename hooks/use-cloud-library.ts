@@ -6,6 +6,7 @@ import type { Song } from "@/lib/song"
 import { clearLibrarySnapshot, readLibrarySnapshot, saveLibrarySnapshot } from "@/lib/cloud/library-snapshot"
 import { mergeCloudLibrary } from "@/lib/cloud/merge"
 import { preconnect } from "@/lib/cloud/preconnect"
+import { readError } from "@/lib/cloud/response-error"
 import { prefetchThumbnails } from "@/lib/cloud/thumbnail-prefetch"
 import { cloudUploads } from "@/lib/cloud/upload-queue"
 import type { CloudIndexResponse, CloudLibraryResponse, CloudSong } from "@/lib/cloud/types"
@@ -54,15 +55,6 @@ export interface UseCloudLibraryReturn {
    * the cloud panel sends them once it is signed in.
    */
   upload: (files: Iterable<File>) => void
-}
-
-async function readError(response: Response): Promise<string> {
-  try {
-    const body = (await response.json()) as { error?: string }
-    return body.error ?? `Request failed (${response.status})`
-  } catch {
-    return `Request failed (${response.status})`
-  }
 }
 
 export function useCloudLibrary({ isReady, songCount, setSongs }: UseCloudLibraryOptions): UseCloudLibraryReturn {

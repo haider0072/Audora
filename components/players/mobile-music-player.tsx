@@ -36,6 +36,7 @@ import { CloudLibraryPanel } from "@/components/cloud-library-panel"
 import { useCloudLibrary } from "@/hooks/use-cloud-library"
 import { useStreamInfoBackfill } from "@/hooks/use-stream-info-backfill"
 import { useCloudUploadSync } from "@/hooks/use-cloud-upload-sync"
+import { useDownloadTarget } from "@/hooks/use-download-target"
 import { useDeviceSync } from "@/hooks/use-device-sync"
 import type { SyncPlaybackAdapter } from "@/hooks/use-sync-playback"
 import { findTrackByKey, trackLabel, trackSyncKey } from "@/lib/sync/song-match"
@@ -312,7 +313,9 @@ export default function MobileMusicPlayer() {
   })
 
 
-  // Tidal online search & download
+  // Tidal online search & download, saved where Settings on the desktop
+  // layout chose: the same browser keeps one choice whichever layout shows.
+  const [downloadTarget] = useDownloadTarget()
   const tidalSearch = useTidalSearch({
     songs,
     onSongDownloaded: (newSong) => {
@@ -320,6 +323,9 @@ export default function MobileMusicPlayer() {
       // Downloads go up to the cloud library too, so the other devices get them.
       if (newSong.file) cloud.upload([newSong.file])
     },
+    downloadTarget,
+    cloudReady: cloud.status === "ready",
+    onSavedToCloud: cloud.refresh,
   })
 
   // Cleanup URLs on unmount

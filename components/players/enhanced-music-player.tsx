@@ -65,6 +65,7 @@ import { CloudLibraryPanel } from "@/components/cloud-library-panel"
 import { useCloudLibrary } from "@/hooks/use-cloud-library"
 import { useStreamInfoBackfill } from "@/hooks/use-stream-info-backfill"
 import { useCloudUploadSync } from "@/hooks/use-cloud-upload-sync"
+import { useDownloadTarget } from "@/hooks/use-download-target"
 import { useDeviceSync } from "@/hooks/use-device-sync"
 import type { SyncPlaybackAdapter } from "@/hooks/use-sync-playback"
 import { findTrackByKey, trackLabel, trackSyncKey } from "@/lib/sync/song-match"
@@ -158,6 +159,7 @@ export default function EnhancedMusicPlayer() {
   const { isInitialized, isRestoringPlaylist, restorePlaylist, savePlaylist } = usePlaylistPersistence()
   const cloud = useCloudLibrary({ isReady: isInitialized, songCount: songs.length, setSongs })
   useCloudUploadSync(cloud.refresh)
+  const [downloadTarget, setDownloadTarget] = useDownloadTarget()
 
   // Tidal online search & download
   const tidalSearch = useTidalSearch({
@@ -167,6 +169,9 @@ export default function EnhancedMusicPlayer() {
       // Downloads go up to the cloud library too, so the other devices get them.
       if (newSong.file) cloud.upload([newSong.file])
     },
+    downloadTarget,
+    cloudReady: cloud.status === "ready",
+    onSavedToCloud: cloud.refresh,
     // Whenever a search-result preview starts, silence the main library
     // playback so the two streams don't overlap.
     onPreviewStart: () => {
@@ -700,6 +705,8 @@ export default function EnhancedMusicPlayer() {
                   onOpenCloud={openCloud}
                   syncConnected={syncConnected}
                   onOpenSync={openSync}
+                  downloadTarget={downloadTarget}
+                  onDownloadTargetChange={setDownloadTarget}
                   songCount={songs.length}
                   onReset={resetPlaylist}
                 />
