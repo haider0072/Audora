@@ -3,7 +3,7 @@
 import { useState, useCallback, useRef, useEffect } from "react"
 import { useOnlineStatus } from "@/hooks/use-online-status"
 import { toast } from "@/hooks/use-toast"
-import { makeUploadName } from "@/lib/cloud/upload-rules"
+import { downloadExtension, downloadFileName, downloadTags } from "@/lib/download-file"
 import { TidalService, type SearchSource } from "@/lib/tidal-service"
 import { MetadataExtractor } from "@/lib/metadata-extractor"
 import { PlaylistStorage } from "@/lib/playlist-storage"
@@ -457,12 +457,12 @@ export function useTidalSearch(options: UseTidalSearchOptions) {
 
         // Create File object
         const contentType = res.headers.get("content-type") || "audio/flac"
-        const isFlac = contentType.includes("flac")
-        const ext = isFlac ? "flac" : "m4a"
+        const ext = downloadExtension(contentType)
+        const isFlac = ext === "flac"
         const blob = new Blob(chunks, { type: contentType })
         // The cloud library matches its copy to this one by name and size,
-        // so the file gets a name it takes as it is.
-        const fileName = makeUploadName(`${track.artist} - ${track.title}`, ext)
+        // and a download straight to the cloud is named the same way.
+        const fileName = downloadFileName(track.artist, track.title, ext)
         const file = new File([blob], fileName, {
           type: contentType,
           lastModified: Date.now(),
@@ -528,24 +528,10 @@ export function useTidalSearch(options: UseTidalSearchOptions) {
         // Embed full metadata + album art into FLAC
         if (isFlac) {
           try {
-            finalBlob = await embedFlacMetadata(
-              blob,
-              {
-                title: track.title,
-                artist: track.artist,
-                album: track.albumTitle,
-                albumArtist: track.artist,
-                date: track.releaseDate ? track.releaseDate.slice(0, 4) : undefined,
-                genre: track.genre || undefined,
-                trackNumber: track.trackNumber ? String(track.trackNumber) : undefined,
-                discNumber: track.discNumber ? String(track.discNumber) : undefined,
-                copyright: track.copyright || undefined,
-                isrc: track.isrc || undefined,
-              },
-              artBlob
-            )
-          } catch {
-            // Fall back to raw blob if embedding fails
+            finalBlob = await embedFlacMetadata(blob, downloadTags(track), artBlob)
+          } catch (err) {
+            // The song is still whole without its tags, so it is saved as it came.
+            console.warn(`Could not tag ${track.title}; saving it as it came:`, err)
           }
         }
 

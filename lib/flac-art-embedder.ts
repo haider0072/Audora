@@ -1,5 +1,7 @@
 /**
  * Embeds metadata (Vorbis Comments) and album art (Picture) into a FLAC file.
+ * Works on bytes alone, so the browser (a download to this device) and the
+ * server (a download straight to the cloud library) tag a song the same way.
  *
  * FLAC structure:
  *   "fLaC" (4 bytes)
@@ -24,218 +26,160 @@ export interface FlacMetadata {
   isrc?: string
 }
 
-interface MetadataBlock {
-  type: number
-  isLast: boolean
-  data: ArrayBuffer
+/** A picture to embed: its bytes, and their type. */
+export interface FlacPicture {
+  data: Uint8Array
+  type: string
 }
 
-const BLOCK_STREAMINFO = 0
+interface MetadataBlock {
+  type: number
+  data: Uint8Array
+}
+
 const BLOCK_VORBIS_COMMENT = 4
 const BLOCK_PICTURE = 6
 
-/** Parse all metadata blocks from a FLAC buffer */
-function parseMetadataBlocks(buffer: ArrayBuffer): {
-  blocks: MetadataBlock[]
-  audioOffset: number
-} {
-  const view = new DataView(buffer)
+/** A block's length is 24 bits, so no block may be longer. */
+const MAX_BLOCK_BYTES = 0xffffff
+
+const FLAC_MAGIC = [0x66, 0x4c, 0x61, 0x43] // "fLaC"
+
+/** The Vorbis comment each tag is written as, in the order they are written. */
+const VORBIS_KEYS: Record<keyof FlacMetadata, string> = {
+  title: "TITLE",
+  artist: "ARTIST",
+  album: "ALBUM",
+  albumArtist: "ALBUMARTIST",
+  date: "DATE",
+  genre: "GENRE",
+  trackNumber: "TRACKNUMBER",
+  discNumber: "DISCNUMBER",
+  copyright: "COPYRIGHT",
+  isrc: "ISRC",
+}
+
+function isFlac(bytes: Uint8Array): boolean {
+  return bytes.length >= FLAC_MAGIC.length && FLAC_MAGIC.every((byte, index) => bytes[index] === byte)
+}
+
+/** Every metadata block, as views into `flac`, and where the audio frames start. */
+function parseMetadataBlocks(flac: Uint8Array): { blocks: MetadataBlock[]; audioOffset: number } {
   const blocks: MetadataBlock[] = []
-  let offset = 4 // skip "fLaC"
+  let offset = FLAC_MAGIC.length
 
-  while (offset < buffer.byteLength) {
-    const headerByte = view.getUint8(offset)
-    const isLast = (headerByte & 0x80) !== 0
-    const type = headerByte & 0x7f
-    const length =
-      (view.getUint8(offset + 1) << 16) |
-      (view.getUint8(offset + 2) << 8) |
-      view.getUint8(offset + 3)
-
-    const data = buffer.slice(offset + 4, offset + 4 + length)
-    blocks.push({ type, isLast, data })
-
+  while (offset + 4 <= flac.length) {
+    const header = flac[offset]
+    const length = (flac[offset + 1] << 16) | (flac[offset + 2] << 8) | flac[offset + 3]
+    blocks.push({ type: header & 0x7f, data: flac.subarray(offset + 4, offset + 4 + length) })
     offset += 4 + length
-    if (isLast) break
+    if ((header & 0x80) !== 0) break
   }
 
   return { blocks, audioOffset: offset }
 }
 
-/** Build a VORBIS_COMMENT metadata block */
-function buildVorbisCommentBlock(tags: Record<string, string>): ArrayBuffer {
+/** A VORBIS_COMMENT block: the vendor, then each tag that has a value as KEY=value. */
+function vorbisCommentBlock(metadata: FlacMetadata): Uint8Array {
   const encoder = new TextEncoder()
   const vendor = encoder.encode("Audora")
+  const comments = (Object.keys(VORBIS_KEYS) as (keyof FlacMetadata)[])
+    .filter((field) => metadata[field])
+    .map((field) => encoder.encode(`${VORBIS_KEYS[field]}=${metadata[field]}`))
 
-  // Calculate total size
-  const entries = Object.entries(tags).filter(([, v]) => v)
-  let dataSize = 4 + vendor.length + 4 // vendor length + vendor + comment count
-  for (const [key, value] of entries) {
-    const comment = encoder.encode(`${key}=${value}`)
-    dataSize += 4 + comment.length // comment length + comment
-  }
-
-  const buffer = new ArrayBuffer(dataSize)
-  const view = new DataView(buffer)
+  const block = new Uint8Array(4 + vendor.length + 4 + comments.reduce((size, comment) => size + 4 + comment.length, 0))
+  const view = new DataView(block.buffer)
   let pos = 0
 
-  // Vendor string (little-endian length!)
+  // Lengths in a Vorbis comment are little-endian, unlike the rest of FLAC.
   view.setUint32(pos, vendor.length, true)
   pos += 4
-  new Uint8Array(buffer, pos, vendor.length).set(vendor)
+  block.set(vendor, pos)
   pos += vendor.length
-
-  // Number of comments (little-endian)
-  view.setUint32(pos, entries.length, true)
+  view.setUint32(pos, comments.length, true)
   pos += 4
-
-  // Each comment
-  for (const [key, value] of entries) {
-    const comment = encoder.encode(`${key}=${value}`)
+  for (const comment of comments) {
     view.setUint32(pos, comment.length, true)
     pos += 4
-    new Uint8Array(buffer, pos, comment.length).set(comment)
+    block.set(comment, pos)
     pos += comment.length
   }
 
-  return buffer
+  return block
 }
 
-/** Build a PICTURE metadata block */
-function buildPictureBlock(artBuffer: ArrayBuffer, mimeType: string): ArrayBuffer {
-  const encoder = new TextEncoder()
-  const mimeBytes = encoder.encode(mimeType)
-  const descBytes = encoder.encode("")
-
-  const dataSize =
-    4 + 4 + mimeBytes.length + 4 + descBytes.length +
-    4 + 4 + 4 + 4 + 4 + artBuffer.byteLength
-
-  const buffer = new ArrayBuffer(dataSize)
-  const view = new DataView(buffer)
+/** A PICTURE block holding `picture` as the front cover, with no description. */
+function pictureBlock(picture: FlacPicture): Uint8Array {
+  const mime = new TextEncoder().encode(picture.type)
+  const block = new Uint8Array(4 + 4 + mime.length + 4 + 16 + 4 + picture.data.length)
+  const view = new DataView(block.buffer)
   let pos = 0
 
-  // Picture type: 3 (Cover front)
-  view.setUint32(pos, 3); pos += 4
-  // MIME
-  view.setUint32(pos, mimeBytes.length); pos += 4
-  new Uint8Array(buffer, pos, mimeBytes.length).set(mimeBytes); pos += mimeBytes.length
-  // Description
-  view.setUint32(pos, descBytes.length); pos += 4
-  new Uint8Array(buffer, pos, descBytes.length).set(descBytes); pos += descBytes.length
-  // Width, height, depth, colors (0 = unknown)
-  view.setUint32(pos, 0); pos += 4
-  view.setUint32(pos, 0); pos += 4
-  view.setUint32(pos, 0); pos += 4
-  view.setUint32(pos, 0); pos += 4
-  // Picture data
-  view.setUint32(pos, artBuffer.byteLength); pos += 4
-  new Uint8Array(buffer, pos, artBuffer.byteLength).set(new Uint8Array(artBuffer))
+  view.setUint32(pos, 3) // picture type: front cover
+  pos += 4
+  view.setUint32(pos, mime.length)
+  pos += 4
+  block.set(mime, pos)
+  pos += mime.length
+  // The description is empty, and width, height, colour depth and palette
+  // size are unknown, all of which FLAC writes as zero: the bytes are zero already.
+  pos += 4 + 16
+  view.setUint32(pos, picture.data.length)
+  pos += 4
+  block.set(picture.data, pos)
 
-  return buffer
+  return block
 }
 
-/** Write a metadata block with header */
-function writeBlockWithHeader(
-  type: number,
-  data: ArrayBuffer,
-  isLast: boolean
-): ArrayBuffer {
-  const header = new ArrayBuffer(4)
-  const view = new DataView(header)
-  view.setUint8(0, (isLast ? 0x80 : 0x00) | (type & 0x7f))
-  view.setUint8(1, (data.byteLength >> 16) & 0xff)
-  view.setUint8(2, (data.byteLength >> 8) & 0xff)
-  view.setUint8(3, data.byteLength & 0xff)
+/**
+ * `flac` with its tags and picture replaced by `metadata` and `picture`, in
+ * one new buffer, or `flac` itself when it is not FLAC. Every other block,
+ * and the audio, is kept as it is. A picture too large for a FLAC block is
+ * left out rather than written broken.
+ */
+export function withFlacMetadata(
+  flac: Uint8Array<ArrayBuffer>,
+  metadata: FlacMetadata,
+  picture: FlacPicture | null = null,
+): Uint8Array<ArrayBuffer> {
+  if (!isFlac(flac)) return flac
 
-  const combined = new ArrayBuffer(4 + data.byteLength)
-  new Uint8Array(combined).set(new Uint8Array(header))
-  new Uint8Array(combined, 4).set(new Uint8Array(data))
-  return combined
+  const { blocks, audioOffset } = parseMetadataBlocks(flac)
+  const written: MetadataBlock[] = [
+    ...blocks.filter((block) => block.type !== BLOCK_VORBIS_COMMENT && block.type !== BLOCK_PICTURE),
+    { type: BLOCK_VORBIS_COMMENT, data: vorbisCommentBlock(metadata) },
+  ]
+  const cover = picture && pictureBlock(picture)
+  if (cover && cover.length <= MAX_BLOCK_BYTES) written.push({ type: BLOCK_PICTURE, data: cover })
+
+  const audio = flac.subarray(audioOffset)
+  const tagged = new Uint8Array(
+    FLAC_MAGIC.length + written.reduce((size, block) => size + 4 + block.data.length, 0) + audio.length,
+  )
+  tagged.set(FLAC_MAGIC)
+  let pos = FLAC_MAGIC.length
+  written.forEach((block, index) => {
+    const isLast = index === written.length - 1
+    tagged[pos] = (isLast ? 0x80 : 0x00) | (block.type & 0x7f)
+    tagged[pos + 1] = (block.data.length >> 16) & 0xff
+    tagged[pos + 2] = (block.data.length >> 8) & 0xff
+    tagged[pos + 3] = block.data.length & 0xff
+    tagged.set(block.data, pos + 4)
+    pos += 4 + block.data.length
+  })
+  tagged.set(audio, pos)
+
+  return tagged
 }
 
 /**
  * Embed metadata and album art into a FLAC file.
  * Replaces existing VORBIS_COMMENT and PICTURE blocks.
  */
-export async function embedFlacMetadata(
-  flacBlob: Blob,
-  metadata: FlacMetadata,
-  artBlob?: Blob | null
-): Promise<Blob> {
-  const flacBuffer = await flacBlob.arrayBuffer()
-  const view = new DataView(flacBuffer)
+export async function embedFlacMetadata(flacBlob: Blob, metadata: FlacMetadata, artBlob?: Blob | null): Promise<Blob> {
+  const flac = new Uint8Array(await flacBlob.arrayBuffer())
+  if (!isFlac(flac)) return flacBlob
 
-  // Verify FLAC magic
-  const magic =
-    String.fromCharCode(view.getUint8(0)) +
-    String.fromCharCode(view.getUint8(1)) +
-    String.fromCharCode(view.getUint8(2)) +
-    String.fromCharCode(view.getUint8(3))
-
-  if (magic !== "fLaC") return flacBlob
-
-  const { blocks, audioOffset } = parseMetadataBlocks(flacBuffer)
-
-  // Keep all blocks except existing VORBIS_COMMENT and PICTURE
-  const keepBlocks = blocks.filter(
-    (b) => b.type !== BLOCK_VORBIS_COMMENT && b.type !== BLOCK_PICTURE
-  )
-
-  // Build Vorbis Comment tags
-  const tags: Record<string, string> = {}
-  if (metadata.title) tags["TITLE"] = metadata.title
-  if (metadata.artist) tags["ARTIST"] = metadata.artist
-  if (metadata.album) tags["ALBUM"] = metadata.album
-  if (metadata.albumArtist) tags["ALBUMARTIST"] = metadata.albumArtist
-  if (metadata.date) tags["DATE"] = metadata.date
-  if (metadata.genre) tags["GENRE"] = metadata.genre
-  if (metadata.trackNumber) tags["TRACKNUMBER"] = metadata.trackNumber
-  if (metadata.discNumber) tags["DISCNUMBER"] = metadata.discNumber
-  if (metadata.copyright) tags["COPYRIGHT"] = metadata.copyright
-  if (metadata.isrc) tags["ISRC"] = metadata.isrc
-
-  const vorbisData = buildVorbisCommentBlock(tags)
-
-  // Build Picture block if art is provided
-  let pictureData: ArrayBuffer | null = null
-  if (artBlob) {
-    const artBuffer = await artBlob.arrayBuffer()
-    pictureData = buildPictureBlock(artBuffer, artBlob.type || "image/jpeg")
-  }
-
-  // Reassemble: fLaC + kept blocks + vorbis comment + picture + audio
-  const parts: ArrayBuffer[] = []
-
-  // "fLaC" header
-  parts.push(flacBuffer.slice(0, 4))
-
-  // Write kept blocks (none are last)
-  for (const block of keepBlocks) {
-    parts.push(writeBlockWithHeader(block.type, block.data, false))
-  }
-
-  // Write Vorbis Comment block
-  if (pictureData) {
-    // Not last — picture comes after
-    parts.push(writeBlockWithHeader(BLOCK_VORBIS_COMMENT, vorbisData, false))
-    // Picture is last metadata block
-    parts.push(writeBlockWithHeader(BLOCK_PICTURE, pictureData, true))
-  } else {
-    // Vorbis Comment is last
-    parts.push(writeBlockWithHeader(BLOCK_VORBIS_COMMENT, vorbisData, true))
-  }
-
-  // Audio frames
-  parts.push(flacBuffer.slice(audioOffset))
-
-  return new Blob(parts, { type: "audio/flac" })
-}
-
-// Keep backwards compatibility
-export async function embedAlbumArt(
-  flacBlob: Blob,
-  artBlob: Blob
-): Promise<Blob> {
-  return embedFlacMetadata(flacBlob, {}, artBlob)
+  const picture = artBlob ? { data: new Uint8Array(await artBlob.arrayBuffer()), type: artBlob.type || "image/jpeg" } : null
+  return new Blob([withFlacMetadata(flac, metadata, picture)], { type: "audio/flac" })
 }

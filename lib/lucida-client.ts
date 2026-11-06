@@ -350,6 +350,20 @@ export async function waitForLucidaReady(
   throw new Error("Lucida job timed out")
 }
 
+/**
+ * A track's audio: asks Lucida for it, waits until the file is ready, then
+ * fetches it. The stream route hands it to the browser; the cloud import
+ * stores it in the cloud library.
+ */
+export async function fetchLucidaTrackAudio(
+  trackUrl: string,
+  opts: { country?: string; signal?: AbortSignal } = {}
+): Promise<Response> {
+  const { handoff, server } = await initLucidaDownload(trackUrl, { country: opts.country })
+  await waitForLucidaReady(handoff, server, { signal: opts.signal, maxAttempts: 80, intervalMs: 1500 })
+  return fetchLucidaAudio(handoff, server, opts.signal)
+}
+
 function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms))
 }
