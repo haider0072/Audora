@@ -317,6 +317,8 @@ export default function MobileMusicPlayer() {
     songs,
     onSongDownloaded: (newSong) => {
       setSongs((prev) => [...prev, newSong])
+      // Downloads go up to the cloud library too, so the other devices get them.
+      if (newSong.file) cloud.upload([newSong.file])
     },
   })
 
